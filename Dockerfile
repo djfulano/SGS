@@ -27,6 +27,8 @@ COPY VERSION ./VERSION
 COPY CHANGELOG.md ./CHANGELOG.md
 COPY docs ./docs
 COPY tests ./tests
+RUN mkdir -p .streamlit
+COPY docker/streamlit_config.toml ./.streamlit/config.toml
 
 RUN PYTHONPYCACHEPREFIX=/tmp/pycache python -m compileall -q app main.py \
     && rm -rf /tmp/pycache
@@ -38,4 +40,4 @@ EXPOSE 8501
 HEALTHCHECK --interval=30s --timeout=10s --start-period=45s --retries=3 \
     CMD curl -f http://127.0.0.1:8501/_stcore/health || exit 1
 
-CMD ["streamlit", "run", "app/ui/dashboard.py"]
+CMD ["streamlit", "run", "app/ui/dashboard.py", "--server.maxUploadSize=10240"]
