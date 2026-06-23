@@ -1375,6 +1375,38 @@ def mostrar_backup(
             height=260,
             key="backups_disponiveis"
         )
+
+        opcoes_download = {
+            backup["Arquivo"]: backup
+            for backup in backups
+        }
+        arquivo_download = st.selectbox(
+            "Backup para download",
+            list(opcoes_download.keys()),
+            key="backup_download_arquivo"
+        )
+        backup_download = opcoes_download.get(
+            arquivo_download
+        )
+
+        if backup_download:
+            caminho_download = Path(
+                backup_download["Caminho"]
+            )
+
+            if caminho_download.exists() and caminho_download.is_file():
+                with caminho_download.open("rb") as arquivo:
+                    st.download_button(
+                        "Baixar backup selecionado",
+                        data=arquivo,
+                        file_name=caminho_download.name,
+                        mime="application/zip",
+                        key="backup_download_botao"
+                    )
+            else:
+                st.warning(
+                    "Arquivo de backup não encontrado no disco."
+                )
     else:
         st.info("Nenhum backup encontrado em /app/backups.")
 

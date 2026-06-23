@@ -1,5 +1,10 @@
 # Histórico de versões
 
+## 1.0.61
+
+- Upload de backups passa a usar limite configurável do Streamlit, com padrão de 10240 MB.
+- Aba Backup passa a permitir baixar diretamente os arquivos ZIP salvos em `/app/backups`.
+
 ## 1.0.60
 
 - Backup passa a usar sempre o destino persistente `/app/backups`, mapeado para `./backups` no servidor.
