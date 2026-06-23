@@ -1,9 +1,19 @@
 import unittest
+import tempfile
+from pathlib import Path
+from unittest.mock import patch
 
 from app.importers.txt_importer import detectar_tipo
 from app.importers.txt_importer import extrair_assinatura
 from app.importers.txt_importer import importar_estrutura_de_linhas
 from app.importers.txt_importer import normalizar_nome_snmpc
+
+try:
+    from app.services.data_loader import sistema_precisa_inicializacao
+    from app.services.data_loader import status_inicializacao_dados
+except ModuleNotFoundError:
+    sistema_precisa_inicializacao = None
+    status_inicializacao_dados = None
 
 try:
     from app.importers.excel_importer import normalizar_assinatura
@@ -19,6 +29,68 @@ except ModuleNotFoundError:
 
 
 class ImportersTest(unittest.TestCase):
+
+    @unittest.skipIf(status_inicializacao_dados is None, "pandas nao instalado")
+    def test_status_inicializacao_detecta_arquivos_ausentes(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            base = Path(temp_dir)
+            imports = base / "imports"
+            imports.mkdir()
+
+            with patch(
+                "app.services.data_loader.CLIENTES_FILE",
+                imports / "clientes.xlsx"
+            ), patch(
+                "app.importers.structure_importer.IMPORTS_DIR",
+                imports
+            ), patch(
+                "app.importers.topos_importer.IMPORTS_DIR",
+                imports
+            ), patch(
+                "app.importers.topos_importer.SITES_FILE",
+                imports / "Sites.xlsx"
+            ):
+                status = status_inicializacao_dados()
+
+            self.assertTrue(
+                all(not item["existe"] for item in status)
+            )
+
+    @unittest.skipIf(sistema_precisa_inicializacao is None, "pandas nao instalado")
+    def test_sistema_precisa_inicializacao_fica_falso_com_arquivos_obrigatorios(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            base = Path(temp_dir)
+            imports = base / "imports"
+            imports.mkdir()
+            (imports / "SNMPc.txt").write_text(
+                "x",
+                encoding="utf-8"
+            )
+            (imports / "Sites.xlsx").write_text(
+                "x",
+                encoding="utf-8"
+            )
+            (imports / "clientes.xlsx").write_text(
+                "x",
+                encoding="utf-8"
+            )
+
+            with patch(
+                "app.services.data_loader.CLIENTES_FILE",
+                imports / "clientes.xlsx"
+            ), patch(
+                "app.importers.structure_importer.IMPORTS_DIR",
+                imports
+            ), patch(
+                "app.importers.topos_importer.IMPORTS_DIR",
+                imports
+            ), patch(
+                "app.importers.topos_importer.SITES_FILE",
+                imports / "Sites.xlsx"
+            ):
+                self.assertFalse(
+                    sistema_precisa_inicializacao()
+                )
 
     @unittest.skipIf(normalizar_assinatura is None, "pandas nao instalado")
     def test_normalizar_assinatura_mantem_apenas_digitos(self):

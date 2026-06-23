@@ -1,5 +1,11 @@
 # Histórico de versões
 
+## 1.0.59
+
+- Clone limpo passa a abrir uma tela de primeira execução quando os arquivos obrigatórios ainda não existem.
+- Primeira execução permite restaurar backup ZIP ou importar inicialmente SNMPc, Sites e clientes.
+- Versão dos dados passa a tratar SNMPc ausente sem derrubar o carregamento inicial.
+
 ## 1.0.58
 
 - Backup passa a ter subaba própria dentro de Sistema, separado da aba Configurações.

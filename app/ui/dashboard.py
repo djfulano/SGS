@@ -1,6 +1,8 @@
 import os
 import sys
 import json
+import tempfile
+from pathlib import Path
 
 sys.path.append(
     os.path.abspath(
@@ -15,6 +17,7 @@ import pandas as pd
 import streamlit as st
 
 from app.config import CLIENTES_FILE
+from app.config import IMPORTS_DIR
 from app.config import PREFERENCES_FILE
 from app.storage import read_json
 from app.storage import write_json_atomic
@@ -43,7 +46,10 @@ from app.importers.topos_importer import indices_topos
 from app.importers.topos_importer import localizar_topo_site
 from app.logs import registrar_log_sistema
 from app.reports.site_financials import montar_detalhes_topos as montar_detalhes_topos_relatorio
+from app.services.backup_service import inspecionar_backup
+from app.services.backup_service import restaurar_backup
 from app.ui.branding import favicon_sgs
+from app.ui.branding import bloco_identidade_sgs
 from app.ui.components.tables import configurar_componentes_tabela
 from app.ui.components.tables import mostrar_botao_copiar_texto
 from app.ui.components.tables import mostrar_dataframe_nativo
@@ -84,7 +90,10 @@ from app.ui.views.topology import mostrar_sites_receitas
 from app.ui.views.tools import configurar_ferramentas
 from app.ui.views.tools import mostrar_ferramentas as mostrar_ferramentas_pagina
 from app.services.data_loader import carregar_dados_dashboard
+from app.services.data_loader import sistema_precisa_inicializacao
+from app.services.data_loader import status_inicializacao_dados
 from app.services.data_loader import versao_cache_dados
+from app.services.database_service import sincronizar_banco
 from app.services.site_metrics import clientes_indiretos_site as clientes_indiretos_site_metricas
 from app.services.site_metrics import clientes_totais_site as clientes_totais_site_metricas
 from app.services.site_metrics import receita_indireta_site as receita_indireta_site_metricas
@@ -121,6 +130,252 @@ def save_preferences(preferences):
         PREFERENCES_FILE,
         preferences
     )
+
+
+def salvar_upload_primeira_execucao(upload, destino):
+    destino.parent.mkdir(
+        parents=True,
+        exist_ok=True
+    )
+
+    with open(destino, "wb") as arquivo:
+        arquivo.write(
+            upload.getbuffer()
+        )
+
+
+def validar_importacao_inicial(snmpc_path, sites_path, clientes_path):
+    sites_novos, assinaturas_novas, _equipamentos_novos = importar_estrutura(
+        snmpc_path
+    )
+    carregar_topos(
+        sites_path
+    )
+    importar_clientes(
+        clientes_path,
+        assinaturas_novas
+    )
+    ler_clientes_base(
+        clientes_path
+    )
+
+    return sites_novos
+
+
+def mostrar_primeira_execucao():
+    st.markdown(
+        bloco_identidade_sgs("sgs-primeira-execucao"),
+        unsafe_allow_html=True
+    )
+    st.header("Primeira execução")
+    st.warning(
+        "Os arquivos obrigatórios do SGS ainda não foram encontrados. "
+        "Restaure um backup completo ou faça a importação inicial para liberar o sistema."
+    )
+
+    status = pd.DataFrame(
+        status_inicializacao_dados()
+    )
+    st.markdown("**Arquivos obrigatórios**")
+    st.dataframe(
+        status[
+            [
+                "nome",
+                "caminho",
+                "status"
+            ]
+        ],
+        use_container_width=True,
+        hide_index=True
+    )
+
+    aba_restaurar, aba_importar = st.tabs([
+        "Restaurar backup",
+        "Importação inicial"
+    ])
+
+    with aba_restaurar:
+        st.caption(
+            "Use esta opção para migrar ou recuperar um ambiente completo a partir de um ZIP de backup do SGS."
+        )
+        backup_upload = st.file_uploader(
+            "Backup ZIP",
+            type=["zip"],
+            key="primeira_execucao_backup"
+        )
+        restaurar_contracts = st.checkbox(
+            "Restaurar documentos dos sites",
+            value=False,
+            key="primeira_execucao_contracts"
+        )
+        incluir_cache = st.checkbox(
+            "Restaurar cache",
+            value=True,
+            key="primeira_execucao_cache"
+        )
+
+        caminho_backup = None
+        info_backup = None
+
+        if backup_upload:
+            temp_backup = tempfile.NamedTemporaryFile(
+                delete=False,
+                suffix=".zip"
+            )
+            temp_backup.write(
+                backup_upload.getbuffer()
+            )
+            temp_backup.close()
+            caminho_backup = temp_backup.name
+
+            try:
+                info_backup = inspecionar_backup(
+                    caminho_backup
+                )
+                st.markdown("**Conteúdo do backup**")
+                st.dataframe(
+                    pd.DataFrame(info_backup.get("fontes", [])),
+                    use_container_width=True,
+                    hide_index=True
+                )
+
+                if info_backup.get("entradas_invalidas"):
+                    st.error(
+                        "Este backup contém caminhos inseguros e não pode ser restaurado."
+                    )
+                elif not info_backup.get("restauravel"):
+                    st.error(
+                        "Este ZIP não contém dados restauráveis do SGS."
+                    )
+            except Exception as erro:
+                st.error(f"Falha ao ler backup: {erro}")
+
+        if st.button(
+            "Restaurar backup e liberar sistema",
+            type="primary",
+            disabled=not (caminho_backup and info_backup and info_backup.get("restauravel")),
+            key="primeira_execucao_restaurar"
+        ):
+            try:
+                resultado = restaurar_backup(
+                    caminho_backup,
+                    usuario="primeira_execucao",
+                    restaurar_contracts=restaurar_contracts,
+                    incluir_cache=incluir_cache
+                )
+                registrar_log_sistema(
+                    "primeira_execucao_restore",
+                    status="sucesso",
+                    detalhes=resultado
+                )
+                st.success(
+                    "Backup restaurado. Recarregue a página para continuar."
+                )
+                st.stop()
+            except Exception as erro:
+                registrar_log_sistema(
+                    "primeira_execucao_restore",
+                    status="erro",
+                    detalhes={
+                        "erro": str(erro)
+                    }
+                )
+                st.error(f"Falha ao restaurar backup: {erro}")
+
+    with aba_importar:
+        st.caption(
+            "A importação inicial exige os três arquivos para montar a primeira base do SGS."
+        )
+        snmpc_upload = st.file_uploader(
+            "SNMPc TXT",
+            type=["txt"],
+            key="primeira_execucao_snmpc"
+        )
+        sites_upload = st.file_uploader(
+            "Sites Excel",
+            type=["xlsx", "xls"],
+            key="primeira_execucao_sites"
+        )
+        clientes_upload = st.file_uploader(
+            "Clientes Excel",
+            type=["xlsx", "xls"],
+            key="primeira_execucao_clientes"
+        )
+
+        if st.button(
+            "Validar e importar base inicial",
+            type="primary",
+            key="primeira_execucao_importar"
+        ):
+            if not all([
+                snmpc_upload,
+                sites_upload,
+                clientes_upload
+            ]):
+                st.error(
+                    "Envie SNMPc TXT, Sites Excel e Clientes Excel para concluir a importação inicial."
+                )
+                st.stop()
+
+            with tempfile.TemporaryDirectory() as temp_dir:
+                temp_dir = Path(temp_dir)
+                snmpc_temp = temp_dir / "SNMPc.txt"
+                sites_temp = temp_dir / "Sites.xlsx"
+                clientes_temp = temp_dir / "clientes.xlsx"
+                salvar_upload_primeira_execucao(
+                    snmpc_upload,
+                    snmpc_temp
+                )
+                salvar_upload_primeira_execucao(
+                    sites_upload,
+                    sites_temp
+                )
+                salvar_upload_primeira_execucao(
+                    clientes_upload,
+                    clientes_temp
+                )
+
+                try:
+                    sites_novos = validar_importacao_inicial(
+                        snmpc_temp,
+                        sites_temp,
+                        clientes_temp
+                    )
+                    salvar_upload_primeira_execucao(
+                        snmpc_upload,
+                        IMPORTS_DIR / "SNMPc.txt"
+                    )
+                    salvar_upload_primeira_execucao(
+                        sites_upload,
+                        IMPORTS_DIR / "Sites.xlsx"
+                    )
+                    salvar_upload_primeira_execucao(
+                        clientes_upload,
+                        CLIENTES_FILE
+                    )
+                    sincronizar_banco(
+                        sites_novos
+                    )
+                    registrar_log_sistema(
+                        "primeira_execucao_importacao",
+                        status="sucesso",
+                        detalhes={
+                            "sites": len(sites_novos)
+                        }
+                    )
+                    st.success(
+                        "Importação inicial concluída. Recarregue a página para continuar."
+                    )
+                    st.stop()
+                except Exception as erro:
+                    registrar_log_sistema(
+                        "primeira_execucao_importacao",
+                        status="erro",
+                        detalhes={
+                            "erro": str(erro)
+                        }
+                    )
+                    st.error(f"Falha ao validar importação inicial: {erro}")
 
 
 def preference_user_key():
@@ -173,6 +428,11 @@ def usuario_pode_copiar_tabelas():
     return can_copy_tables(
         usuario_logado()
     )
+
+
+if sistema_precisa_inicializacao():
+    mostrar_primeira_execucao()
+    st.stop()
 
 
 preparar_sessao_usuario()

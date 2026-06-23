@@ -3,12 +3,56 @@ from pathlib import Path
 from app.config import CLIENTES_FILE
 from app.importers.excel_importer import importar_clientes
 from app.importers.structure_importer import importar_estrutura_atual
+from app.importers.structure_importer import caminho_estrutura_txt
 from app.importers.structure_importer import versao_estrutura_txt
 from app.importers.topos_importer import carregar_topos
 from app.importers.topos_importer import caminho_sites_excel
 from app.importers.topos_importer import indices_topos
 from app.importers.topos_importer import localizar_topo_site
 from app.services.database_service import sincronizar_banco
+
+
+def arquivos_dados_obrigatorios():
+    return [
+        {
+            "chave": "snmpc",
+            "nome": "SNMPc TXT",
+            "caminho": Path(caminho_estrutura_txt())
+        },
+        {
+            "chave": "sites",
+            "nome": "Sites Excel",
+            "caminho": Path(caminho_sites_excel())
+        },
+        {
+            "chave": "clientes",
+            "nome": "Clientes Excel",
+            "caminho": Path(CLIENTES_FILE)
+        }
+    ]
+
+
+def status_inicializacao_dados():
+    status = []
+
+    for item in arquivos_dados_obrigatorios():
+        caminho = item["caminho"]
+        existe = caminho.exists()
+        status.append({
+            **item,
+            "caminho": str(caminho),
+            "existe": existe,
+            "status": "OK" if existe else "Ausente"
+        })
+
+    return status
+
+
+def sistema_precisa_inicializacao():
+    return any(
+        not item["existe"]
+        for item in status_inicializacao_dados()
+    )
 
 
 def versao_topos():

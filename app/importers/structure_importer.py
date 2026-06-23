@@ -42,9 +42,7 @@ def versao_estrutura_txt():
 
     if not caminho.exists():
 
-        raise FileNotFoundError(
-            f"Arquivo SNMPc TXT nao encontrado: {caminho}"
-        )
+        return "snmpc:ausente"
 
     stat = caminho.stat()
 
