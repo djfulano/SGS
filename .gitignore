@@ -1,0 +1,51 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Ambiente local e segredos
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+
+# Dados operacionais do SGS
+rede.db
+*.db
+*.sqlite
+*.sqlite3
+imports/*
+contracts/*
+backups/*
+cache/*
+!imports/.gitkeep
+!contracts/.gitkeep
+!backups/.gitkeep
+!cache/.gitkeep
+
+# Configuracoes geradas em producao
+config/*.json
+config/logs/
+config/contracts/
+config/img/
+!config/.gitkeep
+!config/branding/
+!config/branding/**
+
+# Arquivos de sistema e temporarios
+Thumbs.db
+.DS_Store
+*.tmp
+*.bak
+*~
+
+# Ferramentas locais
+.codex/
+.agents/

@@ -1,0 +1,17 @@
+.git
+venv
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache
+.mypy_cache
+.streamlit
+app/config/
+cache
+config
+imports/archive
+rede.db
+*.db
+*.sqlite
+*.sqlite3
