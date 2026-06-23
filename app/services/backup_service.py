@@ -69,6 +69,31 @@ FONTES_RESTAURAVEIS = {
 }
 
 
+def _backup_dir_oficial():
+    return Path(BACKUP_DIR)
+
+
+def _normalizar_backup_config(config=None):
+    config_normalizada = {
+        **DEFAULT_BACKUP_CONFIG,
+        **(config or {})
+    }
+    config_normalizada["backup_dir"] = str(_backup_dir_oficial())
+
+    config_normalizada["retention"] = max(
+        1,
+        int(
+            config_normalizada.get("retention")
+            or DEFAULT_BACKUP_CONFIG["retention"]
+        )
+    )
+
+    if config_normalizada.get("frequency") not in FREQUENCIAS_BACKUP:
+        config_normalizada["frequency"] = DEFAULT_BACKUP_CONFIG["frequency"]
+
+    return config_normalizada
+
+
 def load_backup_config(path=None):
     path = path or BACKUP_CONFIG_FILE
     config = read_json(
@@ -76,26 +101,12 @@ def load_backup_config(path=None):
         {}
     )
 
-    return {
-        **DEFAULT_BACKUP_CONFIG,
-        **config
-    }
+    return _normalizar_backup_config(config)
 
 
 def save_backup_config(config, path=None):
     path = path or BACKUP_CONFIG_FILE
-    config_save = {
-        **DEFAULT_BACKUP_CONFIG,
-        **(config or {})
-    }
-
-    config_save["retention"] = max(
-        1,
-        int(config_save.get("retention") or DEFAULT_BACKUP_CONFIG["retention"])
-    )
-
-    if config_save.get("frequency") not in FREQUENCIAS_BACKUP:
-        config_save["frequency"] = DEFAULT_BACKUP_CONFIG["frequency"]
+    config_save = _normalizar_backup_config(config)
 
     write_json_atomic(
         path,
@@ -263,14 +274,9 @@ def formatar_tamanho_bytes(tamanho):
 
 
 def calcular_fontes_backup(config=None, base_dir=None):
-    config = {
-        **DEFAULT_BACKUP_CONFIG,
-        **(config or load_backup_config())
-    }
+    config = _normalizar_backup_config(config or load_backup_config())
     base = Path(base_dir or ".").resolve()
-    destino_backup = Path(
-        config.get("backup_dir") or BACKUP_DIR
-    )
+    destino_backup = _backup_dir_oficial()
     resumo = []
 
     for chave, rotulo, tipo, caminho in _fontes_backup(
@@ -325,7 +331,7 @@ def _tipo_backup(config):
 
 
 def listar_backups(backup_dir=None):
-    backup_dir = Path(backup_dir or BACKUP_DIR)
+    backup_dir = _backup_dir_oficial()
 
     if not backup_dir.exists():
         return []
@@ -667,8 +673,9 @@ def restaurar_backup(
     }
 
 
-def limpar_backups_antigos(backup_dir, retention):
-    backups = listar_backups(backup_dir)
+def limpar_backups_antigos(backup_dir=None, retention=10):
+    backup_dir = _backup_dir_oficial()
+    backups = listar_backups()
     removidos = []
 
     for backup in backups[int(retention):]:
@@ -684,14 +691,9 @@ def limpar_backups_antigos(backup_dir, retention):
 
 
 def criar_backup(config=None, usuario="", motivo="manual", base_dir=None):
-    config = {
-        **DEFAULT_BACKUP_CONFIG,
-        **(config or load_backup_config())
-    }
+    config = _normalizar_backup_config(config or load_backup_config())
     base = Path(base_dir or ".").resolve()
-    destino_backup = Path(
-        config.get("backup_dir") or BACKUP_DIR
-    )
+    destino_backup = _backup_dir_oficial()
     destino_backup.mkdir(
         parents=True,
         exist_ok=True

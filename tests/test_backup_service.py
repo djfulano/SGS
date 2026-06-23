@@ -1,5 +1,6 @@
 import tempfile
 import unittest
+import json
 import os
 from pathlib import Path
 from unittest.mock import patch
@@ -9,6 +10,8 @@ from app.services.backup_service import calcular_fontes_backup
 from app.services.backup_service import criar_backup
 from app.services.backup_service import deve_executar_backup_automatico
 from app.services.backup_service import inspecionar_backup
+from app.services.backup_service import listar_backups
+from app.services.backup_service import load_backup_config
 from app.services.backup_service import restaurar_backup
 
 
@@ -79,6 +82,9 @@ class BackupServiceTest(unittest.TestCase):
                 "app.services.backup_service.BACKUP_CONFIG_FILE",
                 config / "backup_config.json"
             ), patch(
+                "app.services.backup_service.BACKUP_DIR",
+                backups
+            ), patch(
                 "app.services.backup_service.CONTRACTS_DIR",
                 contracts
             ):
@@ -141,6 +147,9 @@ class BackupServiceTest(unittest.TestCase):
                 "app.services.backup_service.CONTRACTS_DIR",
                 contracts
             ), patch(
+                "app.services.backup_service.BACKUP_DIR",
+                backups
+            ), patch(
                 "app.services.backup_service.BACKUP_CONFIG_FILE",
                 base / "backup_config.json"
             ):
@@ -195,6 +204,9 @@ class BackupServiceTest(unittest.TestCase):
                 "app.services.backup_service.CONTRACTS_DIR",
                 contracts
             ), patch(
+                "app.services.backup_service.BACKUP_DIR",
+                backups
+            ), patch(
                 "app.services.backup_service.BACKUP_CONFIG_FILE",
                 base / "backup_config.json"
             ):
@@ -246,6 +258,9 @@ class BackupServiceTest(unittest.TestCase):
                 "app.services.backup_service.CONTRACTS_DIR",
                 contracts
             ), patch(
+                "app.services.backup_service.BACKUP_DIR",
+                backups
+            ), patch(
                 "app.services.backup_service.IMPORTS_DIR",
                 imports
             ):
@@ -270,6 +285,93 @@ class BackupServiceTest(unittest.TestCase):
             self.assertGreater(
                 por_chave["contracts"]["Tamanho bytes"],
                 0
+            )
+
+    def test_load_backup_config_normaliza_backup_dir_para_destino_oficial(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            base = Path(temp_dir)
+            backups = base / "backups"
+            config_file = base / "backup_config.json"
+            config_file.write_text(
+                json.dumps({
+                    "backup_dir": "/opt/SGS/backups",
+                    "retention": 3
+                }),
+                encoding="utf-8"
+            )
+
+            with patch(
+                "app.services.backup_service.BACKUP_CONFIG_FILE",
+                config_file
+            ), patch(
+                "app.services.backup_service.BACKUP_DIR",
+                backups
+            ):
+                config = load_backup_config()
+
+            self.assertEqual(
+                config["backup_dir"],
+                str(backups)
+            )
+            self.assertEqual(
+                config["retention"],
+                3
+            )
+
+    def test_criar_e_listar_backup_usam_destino_oficial(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            base = Path(temp_dir)
+            backups = base / "backups"
+            destino_antigo = base / "fora_do_volume"
+            imports = base / "imports"
+            config = base / "config"
+            imports.mkdir()
+            config.mkdir()
+            destino_antigo.mkdir()
+            (imports / "clientes.xlsx").write_text(
+                "clientes",
+                encoding="utf-8"
+            )
+
+            backup_config = {
+                "backup_dir": str(destino_antigo),
+                "include_imports": True,
+                "include_config": False,
+                "include_cache": False,
+                "include_contracts": False,
+                "include_database": False,
+                "include_system_files": False
+            }
+
+            with patch(
+                "app.services.backup_service.IMPORTS_DIR",
+                imports
+            ), patch(
+                "app.services.backup_service.CONFIG_DIR",
+                config
+            ), patch(
+                "app.services.backup_service.BACKUP_DIR",
+                backups
+            ), patch(
+                "app.services.backup_service.BACKUP_CONFIG_FILE",
+                config / "backup_config.json"
+            ):
+                resultado = criar_backup(
+                    backup_config,
+                    usuario="teste",
+                    base_dir=base
+                )
+                backups_listados = listar_backups(destino_antigo)
+
+            self.assertTrue(
+                str(resultado["path"]).startswith(str(backups))
+            )
+            self.assertFalse(
+                list(destino_antigo.glob("sgs_backup_*.zip"))
+            )
+            self.assertEqual(
+                len(backups_listados),
+                1
             )
 
     def test_deve_executar_backup_automatico_quando_ativo_sem_registro(self):

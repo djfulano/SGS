@@ -20,6 +20,7 @@ from app.auth import load_users
 from app.auth import save_profiles
 from app.auth import save_users
 from app.config import ARCHIVE_DIR
+from app.config import BACKUP_DIR
 from app.config import CLIENTES_FILE
 from app.config import TMP_IMPORTS_DIR
 from app.data_history import load_history
@@ -1177,9 +1178,19 @@ def mostrar_backup(
                 else "Diário"
             )
         )
-        backup_dir = st.text_input(
-            "Pasta de destino",
-            value=str(config.get("backup_dir") or "")
+        st.text_input(
+            "Pasta no container",
+            value=str(BACKUP_DIR),
+            disabled=True
+        )
+        st.text_input(
+            "Pasta no servidor",
+            value="./backups",
+            disabled=True
+        )
+        st.caption(
+            "Os backups são salvos em `/app/backups`, mapeado para "
+            "`./backups` no servidor."
         )
         retention = st.number_input(
             "Quantidade de backups para manter",
@@ -1225,7 +1236,7 @@ def mostrar_backup(
             **config,
             "enabled": enabled,
             "frequency": frequency,
-            "backup_dir": backup_dir,
+            "backup_dir": str(BACKUP_DIR),
             "retention": int(retention),
             "include_imports": include_imports,
             "include_config": include_config,
@@ -1241,7 +1252,7 @@ def mostrar_backup(
             detalhes={
                 "backup_automatico": bool(config.get("enabled")),
                 "frequencia": config.get("frequency"),
-                "pasta": config.get("backup_dir"),
+                "pasta": str(BACKUP_DIR),
                 "retencao": config.get("retention")
             }
         )
@@ -1355,9 +1366,7 @@ def mostrar_backup(
                 f"Falha ao criar backup de documentos: {erro}"
             )
 
-    backups = listar_backups(
-        config.get("backup_dir")
-    )
+    backups = listar_backups()
 
     if backups:
         st.subheader("Backups disponíveis")
@@ -1367,7 +1376,7 @@ def mostrar_backup(
             key="backups_disponiveis"
         )
     else:
-        st.info("Nenhum backup encontrado na pasta configurada.")
+        st.info("Nenhum backup encontrado em /app/backups.")
 
     st.divider()
     st.subheader("Restaurar backup")

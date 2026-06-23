@@ -1,5 +1,11 @@
 # Histórico de versões
 
+## 1.0.60
+
+- Backup passa a usar sempre o destino persistente `/app/backups`, mapeado para `./backups` no servidor.
+- Tela de Backup deixa de aceitar pasta livre para evitar gravação fora do volume Docker.
+- Configurações antigas com caminhos customizados de backup são normalizadas automaticamente.
+
 ## 1.0.59
 
 - Clone limpo passa a abrir uma tela de primeira execução quando os arquivos obrigatórios ainda não existem.
