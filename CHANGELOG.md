@@ -1,5 +1,10 @@
 # Histórico de versões
 
+## 1.0.58
+
+- Backup passa a ter subaba própria dentro de Sistema, separado da aba Configurações.
+- Perfis passam a exibir a permissão visual Backup na grade de permissões.
+
 ## 1.0.57
 
 - Backup passa a ter restauração segura por snapshot, com validação do ZIP e confirmação textual.

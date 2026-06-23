@@ -66,6 +66,7 @@ MODULES = [
     ("importacao", "Importação"),
     ("logs", "LOG"),
     ("configuracoes", "Configurações"),
+    ("backup", "Backup"),
     ("usuarios", "Usuários"),
     ("gerenciar_perfis", "Gerenciar perfis"),
     ("editar_sites", "Editar cadastro de sites"),

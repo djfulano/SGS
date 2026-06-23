@@ -1139,7 +1139,22 @@ def mostrar_configuracoes(
             )
             st.error(f"Falha ao indexar documentos: {erro}")
 
-    st.divider()
+
+
+def mostrar_backup(
+    usuario_atual,
+    mostrar_grid
+):
+    st.header("Backup")
+
+    if not has_permission(
+        usuario_atual,
+        "editar_configuracoes"
+    ):
+        st.warning(
+            "Seu perfil não possui permissão para gerenciar backups."
+        )
+        return
 
     config = load_backup_config()
 
@@ -1542,6 +1557,14 @@ def mostrar_sistema(
                 mostrar_grid,
                 sites=sites
             )
+        ),
+        (
+            "backup",
+            "Backup",
+            lambda: mostrar_backup(
+                usuario_atual,
+                mostrar_grid
+            )
         )
     ]
 
@@ -1601,6 +1624,13 @@ def mostrar_sistema(
         )
         or (
             item[0] == "configuracoes"
+            and has_permission(
+                usuario_atual,
+                "editar_configuracoes"
+            )
+        )
+        or (
+            item[0] == "backup"
             and has_permission(
                 usuario_atual,
                 "editar_configuracoes"
