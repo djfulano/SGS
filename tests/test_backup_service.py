@@ -8,6 +8,8 @@ from zipfile import ZipFile
 from app.services.backup_service import calcular_fontes_backup
 from app.services.backup_service import criar_backup
 from app.services.backup_service import deve_executar_backup_automatico
+from app.services.backup_service import inspecionar_backup
+from app.services.backup_service import restaurar_backup
 
 
 class BackupServiceTest(unittest.TestCase):
@@ -287,6 +289,256 @@ class BackupServiceTest(unittest.TestCase):
                 "frequency": "Diário"
             })
         )
+
+    def test_inspecionar_backup_bloqueia_path_traversal(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            base = Path(temp_dir)
+            backup = base / "malicioso.zip"
+
+            with ZipFile(backup, "w") as zip_file:
+                zip_file.writestr(
+                    "../evil.txt",
+                    "x"
+                )
+                zip_file.writestr(
+                    r"..\evil2.txt",
+                    "x"
+                )
+                zip_file.writestr(
+                    r"C:\temp\evil3.txt",
+                    "x"
+                )
+
+            info = inspecionar_backup(backup)
+
+            self.assertFalse(info["restauravel"])
+            self.assertEqual(
+                info["entradas_invalidas"],
+                [
+                    "../evil.txt",
+                    r"..\evil2.txt",
+                    r"C:\temp\evil3.txt"
+                ]
+            )
+
+            with self.assertRaises(ValueError):
+                restaurar_backup(
+                    backup,
+                    base_dir=base,
+                    criar_backup_previo=False
+                )
+
+    def test_restaurar_backup_substitui_snapshot_e_cria_backup_previo(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            base = Path(temp_dir)
+            imports = base / "imports"
+            config = base / "config"
+            cache = base / "cache"
+            contracts = base / "contracts"
+            backups = base / "backups"
+
+            for pasta in [
+                imports,
+                config,
+                cache,
+                contracts,
+                backups
+            ]:
+                pasta.mkdir()
+
+            (imports / "atual.xlsx").write_text(
+                "atual",
+                encoding="utf-8"
+            )
+            (imports / "remover.xlsx").write_text(
+                "remover",
+                encoding="utf-8"
+            )
+            (config / "users.json").write_text(
+                '{"atual": true}',
+                encoding="utf-8"
+            )
+            (cache / "mapa.json").write_text(
+                "cache-atual",
+                encoding="utf-8"
+            )
+            (contracts / "SITE_ATUAL").mkdir()
+            (contracts / "SITE_ATUAL" / "doc.pdf").write_text(
+                "contrato atual",
+                encoding="utf-8"
+            )
+            (base / "rede.db").write_text(
+                "db-atual",
+                encoding="utf-8"
+            )
+
+            backup = backups / "sgs_backup_restore.zip"
+
+            with ZipFile(backup, "w") as zip_file:
+                zip_file.writestr(
+                    "imports/restaurado.xlsx",
+                    "novo"
+                )
+                zip_file.writestr(
+                    "config/users.json",
+                    '{"restaurado": true}'
+                )
+                zip_file.writestr(
+                    "cache/mapa.json",
+                    "cache-novo"
+                )
+                zip_file.writestr(
+                    "contracts/SITE_NOVO/doc.pdf",
+                    "contrato novo"
+                )
+                zip_file.writestr(
+                    "rede.db",
+                    "db-novo"
+                )
+
+            with patch(
+                "app.services.backup_service.IMPORTS_DIR",
+                imports
+            ), patch(
+                "app.services.backup_service.CONFIG_DIR",
+                config
+            ), patch(
+                "app.services.backup_service.CACHE_DIR",
+                cache
+            ), patch(
+                "app.services.backup_service.CONTRACTS_DIR",
+                contracts
+            ), patch(
+                "app.services.backup_service.BACKUP_DIR",
+                backups
+            ), patch(
+                "app.services.backup_service.BACKUP_CONFIG_FILE",
+                config / "backup_config.json"
+            ):
+                resultado = restaurar_backup(
+                    backup,
+                    usuario="teste",
+                    restaurar_contracts=False,
+                    incluir_cache=True,
+                    base_dir=base
+                )
+
+            self.assertTrue(
+                Path(resultado["backup_previo"]["path"]).exists()
+            )
+            self.assertEqual(
+                (imports / "restaurado.xlsx").read_text(encoding="utf-8"),
+                "novo"
+            )
+            self.assertFalse((imports / "remover.xlsx").exists())
+            self.assertEqual(
+                (config / "users.json").read_text(encoding="utf-8"),
+                '{"restaurado": true}'
+            )
+            self.assertEqual(
+                (cache / "mapa.json").read_text(encoding="utf-8"),
+                "cache-novo"
+            )
+            self.assertEqual(
+                (base / "rede.db").read_text(encoding="utf-8"),
+                "db-novo"
+            )
+            self.assertTrue(
+                (contracts / "SITE_ATUAL" / "doc.pdf").exists()
+            )
+            self.assertFalse(
+                (contracts / "SITE_NOVO" / "doc.pdf").exists()
+            )
+
+    def test_restaurar_backup_restaurando_contracts_quando_marcado(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            base = Path(temp_dir)
+            contracts = base / "contracts"
+            backups = base / "backups"
+            config = base / "config"
+            imports = base / "imports"
+            cache = base / "cache"
+
+            for pasta in [
+                contracts,
+                backups,
+                config,
+                imports,
+                cache
+            ]:
+                pasta.mkdir()
+
+            (contracts / "SITE_ANTIGO").mkdir()
+            (contracts / "SITE_ANTIGO" / "doc.pdf").write_text(
+                "antigo",
+                encoding="utf-8"
+            )
+            (base / "rede.db").write_text(
+                "db",
+                encoding="utf-8"
+            )
+            backup = backups / "sgs_backup_contracts.zip"
+
+            with ZipFile(backup, "w") as zip_file:
+                zip_file.writestr(
+                    "contracts/SITE_NOVO/doc.pdf",
+                    "novo"
+                )
+
+            with patch(
+                "app.services.backup_service.IMPORTS_DIR",
+                imports
+            ), patch(
+                "app.services.backup_service.CONFIG_DIR",
+                config
+            ), patch(
+                "app.services.backup_service.CACHE_DIR",
+                cache
+            ), patch(
+                "app.services.backup_service.CONTRACTS_DIR",
+                contracts
+            ), patch(
+                "app.services.backup_service.BACKUP_DIR",
+                backups
+            ), patch(
+                "app.services.backup_service.BACKUP_CONFIG_FILE",
+                config / "backup_config.json"
+            ):
+                restaurar_backup(
+                    backup,
+                    usuario="teste",
+                    restaurar_contracts=True,
+                    incluir_cache=False,
+                    base_dir=base
+                )
+
+            self.assertFalse(
+                (contracts / "SITE_ANTIGO" / "doc.pdf").exists()
+            )
+            self.assertEqual(
+                (contracts / "SITE_NOVO" / "doc.pdf").read_text(
+                    encoding="utf-8"
+                ),
+                "novo"
+            )
+
+    def test_restaurar_backup_recusa_zip_sem_fonte_restauravel(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            base = Path(temp_dir)
+            backup = base / "vazio.zip"
+
+            with ZipFile(backup, "w") as zip_file:
+                zip_file.writestr(
+                    "README.md",
+                    "sem dados"
+                )
+
+            with self.assertRaises(ValueError):
+                restaurar_backup(
+                    backup,
+                    base_dir=base,
+                    criar_backup_previo=False
+                )
 
 
 if __name__ == "__main__":

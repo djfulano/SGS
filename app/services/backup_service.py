@@ -1,7 +1,10 @@
 import json
+import shutil
+import tempfile
 from datetime import datetime
 from datetime import timedelta
 from pathlib import Path
+from zipfile import BadZipFile
 from zipfile import ZIP_DEFLATED
 from zipfile import ZipFile
 
@@ -35,6 +38,34 @@ DEFAULT_BACKUP_CONFIG = {
     "include_system_files": True,
     "last_backup_at": "",
     "last_backup_file": ""
+}
+
+FONTES_RESTAURAVEIS = {
+    "imports": {
+        "label": "Arquivos importados",
+        "type": "directory",
+        "path": IMPORTS_DIR
+    },
+    "config": {
+        "label": "Configurações, usuários e logs",
+        "type": "directory",
+        "path": CONFIG_DIR
+    },
+    "cache": {
+        "label": "Cache",
+        "type": "directory",
+        "path": CACHE_DIR
+    },
+    "contracts": {
+        "label": "Documentos dos sites",
+        "type": "directory",
+        "path": CONTRACTS_DIR
+    },
+    "database": {
+        "label": "Banco SQLite",
+        "type": "file",
+        "path": Path("rede.db")
+    }
 }
 
 
@@ -158,6 +189,31 @@ def _fontes_backup(config, base):
             fontes.append(("system_files", "Arquivos de versão e documentação", "arquivo", base / nome))
 
     return fontes
+
+
+def _fontes_restauraveis(base):
+    return {
+        "imports": {
+            **FONTES_RESTAURAVEIS["imports"],
+            "path": IMPORTS_DIR
+        },
+        "config": {
+            **FONTES_RESTAURAVEIS["config"],
+            "path": CONFIG_DIR
+        },
+        "cache": {
+            **FONTES_RESTAURAVEIS["cache"],
+            "path": CACHE_DIR
+        },
+        "contracts": {
+            **FONTES_RESTAURAVEIS["contracts"],
+            "path": CONTRACTS_DIR
+        },
+        "database": {
+            **FONTES_RESTAURAVEIS["database"],
+            "path": base / "rede.db"
+        }
+    }
 
 
 def _inventariar_arquivo(caminho, destino_backup):
@@ -295,6 +351,320 @@ def listar_backups(backup_dir=None):
         key=lambda item: item["Criado em"],
         reverse=True
     )
+
+
+def _entrada_zip_segura(nome):
+    nome_normalizado = str(nome).replace("\\", "/")
+    caminho = Path(nome_normalizado)
+
+    if (
+        not nome_normalizado
+        or nome_normalizado.startswith("/")
+        or ":" in caminho.parts[0]
+    ):
+        return False
+
+    return ".." not in caminho.parts
+
+
+def _fonte_por_entrada(nome):
+    nome = str(nome).replace("\\", "/")
+
+    if nome == "rede.db":
+        return "database"
+
+    primeiro = Path(nome).parts[0] if Path(nome).parts else ""
+
+    if primeiro in {
+        "imports",
+        "config",
+        "cache",
+        "contracts"
+    }:
+        return primeiro
+
+    return None
+
+
+def inspecionar_backup(caminho_backup):
+    caminho_backup = Path(caminho_backup)
+
+    if not caminho_backup.exists() or not caminho_backup.is_file():
+        raise FileNotFoundError("Arquivo de backup não encontrado.")
+
+    fontes = {}
+    entradas_invalidas = []
+    metadata = {}
+
+    try:
+        with ZipFile(caminho_backup) as zip_file:
+            for info in zip_file.infolist():
+                nome = info.filename
+
+                if not _entrada_zip_segura(nome):
+                    entradas_invalidas.append(nome)
+                    continue
+
+                if nome == "backup_metadata.json":
+                    try:
+                        metadata = json.loads(
+                            zip_file.read(info).decode("utf-8")
+                        )
+                    except (json.JSONDecodeError, UnicodeDecodeError):
+                        metadata = {}
+                    continue
+
+                if info.is_dir():
+                    continue
+
+                fonte = _fonte_por_entrada(nome)
+
+                if not fonte:
+                    continue
+
+                dados = fontes.setdefault(
+                    fonte,
+                    {
+                        "Fonte": FONTES_RESTAURAVEIS[fonte]["label"],
+                        "Chave": fonte,
+                        "Arquivos": 0,
+                        "Tamanho bytes": 0
+                    }
+                )
+                dados["Arquivos"] += 1
+                dados["Tamanho bytes"] += int(info.file_size or 0)
+    except BadZipFile as erro:
+        raise ValueError("Arquivo ZIP inválido.") from erro
+
+    for dados in fontes.values():
+        dados["Tamanho"] = formatar_tamanho_bytes(
+            dados["Tamanho bytes"]
+        )
+
+    return {
+        "arquivo": caminho_backup.name,
+        "caminho": str(caminho_backup),
+        "metadata": metadata,
+        "tipo": metadata.get("backup_type") or "desconhecido",
+        "versao": metadata.get("version") or "",
+        "criado_em": metadata.get("created_at") or "",
+        "fontes": sorted(
+            fontes.values(),
+            key=lambda item: item["Chave"]
+        ),
+        "fontes_chaves": sorted(fontes.keys()),
+        "entradas_invalidas": entradas_invalidas,
+        "restauravel": bool(fontes) and not entradas_invalidas
+    }
+
+
+def _extrair_backup_para_temp(caminho_backup, destino_temp):
+    with ZipFile(caminho_backup) as zip_file:
+        for info in zip_file.infolist():
+            nome = info.filename
+
+            if not _entrada_zip_segura(nome):
+                raise ValueError(
+                    f"Entrada insegura no backup: {nome}"
+                )
+
+            if info.is_dir():
+                continue
+
+            fonte = _fonte_por_entrada(nome)
+
+            if not fonte and nome != "backup_metadata.json":
+                continue
+
+            destino = Path(destino_temp) / nome
+            destino.parent.mkdir(
+                parents=True,
+                exist_ok=True
+            )
+
+            with zip_file.open(info) as origem, open(destino, "wb") as saida:
+                shutil.copyfileobj(
+                    origem,
+                    saida
+                )
+
+
+def _copiar_fonte_extraida(origem, destino, tipo):
+    origem = Path(origem)
+    destino = Path(destino)
+
+    if tipo == "directory":
+        if not origem.exists():
+            return 0
+
+        destino.parent.mkdir(
+            parents=True,
+            exist_ok=True
+        )
+        shutil.copytree(
+            origem,
+            destino
+        )
+
+        return sum(
+            1
+            for arquivo in destino.rglob("*")
+            if arquivo.is_file()
+        )
+
+    if not origem.exists():
+        return 0
+
+    destino.parent.mkdir(
+        parents=True,
+        exist_ok=True
+    )
+    shutil.copy2(
+        origem,
+        destino
+    )
+
+    return 1
+
+
+def restaurar_backup(
+    caminho_backup,
+    usuario="",
+    restaurar_contracts=False,
+    incluir_cache=True,
+    base_dir=None,
+    criar_backup_previo=True
+):
+    base = Path(base_dir or ".").resolve()
+    caminho_backup = Path(caminho_backup)
+    info = inspecionar_backup(caminho_backup)
+
+    if info["entradas_invalidas"]:
+        raise ValueError(
+            "Backup contém caminhos inseguros e não pode ser restaurado."
+        )
+
+    fontes_disponiveis = set(info["fontes_chaves"])
+    fontes_desejadas = {
+        "imports",
+        "config",
+        "database"
+    }
+
+    if incluir_cache:
+        fontes_desejadas.add("cache")
+
+    if restaurar_contracts:
+        fontes_desejadas.add("contracts")
+
+    fontes_para_restaurar = sorted(
+        fontes_disponiveis & fontes_desejadas
+    )
+
+    if not fontes_para_restaurar:
+        raise ValueError(
+            "Backup não contém nenhuma fonte selecionada para restauração."
+        )
+
+    backup_previo = None
+
+    if criar_backup_previo:
+        config_pre_restore = {
+            **DEFAULT_BACKUP_CONFIG,
+            "backup_dir": str(BACKUP_DIR),
+            "retention": 9999,
+            "include_imports": True,
+            "include_config": True,
+            "include_cache": True,
+            "include_contracts": bool(restaurar_contracts),
+            "include_database": True,
+            "include_system_files": False
+        }
+        backup_previo = criar_backup(
+            config_pre_restore,
+            usuario=usuario,
+            motivo="pre_restore",
+            base_dir=base
+        )
+
+    fontes = _fontes_restauraveis(base)
+    restaurados = []
+    rollback = []
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_dir = Path(temp_dir)
+        extraido = temp_dir / "extraido"
+        antigos = temp_dir / "antigos"
+        extraido.mkdir()
+        antigos.mkdir()
+        _extrair_backup_para_temp(
+            caminho_backup,
+            extraido
+        )
+
+        try:
+            for chave in fontes_para_restaurar:
+                fonte = fontes[chave]
+                destino = Path(fonte["path"])
+                destino_backup = antigos / chave
+
+                if destino.exists():
+                    destino_backup.parent.mkdir(
+                        parents=True,
+                        exist_ok=True
+                    )
+                    shutil.move(
+                        str(destino),
+                        str(destino_backup)
+                    )
+                    rollback.append(
+                        (destino_backup, destino)
+                    )
+
+                origem = (
+                    extraido / "rede.db"
+                    if chave == "database"
+                    else extraido / chave
+                )
+                arquivos = _copiar_fonte_extraida(
+                    origem,
+                    destino,
+                    fonte["type"]
+                )
+                restaurados.append({
+                    "key": chave,
+                    "label": fonte["label"],
+                    "path": str(destino),
+                    "files": arquivos
+                })
+        except Exception:
+            for origem_antiga, destino_original in reversed(rollback):
+                if destino_original.exists():
+                    if destino_original.is_dir():
+                        shutil.rmtree(
+                            destino_original,
+                            ignore_errors=True
+                        )
+                    else:
+                        destino_original.unlink(
+                            missing_ok=True
+                        )
+
+                if origem_antiga.exists():
+                    shutil.move(
+                        str(origem_antiga),
+                        str(destino_original)
+                    )
+
+            raise
+
+    return {
+        "backup": str(caminho_backup),
+        "backup_previo": backup_previo,
+        "fontes_restauradas": restaurados,
+        "restaurar_contracts": bool(restaurar_contracts),
+        "incluir_cache": bool(incluir_cache)
+    }
 
 
 def limpar_backups_antigos(backup_dir, retention):

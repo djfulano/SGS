@@ -1,6 +1,7 @@
 import json
 import os
 import shutil
+import tempfile
 from datetime import datetime
 from pathlib import Path
 
@@ -32,8 +33,10 @@ from app.logs import registrar_log_usuario
 from app.services.backup_service import FREQUENCIAS_BACKUP
 from app.services.backup_service import calcular_fontes_backup
 from app.services.backup_service import criar_backup
+from app.services.backup_service import inspecionar_backup
 from app.services.backup_service import listar_backups
 from app.services.backup_service import load_backup_config
+from app.services.backup_service import restaurar_backup
 from app.services.backup_service import save_backup_config
 from app.services.database_service import sincronizar_banco
 from app.services.contract_service import CONTRACTS_DIR
@@ -1350,6 +1353,162 @@ def mostrar_configuracoes(
         )
     else:
         st.info("Nenhum backup encontrado na pasta configurada.")
+
+    st.divider()
+    st.subheader("Restaurar backup")
+    st.warning(
+        "A restauração substitui os dados atuais pelo conteúdo do backup. "
+        "Antes de restaurar, o SGS cria automaticamente um backup do estado atual."
+    )
+
+    origem_restore = st.radio(
+        "Origem do backup",
+        [
+            "Backup disponível",
+            "Enviar arquivo ZIP"
+        ],
+        horizontal=True,
+        key="backup_restore_origem"
+    )
+
+    caminho_restore = None
+    upload_temporario = None
+
+    if origem_restore == "Backup disponível":
+        opcoes_backups = {
+            backup["Arquivo"]: backup["Caminho"]
+            for backup in backups
+        }
+        if opcoes_backups:
+            arquivo_selecionado = st.selectbox(
+                "Backup para restaurar",
+                list(opcoes_backups.keys()),
+                key="backup_restore_arquivo"
+            )
+            caminho_restore = opcoes_backups.get(
+                arquivo_selecionado
+            )
+        else:
+            st.info("Nenhum backup disponível para restauração.")
+    else:
+        arquivo_upload = st.file_uploader(
+            "Enviar backup ZIP",
+            type=["zip"],
+            key="backup_restore_upload"
+        )
+
+        if arquivo_upload:
+            upload_temporario = tempfile.NamedTemporaryFile(
+                delete=False,
+                suffix=".zip"
+            )
+            upload_temporario.write(
+                arquivo_upload.getbuffer()
+            )
+            upload_temporario.close()
+            caminho_restore = upload_temporario.name
+
+    info_restore = None
+
+    if caminho_restore:
+        try:
+            info_restore = inspecionar_backup(
+                caminho_restore
+            )
+            col_a, col_b, col_c = st.columns(3)
+            col_a.metric(
+                "Tipo",
+                info_restore.get("tipo") or "desconhecido"
+            )
+            col_b.metric(
+                "Versão",
+                info_restore.get("versao") or "não informada"
+            )
+            col_c.metric(
+                "Criado em",
+                info_restore.get("criado_em") or "não informado"
+            )
+
+            if info_restore.get("entradas_invalidas"):
+                st.error(
+                    "Este backup contém caminhos inseguros e não pode ser restaurado."
+                )
+                mostrar_grid(
+                    pd.DataFrame({
+                        "Entrada inválida": info_restore["entradas_invalidas"]
+                    }),
+                    height=180,
+                    key="backup_restore_invalidos"
+                )
+            elif info_restore.get("fontes"):
+                st.markdown("**Fontes encontradas no backup**")
+                mostrar_grid(
+                    pd.DataFrame(info_restore["fontes"]),
+                    height=220,
+                    key="backup_restore_fontes"
+                )
+            else:
+                st.error(
+                    "Este ZIP não contém fontes restauráveis do SGS."
+                )
+        except Exception as erro:
+            st.error(f"Falha ao ler backup: {erro}")
+
+    if info_restore and info_restore.get("restauravel"):
+        fontes_restore = set(
+            info_restore.get("fontes_chaves", [])
+        )
+        restaurar_contracts = st.checkbox(
+            "Restaurar documentos dos sites",
+            value=False,
+            disabled="contracts" not in fontes_restore,
+            help="Substitui a pasta contracts somente se marcado."
+        )
+        incluir_cache_restore = st.checkbox(
+            "Restaurar cache",
+            value=True,
+            disabled="cache" not in fontes_restore
+        )
+        confirmacao_restore = st.text_input(
+            "Digite RESTAURAR para confirmar",
+            value="",
+            key="backup_restore_confirmacao"
+        )
+
+        if st.button(
+            "Restaurar backup selecionado",
+            type="primary",
+            key="backup_restore_executar",
+            disabled=confirmacao_restore.strip().upper() != "RESTAURAR"
+        ):
+            try:
+                resultado_restore = restaurar_backup(
+                    caminho_restore,
+                    usuario=usuario_atual["username"],
+                    restaurar_contracts=restaurar_contracts,
+                    incluir_cache=incluir_cache_restore
+                )
+                registrar_log_sistema(
+                    "backup_restaurado",
+                    usuario=usuario_atual["username"],
+                    status="sucesso",
+                    detalhes=resultado_restore
+                )
+                st.success("Backup restaurado com sucesso.")
+                st.warning(
+                    "Reinicie o container para recarregar banco, configurações e sessão: "
+                    "sudo docker compose restart snmpc-dashboard"
+                )
+            except Exception as erro:
+                registrar_log_sistema(
+                    "backup_restaurado",
+                    usuario=usuario_atual["username"],
+                    status="erro",
+                    detalhes={
+                        "erro": str(erro)
+                    }
+                )
+                st.error(f"Falha ao restaurar backup: {erro}")
 
 
 def mostrar_sistema(

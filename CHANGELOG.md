@@ -1,5 +1,11 @@
 # Histórico de versões
 
+## 1.0.57
+
+- Backup passa a ter restauração segura por snapshot, com validação do ZIP e confirmação textual.
+- Restauração pode usar backup já salvo ou arquivo enviado por upload, sempre criando backup pré-restauração.
+- Documentos dos sites em `contracts/` continuam opcionais no backup e também na restauração.
+
 ## 1.0.56
 
 - Importador do SNMPc passa a identificar enlaces `Network` e enlaces por equipamentos backbone/OSPF entre sites, sem alterar a hierarquia principal.
