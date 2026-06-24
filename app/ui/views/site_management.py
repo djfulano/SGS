@@ -19,8 +19,10 @@ from app.services.site_metrics import receita_total_site
 from app.services.site_metrics import sites_descendentes
 from app.services.contract_service import add_site_contract
 from app.services.contract_service import archive_contract_file
+from app.services.contract_service import delete_archived_contract_file
 from app.services.contract_service import list_site_documents
 from app.services.contract_service import read_contract_file
+from app.services.contract_service import restore_archived_contract_file
 from app.services.site_registry_service import SITE_CODE_COLUMN
 from app.services.site_registry_service import load_site_contacts
 from app.services.site_registry_service import load_site_registry
@@ -1229,6 +1231,154 @@ def mostrar_contratos_site(site):
                             )
                             st.error(f"Falha ao arquivar documento: {erro}")
 
+    def mostrar_documentos_arquivados(lista):
+        if not lista:
+            st.caption("Nenhum documento arquivado.")
+            return
+
+        lista_ordenada = sorted(
+            lista,
+            key=lambda item: item.get("archived_at")
+            or item.get("uploaded_at")
+            or "",
+            reverse=True
+        )
+        dados = [
+            {
+                "Arquivo": documento.get("original_filename"),
+                "Tamanho KB": round((documento.get("size") or 0) / 1024, 1),
+                "Enviado por": documento.get("uploaded_by"),
+                "Enviado em": documento.get("uploaded_at"),
+                "Arquivado por": documento.get("archived_by"),
+                "Arquivado em": documento.get("archived_at"),
+                "Observação": documento.get("notes")
+            }
+            for documento in lista_ordenada
+        ]
+        altura = min(
+            240,
+            max(
+                110,
+                38 + len(dados) * 36
+            )
+        )
+
+        st.dataframe(
+            pd.DataFrame(dados),
+            use_container_width=True,
+            hide_index=True,
+            height=altura
+        )
+
+        st.markdown("**Downloads e ações**")
+
+        for documento in lista_ordenada:
+            documento_id = documento.get("id")
+            nome_arquivo = documento.get("original_filename") or "documento"
+            conteudo = read_contract_file(
+                documento
+            )
+
+            with st.container(border=True):
+                st.markdown(f"**{nome_arquivo}**")
+
+                if conteudo is None:
+                    st.warning(
+                        f"Arquivo ausente no disco: {nome_arquivo}"
+                    )
+                else:
+                    st.download_button(
+                        f"Baixar {nome_arquivo}",
+                        data=conteudo,
+                        file_name=nome_arquivo,
+                        mime=documento.get("content_type") or "application/octet-stream",
+                        key=f"documento_download_{documento_id}_arquivado"
+                    )
+
+                if not pode_editar:
+                    continue
+
+                col_retornar, col_excluir = st.columns(2)
+
+                with col_retornar:
+                    confirmar_retorno = st.checkbox(
+                        "Confirmar retorno",
+                        key=f"documento_confirmar_retorno_{documento_id}"
+                    )
+
+                    if st.button(
+                        "Retornar",
+                        key=f"documento_retornar_{documento_id}",
+                        disabled=not confirmar_retorno
+                    ):
+                        try:
+                            restore_archived_contract_file(
+                                documento_id,
+                                restored_by=usuario_atual["username"]
+                            )
+                            registrar_log_sistema(
+                                "site_documento_restaurado",
+                                usuario=usuario_atual["username"],
+                                status="sucesso",
+                                detalhes={
+                                    "codigo": codigo,
+                                    "arquivo": nome_arquivo
+                                }
+                            )
+                            st.success("Documento retornado.")
+                            st.rerun()
+                        except Exception as erro:
+                            registrar_log_sistema(
+                                "site_documento_restaurado",
+                                usuario=usuario_atual["username"],
+                                status="erro",
+                                detalhes={
+                                    "codigo": codigo,
+                                    "arquivo": nome_arquivo,
+                                    "erro": str(erro)
+                                }
+                            )
+                            st.error(f"Falha ao retornar documento: {erro}")
+
+                with col_excluir:
+                    confirmar_exclusao = st.text_input(
+                        "Digite EXCLUIR para remover",
+                        key=f"documento_confirmar_excluir_{documento_id}"
+                    )
+
+                    if st.button(
+                        "Excluir definitivamente",
+                        key=f"documento_excluir_{documento_id}",
+                        disabled=confirmar_exclusao.strip().upper() != "EXCLUIR"
+                    ):
+                        try:
+                            delete_archived_contract_file(
+                                documento_id
+                            )
+                            registrar_log_sistema(
+                                "site_documento_excluido_definitivo",
+                                usuario=usuario_atual["username"],
+                                status="sucesso",
+                                detalhes={
+                                    "codigo": codigo,
+                                    "arquivo": nome_arquivo
+                                }
+                            )
+                            st.success("Documento excluído definitivamente.")
+                            st.rerun()
+                        except Exception as erro:
+                            registrar_log_sistema(
+                                "site_documento_excluido_definitivo",
+                                usuario=usuario_atual["username"],
+                                status="erro",
+                                detalhes={
+                                    "codigo": codigo,
+                                    "arquivo": nome_arquivo,
+                                    "erro": str(erro)
+                                }
+                            )
+                            st.error(f"Falha ao excluir documento: {erro}")
+
     mostrar_lista_documentos(
         documentos,
         "ativos",
@@ -1236,9 +1386,8 @@ def mostrar_contratos_site(site):
     )
 
     with st.expander("Arquivados", expanded=False):
-        mostrar_lista_documentos(
-            arquivados,
-            "arquivados"
+        mostrar_documentos_arquivados(
+            arquivados
         )
 
 

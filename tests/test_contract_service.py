@@ -240,6 +240,148 @@ class ContractServiceTest(unittest.TestCase):
                 contract_service.CONTRACTS_DIR = original_dir
                 contract_service.CONTRACTS_INDEX_FILE = original_index
 
+    def test_restore_archived_contract_file_retorna_para_pasta_site(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            original_dir = contract_service.CONTRACTS_DIR
+            original_index = contract_service.CONTRACTS_INDEX_FILE
+
+            try:
+                contract_service.CONTRACTS_DIR = Path(temp_dir) / "contracts"
+                contract_service.CONTRACTS_INDEX_FILE = Path(temp_dir) / "contracts.json"
+                record = contract_service.add_site_contract(
+                    "123",
+                    "ABC_BH_123_IP",
+                    "documento.pdf",
+                    b"conteudo",
+                    uploaded_by="tester"
+                )
+                archived = contract_service.archive_contract_file(
+                    record["id"],
+                    archived_by="master"
+                )
+
+                restored = contract_service.restore_archived_contract_file(
+                    archived["id"],
+                    restored_by="master"
+                )
+                ativos = contract_service.list_site_documents("123")
+                arquivados = contract_service.list_site_documents(
+                    "123",
+                    archived=True
+                )
+
+                self.assertFalse(
+                    restored["archived"]
+                )
+                self.assertNotIn(
+                    "Arquivado",
+                    Path(restored["path"]).parts
+                )
+                self.assertFalse(
+                    Path(archived["path"]).exists()
+                )
+                self.assertTrue(
+                    Path(restored["path"]).exists()
+                )
+                self.assertEqual(
+                    len(ativos),
+                    1
+                )
+                self.assertEqual(
+                    arquivados,
+                    []
+                )
+                self.assertEqual(
+                    contract_service.read_contract_file(ativos[0]),
+                    b"conteudo"
+                )
+
+            finally:
+                contract_service.CONTRACTS_DIR = original_dir
+                contract_service.CONTRACTS_INDEX_FILE = original_index
+
+    def test_delete_archived_contract_file_remove_arquivo_e_indice(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            original_dir = contract_service.CONTRACTS_DIR
+            original_index = contract_service.CONTRACTS_INDEX_FILE
+
+            try:
+                contract_service.CONTRACTS_DIR = Path(temp_dir) / "contracts"
+                contract_service.CONTRACTS_INDEX_FILE = Path(temp_dir) / "contracts.json"
+                record = contract_service.add_site_contract(
+                    "123",
+                    "ABC_BH_123_IP",
+                    "documento.pdf",
+                    b"conteudo",
+                    uploaded_by="tester"
+                )
+                archived = contract_service.archive_contract_file(
+                    record["id"],
+                    archived_by="master"
+                )
+
+                removed = contract_service.delete_archived_contract_file(
+                    archived["id"]
+                )
+                ativos = contract_service.list_site_documents("123")
+                arquivados = contract_service.list_site_documents(
+                    "123",
+                    archived=True
+                )
+
+                self.assertEqual(
+                    removed["id"],
+                    archived["id"]
+                )
+                self.assertFalse(
+                    Path(archived["path"]).exists()
+                )
+                self.assertEqual(
+                    ativos,
+                    []
+                )
+                self.assertEqual(
+                    arquivados,
+                    []
+                )
+
+            finally:
+                contract_service.CONTRACTS_DIR = original_dir
+                contract_service.CONTRACTS_INDEX_FILE = original_index
+
+    def test_delete_archived_contract_file_bloqueia_documento_ativo(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            original_dir = contract_service.CONTRACTS_DIR
+            original_index = contract_service.CONTRACTS_INDEX_FILE
+
+            try:
+                contract_service.CONTRACTS_DIR = Path(temp_dir) / "contracts"
+                contract_service.CONTRACTS_INDEX_FILE = Path(temp_dir) / "contracts.json"
+                record = contract_service.add_site_contract(
+                    "123",
+                    "ABC_BH_123_IP",
+                    "documento.pdf",
+                    b"conteudo",
+                    uploaded_by="tester"
+                )
+
+                with self.assertRaises(ValueError):
+                    contract_service.delete_archived_contract_file(
+                        record["id"]
+                    )
+
+                self.assertTrue(
+                    Path(record["path"]).exists()
+                )
+                self.assertEqual(
+                    len(contract_service.list_site_documents("123")),
+                    1
+                )
+
+            finally:
+                contract_service.CONTRACTS_DIR = original_dir
+                contract_service.CONTRACTS_INDEX_FILE = original_index
+
     def test_compare_sites_and_document_folders_lista_diferencas(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             original_dir = contract_service.CONTRACTS_DIR

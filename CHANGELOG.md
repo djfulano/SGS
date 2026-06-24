@@ -1,5 +1,11 @@
 # Histórico de versões
 
+## 1.0.63
+
+- Gerenciamento de Sites > Documentos passa a exibir arquivados em tabela compacta nativa.
+- Documentos arquivados podem ser retornados para a pasta principal do site mediante confirmação.
+- Documentos arquivados podem ser excluídos definitivamente mediante confirmação textual.
+
 ## 1.0.62
 
 - Gerenciamento de Sites > Documentos passa a aceitar múltiplos arquivos no upload por seleção ou arrastar e soltar.

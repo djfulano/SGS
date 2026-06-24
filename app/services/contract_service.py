@@ -208,6 +208,92 @@ def archive_contract_file(record_id, archived_by=""):
     return record
 
 
+def restore_archived_contract_file(record_id, restored_by=""):
+    data = load_contract_index()
+    site_code, index, record = find_contract_record(
+        data,
+        record_id
+    )
+
+    if record is None:
+        raise ValueError("Documento não encontrado.")
+
+    if not record.get("archived"):
+        raise ValueError("Documento não está arquivado.")
+
+    origem = safe_contract_file_path(record)
+
+    if not origem or not origem.exists() or not origem.is_file():
+        raise FileNotFoundError("Arquivo do documento não encontrado.")
+
+    if origem.parent.name.strip().casefold() == "arquivado":
+        pasta_destino = origem.parent.parent
+    else:
+        pasta_destino = origem.parent
+
+    pasta_destino.mkdir(
+        parents=True,
+        exist_ok=True
+    )
+    destino = pasta_destino / origem.name
+
+    if destino.exists():
+        destino = pasta_destino / (
+            f"{origem.stem}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            f"{origem.suffix}"
+        )
+
+    shutil.move(
+        str(origem),
+        str(destino)
+    )
+
+    record = {
+        **record,
+        "path": str(destino),
+        "stored_filename": destino.name,
+        "archived": False,
+        "restored_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "restored_by": str(restored_by or "").strip()
+    }
+    record.pop("archived_at", None)
+    record.pop("archived_by", None)
+    data["sites"][site_code][index] = record
+    save_contract_index(data)
+
+    return record
+
+
+def delete_archived_contract_file(record_id):
+    data = load_contract_index()
+    site_code, index, record = find_contract_record(
+        data,
+        record_id
+    )
+
+    if record is None:
+        raise ValueError("Documento não encontrado.")
+
+    if not record.get("archived"):
+        raise ValueError("Somente documentos arquivados podem ser excluídos definitivamente.")
+
+    caminho = safe_contract_file_path(record)
+
+    if caminho is None:
+        raise ValueError("Caminho do documento inválido.")
+
+    if caminho.exists():
+        if not caminho.is_file():
+            raise ValueError("Caminho do documento não aponta para um arquivo.")
+
+        caminho.unlink()
+
+    del data["sites"][site_code][index]
+    save_contract_index(data)
+
+    return record
+
+
 def allowed_contract_file(path):
     path = Path(path)
 
