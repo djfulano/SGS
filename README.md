@@ -1,4 +1,4 @@
-# SNMPc Dashboard
+# SGS
 
 Dashboard Streamlit para importar a estrutura SNMPc, cruzar com bases Excel e
 visualizar sites, clientes, equipamentos, conciliacoes e logs.
