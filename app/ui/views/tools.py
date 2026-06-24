@@ -550,7 +550,16 @@ def montar_equipamentos_enriquecidos(equipamentos):
     return df_equipamentos
 
 
-def mostrar_busca_equipamentos(equipamentos):
+def filtrar_equipamentos_cancelados(df_equipamentos):
+    if df_equipamentos.empty or "Status Cliente" not in df_equipamentos.columns:
+        return df_equipamentos
+
+    return df_equipamentos[
+        df_equipamentos["Status Cliente"] == "Cancelado"
+    ].copy()
+
+
+def mostrar_busca_equipamentos(sites, equipamentos):
     st.header("Buscar equipamentos")
 
     df_equipamentos = montar_equipamentos_enriquecidos(
@@ -560,6 +569,11 @@ def mostrar_busca_equipamentos(equipamentos):
     if df_equipamentos.empty:
         st.warning("Nenhum equipamento encontrado na topologia SNMPc.")
         return
+
+    df_equipamentos = marcar_status_cliente_equipamentos(
+        df_equipamentos,
+        assinaturas_ativas_sites(sites)
+    )
 
     col1, col2, col3 = st.columns(3)
 
@@ -592,6 +606,17 @@ def mostrar_busca_equipamentos(equipamentos):
         )
 
     df_filtrado = df_equipamentos.copy()
+
+    somente_cancelados = st.checkbox(
+        "Mostrar somente equipamentos de clientes cancelados",
+        value=False,
+        key="buscar_equipamentos_somente_cancelados"
+    )
+
+    if somente_cancelados:
+        df_filtrado = filtrar_equipamentos_cancelados(
+            df_filtrado
+        )
 
     if busca_icone:
         df_filtrado = df_filtrado[
@@ -658,6 +683,7 @@ def mostrar_busca_equipamentos(equipamentos):
         "Setorial",
         "Parent",
         "Status",
+        "Status Cliente",
         "Assinatura",
         "Endereco",
         "Predio",
@@ -1061,6 +1087,7 @@ def enriquecer_enlaces_com_base(df_enlaces):
     return df_enriquecido
 
 
+@st.cache_data(show_spinner=False)
 def montar_enlaces_cliente(df_equipamentos):
     if df_equipamentos.empty:
         return pd.DataFrame()
@@ -1118,6 +1145,19 @@ def montar_enlaces_cliente(df_equipamentos):
             })
 
     return pd.DataFrame(dados)
+
+
+def filtrar_enlaces_clientes_cancelados(df_enlaces):
+    if df_enlaces.empty:
+        return df_enlaces
+
+    if "Tipo Enlace" not in df_enlaces.columns or "Status Cliente" not in df_enlaces.columns:
+        return df_enlaces.iloc[0:0].copy()
+
+    return df_enlaces[
+        (df_enlaces["Tipo Enlace"] == "Site x Cliente")
+        & (df_enlaces["Status Cliente"] == "Cancelado")
+    ].copy()
 
 
 def montar_enlaces_sites(sites_consulta):
@@ -1360,17 +1400,18 @@ def mostrar_enlaces(sites, equipamentos, enlaces_sites=None):
             | (df_equipamentos["Status Cliente"] == "Infraestrutura")
         ]
 
-    df_enlaces = pd.concat(
-        [
-            montar_enlaces_cliente(df_equipamentos),
-            montar_enlaces_sites(sites_consulta),
-            montar_enlaces_snmpc_sites(enlaces_sites, sites_consulta)
-        ],
-        ignore_index=True
-    )
-    df_enlaces = enriquecer_enlaces_com_base(
-        df_enlaces
-    )
+    with st.spinner("Carregando enlaces..."):
+        df_enlaces = pd.concat(
+            [
+                montar_enlaces_cliente(df_equipamentos),
+                montar_enlaces_sites(sites_consulta),
+                montar_enlaces_snmpc_sites(enlaces_sites, sites_consulta)
+            ],
+            ignore_index=True
+        )
+        df_enlaces = enriquecer_enlaces_com_base(
+            df_enlaces
+        )
 
     if df_enlaces.empty:
         st.info(
@@ -1387,6 +1428,11 @@ def mostrar_enlaces(sites, equipamentos, enlaces_sites=None):
                 na=False
             )
         ]
+
+    if somente_cancelados:
+        df_enlaces = filtrar_enlaces_clientes_cancelados(
+            df_enlaces
+        )
 
     tipos_enlace = sorted(
         df_enlaces["Tipo Enlace"].dropna().unique()
@@ -1504,6 +1550,7 @@ def mostrar_ferramentas(
             "buscar_equipamentos",
             "Buscar equipamentos",
             lambda: mostrar_busca_equipamentos(
+                sites,
                 equipamentos
             )
         ),

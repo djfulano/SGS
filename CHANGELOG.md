@@ -1,5 +1,11 @@
 # Histórico de versões
 
+## 1.0.61
+
+- Ferramentas > Enlaces passa a exibir aviso de carregamento durante a montagem dos enlaces.
+- Filtro de enlaces de clientes cancelados passa a excluir infraestrutura e enlaces entre sites.
+- Ferramentas > Buscar equipamentos passa a permitir filtrar somente equipamentos de clientes cancelados.
+
 ## 1.0.60
 
 - Backup passa a usar sempre o destino persistente `/app/backups`, mapeado para `./backups` no servidor.
