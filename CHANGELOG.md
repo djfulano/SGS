@@ -5,6 +5,7 @@
 - Gerenciamento de Sites > Documentos passa a exibir arquivados em tabela compacta nativa.
 - Documentos arquivados podem ser retornados para a pasta principal do site mediante confirmação.
 - Documentos arquivados podem ser excluídos definitivamente mediante confirmação textual.
+- Versão exibida passa a usar o arquivo `VERSION`, evitando ficar presa em variável antiga do Docker.
 
 ## 1.0.62
 
