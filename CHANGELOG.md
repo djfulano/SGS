@@ -1,15 +1,5 @@
 # Histórico de versões
 
-## 1.0.62
-
-- Limite de upload de backup passa a ser aplicado também por configuração interna do Streamlit e argumento de inicialização.
-- Build Docker passa a incluir `server.maxUploadSize = 10240` para remover a indicação de 200 MB no componente de upload.
-
-## 1.0.61
-
-- Upload de backups passa a usar limite configurável do Streamlit, com padrão de 10240 MB.
-- Aba Backup passa a permitir baixar diretamente os arquivos ZIP salvos em `/app/backups`.
-
 ## 1.0.60
 
 - Backup passa a usar sempre o destino persistente `/app/backups`, mapeado para `./backups` no servidor.

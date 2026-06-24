@@ -13,7 +13,6 @@ services:
       STREAMLIT_BROWSER_GATHER_USAGE_STATS: "false"
       STREAMLIT_SERVER_ENABLE_CORS: "true"
       STREAMLIT_SERVER_ENABLE_XSRF_PROTECTION: "true"
-      STREAMLIT_SERVER_MAX_UPLOAD_SIZE: ${STREAMLIT_SERVER_MAX_UPLOAD_SIZE:-10240}
       SNMPC_FILE: ${SNMPC_FILE:-imports/SNMPc.txt}
       SNMPC_IMPORTS_DIR: /app/imports
       SNMPC_CONFIG_DIR: /app/config
@@ -34,7 +33,7 @@ services:
       MAPTILER_SATELLITE_STYLE_ID: ${MAPTILER_SATELLITE_STYLE_ID:-hybrid}
       MAPBOX_API_KEY: ${MAPBOX_API_KEY:-}
       DATABASE_URL: sqlite:////app/rede.db
-      SNMPC_APP_VERSION: ${SNMPC_APP_VERSION:-1.0.62}
+      SNMPC_APP_VERSION: ${SNMPC_APP_VERSION:-1.0.60}
     volumes:
       - ./imports:/app/imports
       - ./config:/app/config
