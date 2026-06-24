@@ -1,5 +1,9 @@
 # Histórico de versões
 
+## 1.0.64
+
+- Gerenciamento de Sites > Documentos passa a exigir confirmação antes de arquivar documentos ativos.
+
 ## 1.0.63
 
 - Gerenciamento de Sites > Documentos passa a exibir arquivados em tabela compacta nativa.

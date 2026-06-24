@@ -1199,9 +1199,19 @@ def mostrar_contratos_site(site):
 
             if permitir_arquivar and pode_editar:
                 with col_arquivar:
+                    confirmar_arquivamento = st.checkbox(
+                        "Confirmar arquivamento",
+                        help=(
+                            "Arquivar move o documento para a seção Arquivados. "
+                            "O arquivo não será excluído."
+                        ),
+                        key=f"documento_confirmar_arquivar_{documento.get('id')}"
+                    )
+
                     if st.button(
                         "Arquivar",
-                        key=f"documento_arquivar_{documento.get('id')}"
+                        key=f"documento_arquivar_{documento.get('id')}",
+                        disabled=not confirmar_arquivamento
                     ):
                         try:
                             archive_contract_file(
