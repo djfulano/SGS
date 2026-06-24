@@ -50,6 +50,50 @@ class ContractServiceTest(unittest.TestCase):
                 contract_service.CONTRACTS_DIR = original_dir
                 contract_service.CONTRACTS_INDEX_FILE = original_index
 
+    def test_add_site_contract_salva_multiplos_documentos(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            original_dir = contract_service.CONTRACTS_DIR
+            original_index = contract_service.CONTRACTS_INDEX_FILE
+
+            try:
+                contract_service.CONTRACTS_DIR = Path(temp_dir) / "contracts"
+                contract_service.CONTRACTS_INDEX_FILE = Path(temp_dir) / "contracts.json"
+
+                for nome, conteudo in [
+                    ("documento_a.pdf", b"a"),
+                    ("documento_b.docx", b"b"),
+                    ("documento_c.msg", b"c")
+                ]:
+                    contract_service.add_site_contract(
+                        "123",
+                        "Site A",
+                        nome,
+                        conteudo,
+                        uploaded_by="tester"
+                    )
+
+                documentos = contract_service.list_site_documents("123")
+
+                self.assertEqual(
+                    len(documentos),
+                    3
+                )
+                self.assertEqual(
+                    {
+                        documento["original_filename"]
+                        for documento in documentos
+                    },
+                    {
+                        "documento_a.pdf",
+                        "documento_b.docx",
+                        "documento_c.msg"
+                    }
+                )
+
+            finally:
+                contract_service.CONTRACTS_DIR = original_dir
+                contract_service.CONTRACTS_INDEX_FILE = original_index
+
     def test_index_contract_folders_usa_nome_snmpc_e_aceita_msg(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             original_dir = contract_service.CONTRACTS_DIR

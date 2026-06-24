@@ -1,5 +1,10 @@
 # Histórico de versões
 
+## 1.0.62
+
+- Gerenciamento de Sites > Documentos passa a aceitar múltiplos arquivos no upload por seleção ou arrastar e soltar.
+- Lista de documentos arquivados passa a usar altura compacta para evitar espaços vazios grandes.
+
 ## 1.0.61
 
 - Ferramentas > Enlaces passa a exibir aviso de carregamento durante a montagem dos enlaces.

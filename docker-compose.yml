@@ -33,7 +33,7 @@ services:
       MAPTILER_SATELLITE_STYLE_ID: ${MAPTILER_SATELLITE_STYLE_ID:-hybrid}
       MAPBOX_API_KEY: ${MAPBOX_API_KEY:-}
       DATABASE_URL: sqlite:////app/rede.db
-      SNMPC_APP_VERSION: ${SNMPC_APP_VERSION:-1.0.61}
+      SNMPC_APP_VERSION: ${SNMPC_APP_VERSION:-1.0.62}
     volumes:
       - ./imports:/app/imports
       - ./config:/app/config

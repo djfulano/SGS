@@ -1036,8 +1036,8 @@ def mostrar_contratos_site(site):
                 key=f"documento_observacao_{codigo}"
             )
 
-            arquivo = st.file_uploader(
-                "Arquivo",
+            arquivos = st.file_uploader(
+                "Arquivos",
                 type=[
                     "pdf",
                     "doc",
@@ -1049,50 +1049,87 @@ def mostrar_contratos_site(site):
                     "jpeg",
                     "msg"
                 ],
+                accept_multiple_files=True,
                 key=f"contrato_upload_{codigo}"
             )
 
             if st.button(
-                "Salvar documento",
+                "Salvar documentos",
                 type="primary",
                 key=f"contrato_salvar_{codigo}"
             ):
-                if not arquivo:
-                    st.error("Selecione um arquivo para salvar.")
+                if not arquivos:
+                    st.error("Selecione um ou mais arquivos para salvar.")
                 else:
-                    try:
-                        registro = add_site_contract(
-                            codigo,
-                            nome_site,
-                            arquivo.name,
-                            bytes(arquivo.getbuffer()),
-                            content_type=getattr(arquivo, "type", ""),
-                            uploaded_by=usuario_atual["username"],
-                            notes=observacao
-                        )
+                    salvos = []
+                    erros = []
+
+                    for arquivo in arquivos:
+                        try:
+                            registro = add_site_contract(
+                                codigo,
+                                nome_site,
+                                arquivo.name,
+                                bytes(arquivo.getbuffer()),
+                                content_type=getattr(arquivo, "type", ""),
+                                uploaded_by=usuario_atual["username"],
+                                notes=observacao
+                            )
+                            salvos.append(
+                                registro.get("original_filename")
+                            )
+                        except Exception as erro:
+                            erros.append({
+                                "arquivo": getattr(arquivo, "name", ""),
+                                "erro": str(erro)
+                            })
+
+                    if salvos:
                         registrar_log_sistema(
                             "site_documento_upload",
                             usuario=usuario_atual["username"],
-                            status="sucesso",
+                            status="sucesso" if not erros else "parcial",
                             detalhes={
                                 "codigo": codigo,
                                 "site": nome_site,
-                                "arquivo": registro.get("original_filename")
+                                "quantidade": len(salvos),
+                                "arquivos": salvos,
+                                "erros": erros
                             }
                         )
-                        st.success("Documento salvo.")
-                        st.rerun()
-                    except Exception as erro:
+
+                    for erro in erros:
                         registrar_log_sistema(
                             "site_documento_upload",
                             usuario=usuario_atual["username"],
                             status="erro",
                             detalhes={
                                 "codigo": codigo,
-                                "erro": str(erro)
+                                **erro
                             }
                         )
-                        st.error(f"Falha ao salvar documento: {erro}")
+
+                    if erros and salvos:
+                        st.warning(
+                            f"{len(salvos)} documento(s) salvo(s), "
+                            f"mas {len(erros)} arquivo(s) falharam."
+                        )
+                    elif erros:
+                        st.error("Nenhum documento foi salvo.")
+                    else:
+                        st.success(
+                            f"{len(salvos)} documento(s) salvo(s)."
+                        )
+
+                    if erros:
+                        st.dataframe(
+                            pd.DataFrame(erros),
+                            use_container_width=True,
+                            hide_index=True
+                        )
+
+                    if salvos:
+                        st.rerun()
 
     def mostrar_lista_documentos(lista, sufixo, permitir_arquivar=False):
         if not lista:
@@ -1116,11 +1153,21 @@ def mostrar_contratos_site(site):
                 "Observacao": documento.get("notes")
             })
 
+        altura_grid = min(
+            260,
+            max(
+                90,
+                42 + len(dados) * 36
+            )
+        )
+
         _mostrar_grid(
             pd.DataFrame(dados),
-            height=240,
+            height=altura_grid,
             key=f"documentos_site_{codigo}_{sufixo}"
         )
+
+        st.markdown("**Downloads**")
 
         for documento in sorted(
             lista,
