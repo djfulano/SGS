@@ -1,5 +1,10 @@
 # Histórico de versões
 
+## 1.0.66
+
+- Usuários Master passam a receber lembrete mensal quando a importação do SNMPc ou da base de clientes estiver pendente no mês atual.
+- Lembrete usa o histórico de importações bem-sucedidas e mostra a última data conhecida de cada base.
+
 ## 1.0.65
 
 - Gerenciamento de Sites > Documentos passa a exibir documentos ativos e arquivados em tabelas selecionáveis.

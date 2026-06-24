@@ -17,7 +17,9 @@ from app.auth import save_users
 from app.auth import update_password
 from app.logs import registrar_log_sistema
 from app.logs import registrar_log_usuario
+from app.logs import carregar_logs_sistema
 from app.services.backup_service import executar_backup_automatico_se_necessario
+from app.services.import_reminder import status_importacao_mensal
 from app.ui.branding import bloco_identidade_sgs
 from app.ui.help import mostrar_ajuda_interativa
 from app.version import get_app_version
@@ -551,6 +553,36 @@ def mostrar_barra_superior_conta():
                 st.rerun()
 
 
+def mostrar_lembrete_importacao_mensal():
+
+    usuario = usuario_logado()
+
+    if str(usuario.get("profile") or "").strip() != "Master":
+
+        return
+
+    status = status_importacao_mensal(
+        logs=carregar_logs_sistema(
+            limite=5000
+        )
+    )
+
+    if not status["atrasado"]:
+
+        return
+
+    pendencias = ", ".join(
+        status["pendencias"]
+    )
+    st.warning(
+        "Importação mensal pendente: "
+        f"{pendencias}. "
+        "Acesse Sistema > Importação para atualizar as bases. "
+        f"Último SNMPc: {status['ultima_importacao_snmpc_texto']}. "
+        f"Última base de clientes: {status['ultima_importacao_clientes_texto']}."
+    )
+
+
 def preparar_sessao_usuario():
 
     sincronizar_token_navegador()
@@ -566,3 +598,4 @@ def preparar_sessao_usuario():
 
     executar_backup_apos_login()
     mostrar_barra_superior_conta()
+    mostrar_lembrete_importacao_mensal()
