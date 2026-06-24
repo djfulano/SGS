@@ -1,3 +1,6 @@
+import io
+import zipfile
+
 import pandas as pd
 import requests
 import streamlit as st
@@ -1133,266 +1136,413 @@ def mostrar_contratos_site(site):
                     if salvos:
                         st.rerun()
 
-    def mostrar_lista_documentos(lista, sufixo, permitir_arquivar=False):
-        if not lista:
-            st.caption("Nenhum documento encontrado.")
-            return
+    def documentos_ordenados(lista, arquivados=False):
+        return sorted(
+            lista,
+            key=lambda item: (
+                item.get("archived_at")
+                if arquivados
+                else item.get("uploaded_at")
+            )
+            or item.get("uploaded_at")
+            or "",
+            reverse=True
+        )
 
+    def dataframe_documentos(lista, arquivados=False):
         dados = []
 
-        for documento in sorted(
+        for documento in documentos_ordenados(
             lista,
-            key=lambda item: item.get("uploaded_at") or "",
-            reverse=True
+            arquivados=arquivados
         ):
-            dados.append({
+            linha = {
+                "_id": documento.get("id"),
+                "Selecionar": False,
                 "Arquivo": documento.get("original_filename"),
                 "Tamanho KB": round((documento.get("size") or 0) / 1024, 1),
                 "Enviado por": documento.get("uploaded_by"),
                 "Enviado em": documento.get("uploaded_at"),
-                "Arquivado por": documento.get("archived_by"),
-                "Arquivado em": documento.get("archived_at"),
-                "Observacao": documento.get("notes")
-            })
+                "Observação": documento.get("notes")
+            }
 
-        altura_grid = min(
-            260,
+            if arquivados:
+                linha.update({
+                    "Arquivado por": documento.get("archived_by"),
+                    "Arquivado em": documento.get("archived_at")
+                })
+
+            dados.append(linha)
+
+        return pd.DataFrame(dados)
+
+    def selecionar_documentos_tabela(lista, sufixo, arquivados=False):
+        if not lista:
+            st.caption(
+                "Nenhum documento arquivado."
+                if arquivados
+                else "Nenhum documento encontrado."
+            )
+            return []
+
+        df_documentos = dataframe_documentos(
+            lista,
+            arquivados=arquivados
+        )
+        colunas_visiveis = [
+            "Selecionar",
+            "Arquivo",
+            "Tamanho KB",
+            "Enviado por",
+            "Enviado em"
+        ]
+
+        if arquivados:
+            colunas_visiveis.extend([
+                "Arquivado por",
+                "Arquivado em"
+            ])
+
+        colunas_visiveis.append(
+            "Observação"
+        )
+        altura = min(
+            360,
             max(
-                90,
-                42 + len(dados) * 36
+                150,
+                42 + len(df_documentos) * 36
             )
         )
-
-        _mostrar_grid(
-            pd.DataFrame(dados),
-            height=altura_grid,
-            key=f"documentos_site_{codigo}_{sufixo}"
+        df_editado = st.data_editor(
+            df_documentos,
+            use_container_width=True,
+            hide_index=True,
+            height=altura,
+            column_order=colunas_visiveis,
+            disabled=[
+                coluna
+                for coluna in df_documentos.columns
+                if coluna != "Selecionar"
+            ],
+            column_config={
+                "_id": None,
+                "Selecionar": st.column_config.CheckboxColumn(
+                    "Selecionar",
+                    help="Marque os documentos para executar uma ação.",
+                    default=False
+                )
+            },
+            key=f"documentos_site_tabela_{codigo}_{sufixo}"
+        )
+        ids_selecionados = set(
+            df_editado.loc[
+                df_editado["Selecionar"].fillna(False),
+                "_id"
+            ].astype(str)
         )
 
-        st.markdown("**Downloads**")
+        return [
+            documento
+            for documento in lista
+            if str(documento.get("id")) in ids_selecionados
+        ]
 
-        for documento in sorted(
-            lista,
-            key=lambda item: item.get("uploaded_at") or "",
-            reverse=True
-        ):
+    def nome_download_documento(documento):
+        return (
+            documento.get("original_filename")
+            or documento.get("stored_filename")
+            or "documento"
+        )
+
+    def preparar_download_documentos(lista, sufixo):
+        if not lista:
+            return None, "documentos.zip", "application/zip", []
+
+        erros = []
+
+        if len(lista) == 1:
+            documento = lista[0]
             conteudo = read_contract_file(
                 documento
             )
 
             if conteudo is None:
-                st.warning(
-                    f"Arquivo ausente no disco: {documento.get('original_filename')}"
-                )
-                continue
+                erros.append({
+                    "arquivo": nome_download_documento(documento),
+                    "erro": "Arquivo ausente no disco."
+                })
+                return None, nome_download_documento(documento), "", erros
 
-            col_download, col_arquivar = st.columns([3, 1])
-
-            with col_download:
-                st.download_button(
-                    f"Baixar {documento.get('original_filename')}",
-                    data=conteudo,
-                    file_name=documento.get("original_filename") or "documento",
-                    mime=documento.get("content_type") or "application/octet-stream",
-                    key=f"documento_download_{documento.get('id')}_{sufixo}"
-                )
-
-            if permitir_arquivar and pode_editar:
-                with col_arquivar:
-                    confirmar_arquivamento = st.checkbox(
-                        "Confirmar arquivamento",
-                        help=(
-                            "Arquivar move o documento para a seção Arquivados. "
-                            "O arquivo não será excluído."
-                        ),
-                        key=f"documento_confirmar_arquivar_{documento.get('id')}"
-                    )
-
-                    if st.button(
-                        "Arquivar",
-                        key=f"documento_arquivar_{documento.get('id')}",
-                        disabled=not confirmar_arquivamento
-                    ):
-                        try:
-                            archive_contract_file(
-                                documento.get("id"),
-                                archived_by=usuario_atual["username"]
-                            )
-                            registrar_log_sistema(
-                                "site_documento_arquivado",
-                                usuario=usuario_atual["username"],
-                                status="sucesso",
-                                detalhes={
-                                    "codigo": codigo,
-                                    "arquivo": documento.get("original_filename")
-                                }
-                            )
-                            st.success("Documento arquivado.")
-                            st.rerun()
-                        except Exception as erro:
-                            registrar_log_sistema(
-                                "site_documento_arquivado",
-                                usuario=usuario_atual["username"],
-                                status="erro",
-                                detalhes={
-                                    "codigo": codigo,
-                                    "erro": str(erro)
-                                }
-                            )
-                            st.error(f"Falha ao arquivar documento: {erro}")
-
-    def mostrar_documentos_arquivados(lista):
-        if not lista:
-            st.caption("Nenhum documento arquivado.")
-            return
-
-        lista_ordenada = sorted(
-            lista,
-            key=lambda item: item.get("archived_at")
-            or item.get("uploaded_at")
-            or "",
-            reverse=True
-        )
-        dados = [
-            {
-                "Arquivo": documento.get("original_filename"),
-                "Tamanho KB": round((documento.get("size") or 0) / 1024, 1),
-                "Enviado por": documento.get("uploaded_by"),
-                "Enviado em": documento.get("uploaded_at"),
-                "Arquivado por": documento.get("archived_by"),
-                "Arquivado em": documento.get("archived_at"),
-                "Observação": documento.get("notes")
-            }
-            for documento in lista_ordenada
-        ]
-        altura = min(
-            240,
-            max(
-                110,
-                38 + len(dados) * 36
-            )
-        )
-
-        st.dataframe(
-            pd.DataFrame(dados),
-            use_container_width=True,
-            hide_index=True,
-            height=altura
-        )
-
-        st.markdown("**Downloads e ações**")
-
-        for documento in lista_ordenada:
-            documento_id = documento.get("id")
-            nome_arquivo = documento.get("original_filename") or "documento"
-            conteudo = read_contract_file(
-                documento
+            return (
+                conteudo,
+                nome_download_documento(documento),
+                documento.get("content_type") or "application/octet-stream",
+                erros
             )
 
-            with st.container(border=True):
-                st.markdown(f"**{nome_arquivo}**")
+        buffer = io.BytesIO()
+        nomes_usados = set()
+
+        with zipfile.ZipFile(
+            buffer,
+            mode="w",
+            compression=zipfile.ZIP_DEFLATED
+        ) as arquivo_zip:
+            for documento in lista:
+                nome = nome_download_documento(documento)
+                nome_zip = str(nome).replace("\\", "_").replace("/", "_")
+                conteudo = read_contract_file(
+                    documento
+                )
 
                 if conteudo is None:
-                    st.warning(
-                        f"Arquivo ausente no disco: {nome_arquivo}"
-                    )
-                else:
-                    st.download_button(
-                        f"Baixar {nome_arquivo}",
-                        data=conteudo,
-                        file_name=nome_arquivo,
-                        mime=documento.get("content_type") or "application/octet-stream",
-                        key=f"documento_download_{documento_id}_arquivado"
-                    )
-
-                if not pode_editar:
+                    erros.append({
+                        "arquivo": nome,
+                        "erro": "Arquivo ausente no disco."
+                    })
                     continue
 
-                col_retornar, col_excluir = st.columns(2)
-
-                with col_retornar:
-                    confirmar_retorno = st.checkbox(
-                        "Confirmar retorno",
-                        key=f"documento_confirmar_retorno_{documento_id}"
+                if nome_zip in nomes_usados:
+                    raiz, ponto, extensao = nome_zip.rpartition(".")
+                    base = raiz if ponto else nome_zip
+                    sufixo_extensao = f".{extensao}" if ponto else ""
+                    nome_zip = (
+                        f"{base}_{documento.get('id')}"
+                        f"{sufixo_extensao}"
                     )
 
-                    if st.button(
-                        "Retornar",
-                        key=f"documento_retornar_{documento_id}",
-                        disabled=not confirmar_retorno
-                    ):
-                        try:
-                            restore_archived_contract_file(
-                                documento_id,
-                                restored_by=usuario_atual["username"]
-                            )
-                            registrar_log_sistema(
-                                "site_documento_restaurado",
-                                usuario=usuario_atual["username"],
-                                status="sucesso",
-                                detalhes={
-                                    "codigo": codigo,
-                                    "arquivo": nome_arquivo
-                                }
-                            )
-                            st.success("Documento retornado.")
-                            st.rerun()
-                        except Exception as erro:
-                            registrar_log_sistema(
-                                "site_documento_restaurado",
-                                usuario=usuario_atual["username"],
-                                status="erro",
-                                detalhes={
-                                    "codigo": codigo,
-                                    "arquivo": nome_arquivo,
-                                    "erro": str(erro)
-                                }
-                            )
-                            st.error(f"Falha ao retornar documento: {erro}")
+                nomes_usados.add(
+                    nome_zip
+                )
+                arquivo_zip.writestr(
+                    nome_zip,
+                    conteudo
+                )
 
-                with col_excluir:
-                    confirmar_exclusao = st.text_input(
-                        "Digite EXCLUIR para remover",
-                        key=f"documento_confirmar_excluir_{documento_id}"
+        if not nomes_usados:
+            return None, f"documentos_{sufixo}.zip", "application/zip", erros
+
+        return (
+            buffer.getvalue(),
+            f"documentos_{sufixo}_{codigo}.zip",
+            "application/zip",
+            erros
+        )
+
+    def registrar_resultado_acao(evento, arquivos, erros):
+        registrar_log_sistema(
+            evento,
+            usuario=usuario_atual["username"],
+            status=(
+                "sucesso"
+                if arquivos and not erros
+                else "parcial"
+                if arquivos
+                else "erro"
+            ),
+            detalhes={
+                "codigo": codigo,
+                "quantidade": len(arquivos),
+                "arquivos": arquivos,
+                "erros": erros
+            }
+        )
+
+    def mostrar_resultado_acao(acao, arquivos, erros):
+        if arquivos and erros:
+            st.warning(
+                f"{len(arquivos)} documento(s) {acao}, "
+                f"mas {len(erros)} falharam."
+            )
+        elif arquivos:
+            st.success(
+                f"{len(arquivos)} documento(s) {acao}."
+            )
+        else:
+            st.error(
+                f"Nenhum documento foi {acao}."
+            )
+
+        if erros:
+            st.dataframe(
+                pd.DataFrame(erros),
+                use_container_width=True,
+                hide_index=True
+            )
+
+    def executar_acao_documentos(lista, acao, evento, funcao):
+        arquivos = []
+        erros = []
+
+        for documento in lista:
+            nome_arquivo = nome_download_documento(documento)
+
+            try:
+                funcao(
+                    documento
+                )
+                arquivos.append(
+                    nome_arquivo
+                )
+            except Exception as erro:
+                erros.append({
+                    "arquivo": nome_arquivo,
+                    "erro": str(erro)
+                })
+
+        registrar_resultado_acao(
+            evento,
+            arquivos,
+            erros
+        )
+        mostrar_resultado_acao(
+            acao,
+            arquivos,
+            erros
+        )
+
+        if arquivos:
+            st.rerun()
+
+    def mostrar_acoes_download(lista, sufixo):
+        dados_download, nome_arquivo, mime, erros = preparar_download_documentos(
+            lista,
+            sufixo
+        )
+
+        st.download_button(
+            "Baixar selecionados",
+            data=dados_download or b"",
+            file_name=nome_arquivo,
+            mime=mime or "application/octet-stream",
+            disabled=not bool(dados_download),
+            key=f"documento_download_selecionados_{codigo}_{sufixo}"
+        )
+
+        if erros:
+            st.warning(
+                f"{len(erros)} arquivo(s) selecionado(s) não puderam ser baixados."
+            )
+            st.dataframe(
+                pd.DataFrame(erros),
+                use_container_width=True,
+                hide_index=True
+            )
+
+    def mostrar_documentos_ativos(lista):
+        selecionados = selecionar_documentos_tabela(
+            lista,
+            "ativos"
+        )
+
+        if not lista:
+            return
+
+        st.caption(
+            f"{len(selecionados)} documento(s) selecionado(s)."
+        )
+        col_download, col_arquivar = st.columns([1, 1])
+
+        with col_download:
+            mostrar_acoes_download(
+                selecionados,
+                "ativos"
+            )
+
+        if pode_editar:
+            with col_arquivar:
+                confirmar = st.checkbox(
+                    "Confirmar arquivamento",
+                    help=(
+                        "Arquivar move os documentos selecionados para a seção "
+                        "Arquivados. Os arquivos não serão excluídos."
+                    ),
+                    key=f"documento_confirmar_arquivar_lote_{codigo}"
+                )
+
+                if st.button(
+                    "Arquivar selecionados",
+                    disabled=not selecionados or not confirmar,
+                    key=f"documento_arquivar_selecionados_{codigo}"
+                ):
+                    executar_acao_documentos(
+                        selecionados,
+                        "arquivado(s)",
+                        "site_documento_arquivado",
+                        lambda documento: archive_contract_file(
+                            documento.get("id"),
+                            archived_by=usuario_atual["username"]
+                        )
                     )
 
-                    if st.button(
-                        "Excluir definitivamente",
-                        key=f"documento_excluir_{documento_id}",
-                        disabled=confirmar_exclusao.strip().upper() != "EXCLUIR"
-                    ):
-                        try:
-                            delete_archived_contract_file(
-                                documento_id
-                            )
-                            registrar_log_sistema(
-                                "site_documento_excluido_definitivo",
-                                usuario=usuario_atual["username"],
-                                status="sucesso",
-                                detalhes={
-                                    "codigo": codigo,
-                                    "arquivo": nome_arquivo
-                                }
-                            )
-                            st.success("Documento excluído definitivamente.")
-                            st.rerun()
-                        except Exception as erro:
-                            registrar_log_sistema(
-                                "site_documento_excluido_definitivo",
-                                usuario=usuario_atual["username"],
-                                status="erro",
-                                detalhes={
-                                    "codigo": codigo,
-                                    "arquivo": nome_arquivo,
-                                    "erro": str(erro)
-                                }
-                            )
-                            st.error(f"Falha ao excluir documento: {erro}")
+    def mostrar_documentos_arquivados(lista):
+        selecionados = selecionar_documentos_tabela(
+            lista,
+            "arquivados",
+            arquivados=True
+        )
 
-    mostrar_lista_documentos(
-        documentos,
-        "ativos",
-        permitir_arquivar=True
+        if not lista:
+            return
+
+        st.caption(
+            f"{len(selecionados)} documento(s) selecionado(s)."
+        )
+        col_download, col_retornar, col_excluir = st.columns([1, 1, 1])
+
+        with col_download:
+            mostrar_acoes_download(
+                selecionados,
+                "arquivados"
+            )
+
+        if pode_editar:
+            with col_retornar:
+                confirmar_retorno = st.checkbox(
+                    "Confirmar retorno",
+                    key=f"documento_confirmar_retorno_lote_{codigo}"
+                )
+
+                if st.button(
+                    "Retornar selecionados",
+                    disabled=not selecionados or not confirmar_retorno,
+                    key=f"documento_retornar_selecionados_{codigo}"
+                ):
+                    executar_acao_documentos(
+                        selecionados,
+                        "retornado(s)",
+                        "site_documento_restaurado",
+                        lambda documento: restore_archived_contract_file(
+                            documento.get("id"),
+                            restored_by=usuario_atual["username"]
+                        )
+                    )
+
+            with col_excluir:
+                confirmar_exclusao = st.text_input(
+                    "Digite EXCLUIR para remover",
+                    key=f"documento_confirmar_excluir_lote_{codigo}"
+                )
+
+                if st.button(
+                    "Excluir definitivamente",
+                    disabled=(
+                        not selecionados
+                        or confirmar_exclusao.strip().upper() != "EXCLUIR"
+                    ),
+                    key=f"documento_excluir_selecionados_{codigo}"
+                ):
+                    executar_acao_documentos(
+                        selecionados,
+                        "excluído(s) definitivamente",
+                        "site_documento_excluido_definitivo",
+                        lambda documento: delete_archived_contract_file(
+                            documento.get("id")
+                        )
+                    )
+
+    mostrar_documentos_ativos(
+        documentos
     )
 
     with st.expander("Arquivados", expanded=False):

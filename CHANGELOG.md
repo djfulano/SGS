@@ -1,5 +1,11 @@
 # Histórico de versões
 
+## 1.0.65
+
+- Gerenciamento de Sites > Documentos passa a exibir documentos ativos e arquivados em tabelas selecionáveis.
+- Ações de baixar, arquivar, retornar e excluir definitivamente passam a operar sobre os documentos selecionados.
+- Download de múltiplos documentos passa a gerar ZIP em memória.
+
 ## 1.0.64
 
 - Gerenciamento de Sites > Documentos passa a exigir confirmação antes de arquivar documentos ativos.
