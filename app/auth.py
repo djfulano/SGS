@@ -42,6 +42,8 @@ MODULES = [
     ("insights_riscos", "Insights > Riscos"),
     ("analises_conciliacao", "Análises e Conciliação"),
     ("ferramentas", "Ferramentas"),
+    ("suporte", "Suporte"),
+    ("suporte_agendamento", "Suporte > Agendamento"),
     ("sistema", "Sistema"),
     ("historico", "Histórico"),
     ("conciliacao_sites", "Conciliação SNMPc x Sites"),

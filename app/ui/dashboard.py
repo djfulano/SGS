@@ -83,6 +83,8 @@ from app.ui.views.system import mostrar_sistema as mostrar_sistema_pagina
 from app.ui.views.map import mostrar_mapa_clientes
 from app.ui.views.products import configurar_produtos
 from app.ui.views.products import mostrar_produtos_equipamentos
+from app.ui.views.support import configurar_suporte
+from app.ui.views.support import mostrar_suporte
 from app.ui.views.topology import configurar_topologia
 from app.ui.views.topology import montar_resumo_sites
 from app.ui.views.topology import mostrar_metricas
@@ -912,6 +914,11 @@ configurar_ferramentas(
     formatador_site
 )
 
+configurar_suporte(
+    usuario_logado,
+    mostrar_grid
+)
+
 
 def seletor_site_gerenciamento(df_detalhes):
 
@@ -1443,6 +1450,14 @@ abas_disponiveis = [
         )
     ),
     (
+        "suporte",
+        "Suporte",
+        lambda: mostrar_suporte(
+            sites,
+            equipamentos
+        )
+    ),
+    (
         "mapa",
         "Mapa",
         lambda: mostrar_mapa_clientes(
@@ -1515,7 +1530,20 @@ def permissao_aba(aba):
                 "equipamentos_por_site",
                 "buscar_equipamentos",
                 "base_equipamentos",
-                "editar_base_equipamentos",
+                "editar_base_equipamentos"
+            ]
+        )
+
+    if chave == "suporte":
+
+        return any(
+            has_permission(
+                usuario_logado(),
+                permissao_suporte
+            )
+            for permissao_suporte in [
+                "suporte",
+                "suporte_agendamento",
                 "retirada",
                 "predios"
             ]

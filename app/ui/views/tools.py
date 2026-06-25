@@ -1560,18 +1560,6 @@ def mostrar_ferramentas(
             lambda: mostrar_base_equipamentos(
                 equipamentos
             )
-        ),
-        (
-            "retirada",
-            "Retirada",
-            lambda: mostrar_retirada_equipamentos(
-                equipamentos
-            )
-        ),
-        (
-            "predios",
-            "Prédios",
-            lambda: mostrar_predios(sites)
         )
     ]
 

@@ -1,5 +1,11 @@
 # Histórico de versões
 
+## 1.0.67
+
+- Criado módulo Suporte com subabas Agendamento, Retirada e Prédios.
+- Subabas Retirada e Prédios foram movidas de Ferramentas para Suporte.
+- Agendamento permite buscar uma assinatura e montar dados operacionais para visita técnica.
+
 ## 1.0.66
 
 - Usuários Master passam a receber lembrete mensal quando a importação do SNMPc ou da base de clientes estiver pendente no mês atual.
