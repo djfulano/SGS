@@ -21,23 +21,37 @@ class ProfilePermissionsGridTest(unittest.TestCase):
         self.assertEqual(
             grupo_permissao_perfil(
                 "editar_produtos",
-                "Editar produtos"
+                "Produtos > Editar produtos"
             ),
             "Produtos"
         )
         self.assertEqual(
             grupo_permissao_perfil(
                 "visualizar_valores_clientes",
-                "Visualizar valores dos clientes"
+                "Valores > Visualizar valores dos clientes"
             ),
             "Valores"
         )
         self.assertEqual(
             grupo_permissao_perfil(
                 "importar_dados",
-                "Executar importações"
+                "Sistema > Executar importações"
             ),
             "Sistema"
+        )
+        self.assertEqual(
+            grupo_permissao_perfil(
+                "suporte_agendamento",
+                "Suporte > Agendamento"
+            ),
+            "Suporte"
+        )
+        self.assertEqual(
+            grupo_permissao_perfil(
+                "retirada",
+                "Suporte > Retirada"
+            ),
+            "Suporte"
         )
 
     def test_grade_marca_permissoes_atuais(self):
@@ -62,6 +76,63 @@ class ProfilePermissionsGridTest(unittest.TestCase):
                 "mapa",
                 "editar_sites"
             }
+        )
+
+    def test_grade_ordena_por_modulo_logico(self):
+        df_grade = montar_grade_permissoes_perfil(
+            [],
+            {}
+        )
+        grupos = df_grade["Módulo"].drop_duplicates().tolist()
+
+        self.assertLess(
+            grupos.index("Gerenciamento de Sites"),
+            grupos.index("Clientes")
+        )
+        self.assertLess(
+            grupos.index("Ferramentas"),
+            grupos.index("Suporte")
+        )
+        self.assertLess(
+            grupos.index("Sistema"),
+            grupos.index("Valores")
+        )
+
+    def test_permissoes_de_suporte_e_ferramentas_ficam_em_grupos_corretos(self):
+        df_grade = montar_grade_permissoes_perfil(
+            [],
+            {}
+        )
+        grupos_por_chave = dict(
+            zip(
+                df_grade["Chave"],
+                df_grade["Módulo"]
+            )
+        )
+
+        self.assertEqual(
+            grupos_por_chave["suporte_agendamento"],
+            "Suporte"
+        )
+        self.assertEqual(
+            grupos_por_chave["predios"],
+            "Suporte"
+        )
+        self.assertEqual(
+            grupos_por_chave["retirada"],
+            "Suporte"
+        )
+        self.assertEqual(
+            grupos_por_chave["equipamentos_por_site"],
+            "Ferramentas"
+        )
+        self.assertEqual(
+            grupos_por_chave["base_equipamentos"],
+            "Ferramentas"
+        )
+        self.assertEqual(
+            grupos_por_chave["importacao"],
+            "Sistema"
         )
 
     def test_extrai_chaves_selecionadas_da_grade(self):

@@ -283,39 +283,9 @@ def grupo_permissao_perfil(
 ):
     grupos_especiais = {
         "resumo_superior": "Resumo",
-        "conciliacao_sites": "Análises e Conciliação",
-        "ranking": "Análises e Conciliação",
-        "custos_receita": "Análises e Conciliação",
-        "sites_deficitarios": "Análises e Conciliação",
-        "sites_documentos": "Análises e Conciliação",
-        "sem_vinculo": "Análises e Conciliação",
-        "sites_sem_clientes": "Análises e Conciliação",
-        "clientes_snmpc_cancelados": "Análises e Conciliação",
-        "suporte_agendamento": "Suporte",
-        "predios": "Suporte",
-        "equipamentos_por_site": "Ferramentas",
-        "buscar_equipamentos": "Ferramentas",
-        "base_equipamentos": "Ferramentas",
-        "retirada": "Suporte",
-        "enlaces": "Ferramentas",
-        "sva": "Produtos",
-        "sites_removidos": "Histórico",
-        "clientes_cancelados": "Histórico",
-        "importacao": "Sistema",
-        "logs": "Sistema",
-        "configuracoes": "Sistema",
-        "usuarios": "Sistema",
-        "gerenciar_perfis": "Sistema",
         "editar_sites": "Gerenciamento de Sites",
         "editar_contatos_sites": "Gerenciamento de Sites",
         "editar_contratos_sites": "Gerenciamento de Sites",
-        "importar_dados": "Sistema",
-        "editar_configuracoes": "Sistema",
-        "editar_base_equipamentos": "Ferramentas",
-        "editar_produtos": "Produtos",
-        "visualizar_valores_clientes": "Valores",
-        "visualizar_valores_custos": "Valores",
-        "copiar_tabelas": "Tabelas",
     }
 
     if chave in grupos_especiais:
@@ -327,6 +297,25 @@ def grupo_permissao_perfil(
     return rotulo
 
 
+ORDEM_GRUPOS_PERMISSAO = {
+    "Resumo": 10,
+    "Topologia": 20,
+    "Gerenciamento de Sites": 30,
+    "Clientes": 40,
+    "Insights": 50,
+    "Análises e Conciliação": 60,
+    "Ferramentas": 70,
+    "Suporte": 80,
+    "Mapa": 90,
+    "Produtos": 100,
+    "Histórico": 110,
+    "Sistema": 120,
+    "Valores": 130,
+    "Tabelas": 140,
+    "Ação": 150
+}
+
+
 def montar_grade_permissoes_perfil(
     permissoes_atuais,
     rotulos_modulos
@@ -334,22 +323,34 @@ def montar_grade_permissoes_perfil(
     permissoes_atuais = set(permissoes_atuais or [])
     linhas = []
 
-    for chave, rotulo_padrao in MODULES:
+    for ordem, (chave, rotulo_padrao) in enumerate(MODULES):
         rotulo = rotulos_modulos.get(
             chave,
             rotulo_padrao
         )
+        grupo = grupo_permissao_perfil(
+            chave,
+            rotulo
+        )
         linhas.append({
             "Chave": chave,
-            "Módulo": grupo_permissao_perfil(
-                chave,
-                rotulo
-            ),
+            "Módulo": grupo,
             "Permissão": rotulo,
+            "_ordem_modulo": ORDEM_GRUPOS_PERMISSAO.get(
+                grupo,
+                999
+            ),
+            "_ordem_permissao": ordem,
             "Selecionar": chave in permissoes_atuais
         })
 
-    return pd.DataFrame(linhas)
+    return pd.DataFrame(linhas).sort_values(
+        by=[
+            "_ordem_modulo",
+            "_ordem_permissao"
+        ],
+        kind="stable"
+    ).reset_index(drop=True)
 
 
 def extrair_permissoes_grade_perfil(df_permissoes):
@@ -471,10 +472,15 @@ def mostrar_perfis(
                 else [
                     "Chave",
                     "Módulo",
-                    "Permissão"
+                    "Permissão",
+                    "_ordem_modulo",
+                    "_ordem_permissao"
                 ]
             ),
             column_config={
+                "Chave": None,
+                "_ordem_modulo": None,
+                "_ordem_permissao": None,
                 "Módulo": st.column_config.TextColumn(
                     "Módulo"
                 ),

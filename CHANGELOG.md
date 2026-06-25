@@ -1,5 +1,11 @@
 # Histórico de versões
 
+## 1.0.68
+
+- Grade de permissões dos perfis passa a seguir a ordem lógica dos módulos do sistema.
+- Permissões de Suporte, Ferramentas, Sistema, Valores e Tabelas foram reorganizadas visualmente.
+- Rótulos das permissões foram padronizados sem alterar as chaves técnicas dos perfis.
+
 ## 1.0.67
 
 - Criado módulo Suporte com subabas Agendamento, Retirada e Prédios.
