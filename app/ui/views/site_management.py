@@ -73,6 +73,14 @@ def chave_campo_site(sufixo, campo):
     return f"gerenciar_site_{sufixo}_{campo}"
 
 
+def limpar_estado_formulario_site(sufixo):
+    prefixo = f"gerenciar_site_{sufixo}_"
+
+    for chave in list(st.session_state.keys()):
+        if str(chave).startswith(prefixo):
+            del st.session_state[chave]
+
+
 def valor_registro_site(registro, coluna, default=""):
     if not registro:
         return default
@@ -2358,13 +2366,16 @@ def mostrar_cadastro_site_selecionado(site):
         st.info("Seu perfil pode consultar o cadastro, mas não alterar os dados do site.")
         return
 
+    novo_site = bool(
+        site.get("__novo_site")
+    )
     df_cadastro = load_site_registry()
     codigo_original = normalize_code(
         site.get("Codigo")
     )
     registro = {}
 
-    if codigo_original:
+    if codigo_original and not novo_site:
         codigos = df_cadastro[SITE_CODE_COLUMN].apply(normalize_code)
         registro_df = df_cadastro[
             codigos == codigo_original
@@ -2405,7 +2416,11 @@ def mostrar_cadastro_site_selecionado(site):
             "OBSERVAÇÃO:": site.get("Observacao") or ""
         }
 
-    st.subheader("Cadastro do site")
+    st.subheader(
+        "Novo site"
+        if novo_site
+        else "Cadastro do site"
+    )
 
     sufixo_formulario = f"unificado_{codigo_original or site.get('Site SNMPc') or 'novo'}"
     registro_formulario = montar_registro_site_formulario(
@@ -2414,8 +2429,13 @@ def mostrar_cadastro_site_selecionado(site):
         sufixo_formulario
     )
 
+    if novo_site:
+        st.caption(
+            "Preencha os dados do novo site. O cadastro será salvo na base Sites."
+        )
+
     if st.button(
-        "Salvar cadastro do site",
+        "Criar site" if novo_site else "Salvar cadastro do site",
         type="primary",
         key=chave_campo_site(
             sufixo_formulario,
@@ -2441,6 +2461,8 @@ def mostrar_cadastro_site_selecionado(site):
                 }
             )
             st.success("Site salvo. A lista foi atualizada.")
+            if novo_site:
+                st.session_state["gerenciamento_sites_novo_site"] = False
             st.rerun()
         except Exception as erro:
             registrar_log_sistema(
@@ -2455,26 +2477,95 @@ def mostrar_cadastro_site_selecionado(site):
             st.error(f"Falha ao salvar site: {erro}")
 
 
+def montar_site_vazio_para_cadastro():
+    return {
+        "__novo_site": True,
+        "Codigo": "",
+        "Microsiga": "",
+        "Codigo Condominio": "",
+        "Abreviacao": "",
+        "SNMPc": "",
+        "Site SNMPc": "",
+        "Tipo": "",
+        "Nome Cadastro": "",
+        "Relacionamento": "",
+        "Favorecido": "",
+        "Contrato": "",
+        "Qtdo": 0,
+        "Categoria": "",
+        "Perfil": "",
+        "Custo": "",
+        "Endereco": "",
+        "Numero": "",
+        "Bairro": "",
+        "Cidade": "",
+        "UF": "",
+        "CEP": "",
+        "Ativacao": "",
+        "Latitude": "",
+        "Longitude": "",
+        "Altura": 0,
+        "Restricao": "",
+        "Status Cadastro": "",
+        "Detalhe": "",
+        "Observacao": ""
+    }
+
+
 def mostrar_gerenciamento_sites_unificado(
     sites,
     detalhes_topos_cacheados,
     rotulo_site_gerenciamento,
 ):
-    st.header("Gerenciamento de Sites")
+    usuario_atual = _usuario_logado()
+    pode_criar_site = has_permission(
+        usuario_atual,
+        "editar_sites"
+    )
+
+    col_titulo, col_acao = st.columns(
+        [
+            0.78,
+            0.22
+        ],
+        vertical_alignment="center"
+    )
+
+    with col_titulo:
+        st.header("Gerenciamento de Sites")
+
+    with col_acao:
+        if pode_criar_site and st.button(
+            "Novo site",
+            key="gerenciamento_sites_novo_site_botao",
+            type="secondary",
+            use_container_width=True
+        ):
+            st.session_state["gerenciamento_sites_novo_site"] = True
+            st.session_state["gerenciamento_sites_subaba"] = "gerenciar_sites_editar"
+            limpar_estado_formulario_site("unificado_novo")
+            st.session_state.pop(
+                "gerenciamento_sites_site",
+                None
+            )
 
     df_detalhes = detalhes_topos_cacheados(
         sites
     )
+    novo_site = bool(
+        st.session_state.get("gerenciamento_sites_novo_site")
+    )
 
-    if df_detalhes.empty:
+    if df_detalhes.empty and not novo_site:
         st.info("A planilha imports/Sites.xlsx não possui registros válidos.")
         return
 
     df_detalhes = df_detalhes.copy()
-    df_detalhes["Busca"] = df_detalhes.apply(
-        rotulo_site_gerenciamento,
-        axis=1
-    )
+    if not df_detalhes.empty:
+        df_detalhes["Busca"] = df_detalhes.apply(
+            rotulo_site_gerenciamento,
+            axis=1
+        )
 
     abrir_site = str(
         st.session_state.pop(
@@ -2505,45 +2596,79 @@ def mostrar_gerenciamento_sites_unificado(
 
             if chave_abrir in candidatos:
 
+                st.session_state["gerenciamento_sites_novo_site"] = False
                 st.session_state["gerenciamento_sites_site"] = indice_busca
                 break
 
-    opcoes = (
-        df_detalhes
-        .sort_values(
-            by=[
-                "Tipo",
-                "Busca"
-            ]
+    opcoes = []
+
+    if not df_detalhes.empty:
+        opcoes = (
+            df_detalhes
+            .sort_values(
+                by=[
+                    "Tipo",
+                    "Busca"
+                ]
+            )
+            .index
+            .tolist()
         )
-        .index
-        .tolist()
+
+    novo_site = bool(
+        st.session_state.get("gerenciamento_sites_novo_site")
     )
 
-    indice = st.selectbox(
-        "Site",
-        opcoes,
-        index=None,
-        placeholder="Digite para pesquisar e selecione um site",
-        format_func=lambda idx: df_detalhes.loc[idx, "Busca"],
-        key="gerenciamento_sites_site"
-    )
+    if novo_site:
+        site = montar_site_vazio_para_cadastro()
+        site_modelo = None
 
-    if indice is None:
-        st.info("Pesquise e selecione um site para abrir o gerenciamento.")
-        return
+        col_info, col_cancelar = st.columns(
+            [
+                0.78,
+                0.22
+            ],
+            vertical_alignment="center"
+        )
 
-    site = df_detalhes.loc[indice]
-    site_modelo = localizar_site_modelo(
-        sites,
-        site
-    )
+        with col_info:
+            st.caption("Novo site")
 
-    st.caption(
-        f"Site selecionado: {valor_exibicao_site(site.get('Busca'))}"
-    )
+        with col_cancelar:
+            if st.button(
+                "Cancelar novo site",
+                key="gerenciamento_sites_cancelar_novo_site",
+                type="secondary",
+                use_container_width=True
+            ):
+                st.session_state["gerenciamento_sites_novo_site"] = False
+                limpar_estado_formulario_site("unificado_novo")
+                st.rerun()
 
-    usuario_atual = _usuario_logado()
+    else:
+        indice = st.selectbox(
+            "Site",
+            opcoes,
+            index=None,
+            placeholder="Digite para pesquisar e selecione um site",
+            format_func=lambda idx: df_detalhes.loc[idx, "Busca"],
+            key="gerenciamento_sites_site"
+        )
+
+        if indice is None:
+            st.info("Pesquise e selecione um site para abrir o gerenciamento.")
+            return
+
+        site = df_detalhes.loc[indice]
+        site_modelo = localizar_site_modelo(
+            sites,
+            site
+        )
+
+        st.caption(
+            f"Site selecionado: {valor_exibicao_site(site.get('Busca'))}"
+        )
+
     subabas = [
         (
             "gerenciar_sites_resumo_financeiro",
@@ -2579,13 +2704,23 @@ def mostrar_gerenciamento_sites_unificado(
             lambda: mostrar_cadastro_site_selecionado(site)
         )
     ]
+
+    if novo_site:
+        subabas = [
+            subaba
+            for subaba in subabas
+            if subaba[0] == "gerenciar_sites_editar"
+        ]
+
     subabas_permitidas = [
         subaba
         for subaba in subabas
-        if has_permission(
-            usuario_atual,
-            subaba[0]
+        if (
+            novo_site
+            and subaba[0] == "gerenciar_sites_editar"
+            and pode_criar_site
         )
+        or has_permission(usuario_atual, subaba[0])
     ]
 
     if not subabas_permitidas:

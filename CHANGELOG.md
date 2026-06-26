@@ -1,5 +1,11 @@
 # Histórico de versões
 
+## 1.0.70
+
+- Gerenciamento de Sites passa a ter botão discreto para criar novo site.
+- Novo cadastro reutiliza a subaba Editar com formulário em branco.
+- Fluxo de criação limpa a seleção atual sem alterar a edição de sites existentes.
+
 ## 1.0.69
 
 - Módulo Ferramentas passa a ser exibido como Equipamentos, mantendo as chaves técnicas de permissão.
