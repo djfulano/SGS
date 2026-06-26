@@ -1,5 +1,11 @@
 # Histórico de versões
 
+## 1.0.71
+
+- Topologia passa a exibir métricas de banda Telecom também no resumo dos sites selecionados.
+- Resumo considera o mesmo escopo dos sites usados, respeitando a opção de incluir sites filhos.
+- Cópia do resumo passa a incluir maior banda, somatória das bandas e produtos acima de 100 Mbps.
+
 ## 1.0.70
 
 - Gerenciamento de Sites passa a ter botão discreto para criar novo site.

@@ -6,6 +6,7 @@ from app.models.cliente import Cliente
 from app.models.site import Site
 from app.ui.views.topology import formatar_banda_mbps
 from app.ui.views.topology import montar_metricas_banda_telecom_site
+from app.ui.views.topology import montar_metricas_banda_telecom_sites
 from app.ui.views.topology import normalizar_velocidade_mbps
 from app.ui.views.topology import velocidade_telecom_produto_mbps
 
@@ -114,6 +115,67 @@ class TopologyBandwidthTest(unittest.TestCase):
         )
         self.assertEqual(
             metricas["acima_100_mbps"],
+            1
+        )
+
+    def test_metricas_de_sites_usados_respeitam_escopo_recebido(self):
+        site = Site("POP_TESTE", "POP")
+        filho = Site("BH_TESTE", "BH")
+        site.adicionar_filho(filho)
+
+        site.adicionar_cliente(
+            self.cliente_com_produto(
+                "1001",
+                "NeoSoft 100 Mbps"
+            )
+        )
+        filho.adicionar_cliente(
+            self.cliente_com_produto(
+                "1002",
+                "NeoTotal 1 Gbps"
+            )
+        )
+        filho.adicionar_cliente(
+            self.cliente_com_produto(
+                "1003",
+                "NEOFIREWALL FN 60F UTM"
+            )
+        )
+
+        metricas_sem_filho = montar_metricas_banda_telecom_sites(
+            [site],
+            self.catalogo_vazio()
+        )
+        metricas_com_filho = montar_metricas_banda_telecom_sites(
+            [
+                site,
+                filho
+            ],
+            self.catalogo_vazio()
+        )
+
+        self.assertEqual(
+            metricas_sem_filho["maior_mbps"],
+            100
+        )
+        self.assertEqual(
+            metricas_sem_filho["soma_mbps"],
+            100
+        )
+        self.assertEqual(
+            metricas_sem_filho["acima_100_mbps"],
+            0
+        )
+        self.assertEqual(
+            metricas_com_filho["maior_mbps"],
+            1000
+        )
+        self.assertEqual(
+            metricas_com_filho["soma_mbps"],
+            1100
+        )
+        self.assertEqual(
+            metricas_com_filho["acima_100_mbps"],
             1
         )
 

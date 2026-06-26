@@ -203,6 +203,30 @@ def montar_metricas_banda_telecom_site(site, catalogo=None):
     }
 
 
+def montar_metricas_banda_telecom_sites(sites_usados, catalogo=None):
+    velocidades = []
+
+    for site in sites_usados:
+        for cliente in site.clientes:
+            velocidade = velocidade_telecom_produto_mbps(
+                getattr(cliente, "produto", ""),
+                catalogo
+            )
+
+            if velocidade:
+                velocidades.append(velocidade)
+
+    return {
+        "maior_mbps": max(velocidades) if velocidades else None,
+        "soma_mbps": sum(velocidades),
+        "acima_100_mbps": sum(
+            1
+            for velocidade in velocidades
+            if velocidade > 100
+        )
+    }
+
+
 def montar_resumo_sites(sites):
 
     dados = []
@@ -533,6 +557,19 @@ def mostrar_sites_receitas(sites, df_sites):
         selecionados,
         usados
     )
+    catalogo_produtos = load_product_catalog()
+    metricas_banda = montar_metricas_banda_telecom_sites(
+        usados.values(),
+        catalogo_produtos
+    )
+    maior_banda = (
+        formatar_banda_mbps(metricas_banda["maior_mbps"])
+        if metricas_banda["maior_mbps"]
+        else "Não localizado"
+    )
+    soma_banda = formatar_banda_mbps(
+        metricas_banda["soma_mbps"]
+    )
 
     col_acao_mapa, _col_acao_vazio = st.columns([1, 4])
 
@@ -595,6 +632,23 @@ def mostrar_sites_receitas(sites, df_sites):
         )
     )
 
+    col1, col2, col3 = st.columns(3)
+
+    col1.metric(
+        "Maior banda Telecom ativa",
+        maior_banda
+    )
+
+    col2.metric(
+        "Somatória das bandas ativas",
+        soma_banda
+    )
+
+    col3.metric(
+        "Produtos acima de 100 Mbps",
+        metricas_banda["acima_100_mbps"]
+    )
+
     texto_resumo = "\n".join([
         f"Total de clientes\t{resumo['clientes_total']}",
         f"Total de receita\t{formatar_moeda(resumo['receita_total'])}",
@@ -602,7 +656,13 @@ def mostrar_sites_receitas(sites, df_sites):
         f"Clientes diretos\t{resumo['clientes_diretos']}",
         f"Receita direta\t{formatar_moeda(resumo['receita_direta'])}",
         f"Clientes indiretos\t{resumo['clientes_indiretos']}",
-        f"Receita indireta\t{formatar_moeda(resumo['receita_indireta'])}"
+        f"Receita indireta\t{formatar_moeda(resumo['receita_indireta'])}",
+        f"Maior banda Telecom ativa\t{maior_banda}",
+        f"Somatória das bandas ativas\t{soma_banda}",
+        (
+            "Produtos superiores a 100 Mbps\t"
+            f"{metricas_banda['acima_100_mbps']}"
+        )
     ])
 
     _col1, col2 = st.columns([1, 0.18])
