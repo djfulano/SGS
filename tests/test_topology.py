@@ -115,7 +115,7 @@ class TopologyBandwidthTest(unittest.TestCase):
         )
         self.assertEqual(
             metricas["acima_100_mbps"],
-            1
+            2
         )
 
     def test_metricas_de_sites_usados_respeitam_escopo_recebido(self):
@@ -164,7 +164,7 @@ class TopologyBandwidthTest(unittest.TestCase):
         )
         self.assertEqual(
             metricas_sem_filho["acima_100_mbps"],
-            0
+            1
         )
         self.assertEqual(
             metricas_com_filho["maior_mbps"],
@@ -176,7 +176,7 @@ class TopologyBandwidthTest(unittest.TestCase):
         )
         self.assertEqual(
             metricas_com_filho["acima_100_mbps"],
-            1
+            2
         )
 
     def test_formata_banda(self):

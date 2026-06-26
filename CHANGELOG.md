@@ -1,5 +1,10 @@
 # Histórico de versões
 
+## 1.0.72
+
+- Métrica de produtos por banda na Topologia passa a contar produtos com 100 Mbps ou mais.
+- Rótulo da métrica foi ajustado para “Produtos a partir de 100 Mbps”.
+
 ## 1.0.71
 
 - Topologia passa a exibir métricas de banda Telecom também no resumo dos sites selecionados.

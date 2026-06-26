@@ -198,7 +198,7 @@ def montar_metricas_banda_telecom_site(site, catalogo=None):
         "acima_100_mbps": sum(
             1
             for velocidade in velocidades
-            if velocidade > 100
+            if velocidade >= 100
         )
     }
 
@@ -222,7 +222,7 @@ def montar_metricas_banda_telecom_sites(sites_usados, catalogo=None):
         "acima_100_mbps": sum(
             1
             for velocidade in velocidades
-            if velocidade > 100
+            if velocidade >= 100
         )
     }
 
@@ -645,7 +645,7 @@ def mostrar_sites_receitas(sites, df_sites):
     )
 
     col3.metric(
-        "Produtos acima de 100 Mbps",
+        "Produtos a partir de 100 Mbps",
         metricas_banda["acima_100_mbps"]
     )
 
@@ -660,7 +660,7 @@ def mostrar_sites_receitas(sites, df_sites):
         f"Maior banda Telecom ativa\t{maior_banda}",
         f"Somatória das bandas ativas\t{soma_banda}",
         (
-            "Produtos superiores a 100 Mbps\t"
+            "Produtos a partir de 100 Mbps\t"
             f"{metricas_banda['acima_100_mbps']}"
         )
     ])
@@ -817,7 +817,7 @@ def mostrar_detalhe_site(site):
     )
 
     col3.metric(
-        "Produtos acima de 100 Mbps",
+        "Produtos a partir de 100 Mbps",
         metricas_banda["acima_100_mbps"]
     )
 
@@ -833,7 +833,7 @@ def mostrar_detalhe_site(site):
         f"Maior banda Telecom ativa no site\t{maior_banda}",
         f"Somatória das bandas ativas\t{soma_banda}",
         (
-            "Produtos superiores a 100 Mbps\t"
+            "Produtos a partir de 100 Mbps\t"
             f"{metricas_banda['acima_100_mbps']}"
         )
     ])
