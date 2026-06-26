@@ -90,7 +90,7 @@ class ProfilePermissionsGridTest(unittest.TestCase):
             grupos.index("Clientes")
         )
         self.assertLess(
-            grupos.index("Ferramentas"),
+            grupos.index("Equipamentos"),
             grupos.index("Suporte")
         )
         self.assertLess(
@@ -98,7 +98,7 @@ class ProfilePermissionsGridTest(unittest.TestCase):
             grupos.index("Valores")
         )
 
-    def test_permissoes_de_suporte_e_ferramentas_ficam_em_grupos_corretos(self):
+    def test_permissoes_de_suporte_e_equipamentos_ficam_em_grupos_corretos(self):
         df_grade = montar_grade_permissoes_perfil(
             [],
             {}
@@ -124,11 +124,11 @@ class ProfilePermissionsGridTest(unittest.TestCase):
         )
         self.assertEqual(
             grupos_por_chave["equipamentos_por_site"],
-            "Ferramentas"
+            "Equipamentos"
         )
         self.assertEqual(
             grupos_por_chave["base_equipamentos"],
-            "Ferramentas"
+            "Equipamentos"
         )
         self.assertEqual(
             grupos_por_chave["importacao"],

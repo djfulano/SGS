@@ -1574,7 +1574,7 @@ def mostrar_ferramentas(
 
     if not ferramentas_permitidas:
         st.warning(
-            "Seu usuário não possui permissões para as ferramentas desta área."
+            "Seu usuário não possui permissões para os equipamentos desta área."
         )
         return
 

@@ -304,7 +304,7 @@ ORDEM_GRUPOS_PERMISSAO = {
     "Clientes": 40,
     "Insights": 50,
     "Análises e Conciliação": 60,
-    "Ferramentas": 70,
+    "Equipamentos": 70,
     "Suporte": 80,
     "Mapa": 90,
     "Produtos": 100,

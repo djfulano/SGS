@@ -1,5 +1,11 @@
 # Histórico de versões
 
+## 1.0.69
+
+- Módulo Ferramentas passa a ser exibido como Equipamentos, mantendo as chaves técnicas de permissão.
+- Grade de permissões passa a agrupar Enlaces e bases de equipamentos em Equipamentos.
+- Topologia passa a exibir maior banda Telecom ativa, somatória das bandas ativas e quantidade de produtos acima de 100 Mbps no resumo do site.
+
 ## 1.0.68
 
 - Grade de permissões dos perfis passa a seguir a ordem lógica dos módulos do sistema.

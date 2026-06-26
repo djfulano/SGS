@@ -1,9 +1,12 @@
 import hashlib
+import re
 
 import pandas as pd
 import streamlit as st
 
 from app.config import CLIENTES_FILE
+from app.services.product_catalog import infer_product_fields
+from app.services.product_catalog import load_product_catalog
 from app.services.products import carregar_clientes_excel_sva
 from app.services.products import eh_produto_sva
 from app.services.site_metrics import clientes_indiretos_site
@@ -13,6 +16,7 @@ from app.services.site_metrics import montar_resumo_selecao_sites
 from app.services.site_metrics import receita_indireta_site
 from app.services.site_metrics import receita_site
 from app.services.site_metrics import receita_total_site
+from app.services.site_metrics import sites_descendentes
 
 
 _mostrar_grid = None
@@ -57,6 +61,146 @@ def mostrar_botao_copiar_texto(*args, **kwargs):
 def formatar_moeda(valor):
 
     return _formatar_moeda(valor)
+
+
+def normalizar_velocidade_mbps(valor):
+    if valor is None:
+        return None
+
+    try:
+        if pd.isna(valor):
+            return None
+    except (TypeError, ValueError):
+        pass
+
+    if isinstance(valor, (int, float)):
+        return float(valor) if valor > 0 else None
+
+    texto = str(valor or "").strip()
+
+    if not texto:
+        return None
+
+    match = re.search(
+        r"(\d+(?:[,.]\d+)?)\s*"
+        r"(GBPS|GIGA|GB|G|MBPS|MB|M|KBPS|KB|K)\b",
+        texto,
+        flags=re.IGNORECASE
+    )
+
+    if not match:
+        return None
+
+    numero = float(
+        match.group(1).replace(
+            ",",
+            "."
+        )
+    )
+    unidade = match.group(2).upper()
+
+    if unidade in {"GBPS", "GIGA", "GB", "G"}:
+        return numero * 1000
+
+    if unidade in {"KBPS", "KB", "K"}:
+        return numero / 1000
+
+    return numero
+
+
+def _linha_catalogo_produto(catalogo, produto):
+    if catalogo is None or catalogo.empty or "Nome" not in catalogo.columns:
+        return {}
+
+    produto_normalizado = str(produto or "").strip().casefold()
+
+    if not produto_normalizado:
+        return {}
+
+    nomes = catalogo["Nome"].astype(str).str.strip().str.casefold()
+    linhas = catalogo.loc[nomes == produto_normalizado]
+
+    if linhas.empty:
+        return {}
+
+    return linhas.iloc[-1].to_dict()
+
+
+def velocidade_telecom_produto_mbps(produto, catalogo=None):
+    produto = str(produto or "").strip()
+
+    if not produto:
+        return None
+
+    linha_catalogo = _linha_catalogo_produto(
+        catalogo,
+        produto
+    )
+    inferido = infer_product_fields(produto)
+
+    tipo = (
+        str(linha_catalogo.get("Tipo") or inferido.get("Tipo") or "")
+        .strip()
+        .casefold()
+    )
+
+    if tipo != "telecom":
+        return None
+
+    for valor in [
+        linha_catalogo.get("Velocidade"),
+        inferido.get("Velocidade"),
+        produto
+    ]:
+        velocidade = normalizar_velocidade_mbps(valor)
+
+        if velocidade:
+            return velocidade
+
+    return None
+
+
+def formatar_banda_mbps(valor):
+    if not valor or valor <= 0:
+        return "0 Mbps"
+
+    if valor >= 1000:
+        valor_gbps = valor / 1000
+        texto = f"{valor_gbps:g}".replace(
+            ".",
+            ","
+        )
+        return f"{texto} Gbps"
+
+    texto = f"{valor:g}".replace(
+        ".",
+        ","
+    )
+    return f"{texto} Mbps"
+
+
+def montar_metricas_banda_telecom_site(site, catalogo=None):
+    velocidades = []
+
+    for site_atual in sites_descendentes(site):
+        for cliente in site_atual.clientes:
+            velocidade = velocidade_telecom_produto_mbps(
+                getattr(cliente, "produto", ""),
+                catalogo
+            )
+
+            if velocidade:
+                velocidades.append(velocidade)
+
+    return {
+        "maior_mbps": max(velocidades) if velocidades else None,
+        "soma_mbps": sum(velocidades),
+        "acima_100_mbps": sum(
+            1
+            for velocidade in velocidades
+            if velocidade > 100
+        )
+    }
 
 
 def montar_resumo_sites(sites):
@@ -547,6 +691,19 @@ def mostrar_detalhe_site(site):
     receita_indireta = receita_indireta_site(site)
     clientes_total = clientes_diretos_qtd + clientes_indiretos_qtd
     receita_total = receita_direta + receita_indireta
+    catalogo_produtos = load_product_catalog()
+    metricas_banda = montar_metricas_banda_telecom_site(
+        site,
+        catalogo_produtos
+    )
+    maior_banda = (
+        formatar_banda_mbps(metricas_banda["maior_mbps"])
+        if metricas_banda["maior_mbps"]
+        else "Não localizado"
+    )
+    soma_banda = formatar_banda_mbps(
+        metricas_banda["soma_mbps"]
+    )
 
     col1, col2, col3 = st.columns(3)
 
@@ -587,6 +744,23 @@ def mostrar_detalhe_site(site):
         formatar_moeda(receita_indireta)
     )
 
+    col1, col2, col3 = st.columns(3)
+
+    col1.metric(
+        "Maior banda Telecom ativa no site",
+        maior_banda
+    )
+
+    col2.metric(
+        "Somatória das bandas ativas",
+        soma_banda
+    )
+
+    col3.metric(
+        "Produtos acima de 100 Mbps",
+        metricas_banda["acima_100_mbps"]
+    )
+
     resumo_site = "\n".join([
         f"Site\t{site.nome}",
         f"Tipo\t{site.tipo}",
@@ -595,7 +769,13 @@ def mostrar_detalhe_site(site):
         f"Clientes Indiretos\t{clientes_indiretos_qtd}",
         f"Receita Indireta\t{formatar_moeda(receita_indireta)}",
         f"Clientes Total\t{clientes_total}",
-        f"Receita Total\t{formatar_moeda(receita_total)}"
+        f"Receita Total\t{formatar_moeda(receita_total)}",
+        f"Maior banda Telecom ativa no site\t{maior_banda}",
+        f"Somatória das bandas ativas\t{soma_banda}",
+        (
+            "Produtos superiores a 100 Mbps\t"
+            f"{metricas_banda['acima_100_mbps']}"
+        )
     ])
 
     mostrar_botao_copiar_texto(

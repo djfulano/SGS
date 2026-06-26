@@ -1442,7 +1442,7 @@ abas_disponiveis = [
     ),
     (
         "ferramentas",
-        "Ferramentas",
+        "Equipamentos",
         lambda: mostrar_ferramentas(
             sites,
             equipamentos,
