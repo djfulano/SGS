@@ -247,6 +247,7 @@ def mostrar_resumo_cliente(cliente):
             setorial,
             "topologia"
         ),
+        ("GoTo SNMPc", valor_resumo_cliente(cliente, "GoTo SNMPc")),
         ("Equipamentos", valor_resumo_cliente(cliente, "Equipamentos", "Nenhum equipamento associado"))
     ]
 

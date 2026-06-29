@@ -203,6 +203,47 @@ class ClientsServiceTest(unittest.TestCase):
         self.assertNotIn("Site Completo", df.columns)
         self.assertNotIn("Tipo Produto", df.columns)
 
+    def test_base_consulta_clientes_inclui_goto_snmpc(self):
+        site = Site("POP_A", "POP")
+        cliente = Cliente("17 TABELIAO DE NOTAS DA CAPITAL", 120, "15503202")
+        site.clientes_estrutura.append({
+            "assinatura": "15503202",
+            "nome": "17_TABELIAO_NOTAS_15503202"
+        })
+        site.adicionar_cliente(cliente)
+
+        with patch(
+            "app.services.clients.load_equipment_catalog",
+            return_value=pd.DataFrame()
+        ):
+            df = montar_base_consulta_clientes(
+                {"POP_A": site},
+                [],
+                clientes_base={}
+            )
+
+        self.assertEqual(
+            df.loc[0, "GoTo SNMPc"],
+            "17_TABELIAO_NOTAS_15503202"
+        )
+
+    def test_base_consulta_clientes_sem_goto_snmpc_retorna_vazio(self):
+        site = Site("POP_A", "POP")
+        cliente = Cliente("Cliente A", 120, "123")
+        site.adicionar_cliente(cliente)
+
+        with patch(
+            "app.services.clients.load_equipment_catalog",
+            return_value=pd.DataFrame()
+        ):
+            df = montar_base_consulta_clientes(
+                {"POP_A": site},
+                [],
+                clientes_base={}
+            )
+
+        self.assertEqual(df.loc[0, "GoTo SNMPc"], "")
+
     def test_filtro_consulta_ignora_setorial_e_campos_pesados(self):
         df = pd.DataFrame([
             {

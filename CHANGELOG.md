@@ -1,5 +1,10 @@
 # Histórico de versões
 
+## 1.0.80
+
+- Clientes > Consulta passa a exibir o GoTo SNMPc do cliente.
+- GoTo SNMPc é obtido da estrutura importada do SNMPc pelo número da assinatura.
+
 ## 1.0.79
 
 - Clientes > Consulta passa a exibir Links úteis para Aquiles e Zabbix.

@@ -106,6 +106,23 @@ def resumo_equipamentos(assinatura, indice_equipamentos, catalogo):
     }
 
 
+def goto_snmpc_cliente(site, assinatura):
+    assinatura = str(assinatura or "").strip()
+
+    if not assinatura:
+        return ""
+
+    for cliente_estrutura in getattr(site, "clientes_estrutura", []):
+        assinatura_estrutura = str(
+            cliente_estrutura.get("assinatura") or ""
+        ).strip()
+
+        if assinatura_estrutura == assinatura:
+            return str(cliente_estrutura.get("nome") or "").strip()
+
+    return ""
+
+
 def montar_clientes_vinculados(sites, indice_equipamentos, catalogo):
     dados = []
 
@@ -153,6 +170,7 @@ def montar_clientes_vinculados_consulta(sites, indice_equipamentos, catalogo):
                 "Vínculo": "Vinculado",
                 "Site": site.nome,
                 "Setorial": getattr(cliente, "setorial", None) or "Direto",
+                "GoTo SNMPc": goto_snmpc_cliente(site, assinatura),
                 **resumo_equipamentos(assinatura, indice_equipamentos, catalogo)
             })
 
@@ -219,6 +237,7 @@ def montar_clientes_sem_vinculo_consulta(
             "Vínculo": "Sem vínculo",
             "Site": "",
             "Setorial": "",
+            "GoTo SNMPc": "",
             **resumo_equipamentos(assinatura, indice_equipamentos, catalogo)
         })
 
@@ -302,6 +321,7 @@ def montar_base_consulta_clientes(sites, equipamentos, clientes_base=None):
         "Vínculo",
         "Site",
         "Setorial",
+        "GoTo SNMPc",
         "Qtd Equipamentos",
         "Equipamentos"
     ]
