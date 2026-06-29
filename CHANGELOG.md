@@ -1,5 +1,11 @@
 # Histórico de versões
 
+## 1.0.75
+
+- Topologia passa a exibir o filtro de Sites antes do filtro de Tipos.
+- Busca de sites na Topologia passa a fechar a lista após selecionar um site.
+- Botão Limpar foi reposicionado ao lado de Tipos e reseta filtros sem alterar widgets já renderizados.
+
 ## 1.0.74
 
 - Clientes > Consulta passa a usar base leve para carregar mais rápido.

@@ -489,44 +489,139 @@ def mostrar_sites_receitas(sites, df_sites):
         if tipo in set(df_sites["Tipo"].dropna())
     ]
 
-    if st.button(
-        "Limpar busca",
-        key="limpar_busca_sites"
-    ):
-
+    if st.session_state.pop("limpar_busca_sites_pendente", False):
         st.session_state["tipos_sites_multiplos"] = tipos_disponiveis
         st.session_state["sites_selecionados_multiplos"] = []
         st.session_state["incluir_filhos_sites"] = True
         st.session_state["mostrar_clientes_sites_selecionados"] = False
-        st.rerun()
+        st.session_state["topologia_site_para_adicionar_versao"] = (
+            st.session_state.get("topologia_site_para_adicionar_versao", 0)
+            + 1
+        )
 
-    tipos_selecionados = st.multiselect(
-        "Tipos",
-        tipos_disponiveis,
-        default=tipos_disponiveis,
-        key="tipos_sites_multiplos"
+    if "tipos_sites_multiplos" not in st.session_state:
+        st.session_state["tipos_sites_multiplos"] = tipos_disponiveis
+
+    if "sites_selecionados_multiplos" not in st.session_state:
+        st.session_state["sites_selecionados_multiplos"] = []
+
+    if "topologia_site_para_adicionar_versao" not in st.session_state:
+        st.session_state["topologia_site_para_adicionar_versao"] = 0
+
+    tipos_estado = st.session_state.get(
+        "tipos_sites_multiplos",
+        tipos_disponiveis
     )
+    tipos_estado = [
+        tipo
+        for tipo in tipos_estado
+        if tipo in tipos_disponiveis
+    ] or tipos_disponiveis
 
     opcoes_site = sorted(
         nome_site
         for nome_site in nomes_sites
-        if sites[nome_site].tipo in tipos_selecionados
+        if sites[nome_site].tipo in tipos_estado
     )
 
-    sites_ja_selecionados = st.session_state.get(
-        "sites_selecionados_multiplos",
-        []
-    )
+    sites_ja_selecionados = [
+        nome_site
+        for nome_site in st.session_state.get(
+            "sites_selecionados_multiplos",
+            []
+        )
+        if nome_site in sites
+    ]
 
     opcoes_site = sorted(
         set(opcoes_site) | set(sites_ja_selecionados)
     )
 
-    sites_escolhidos = st.multiselect(
+    chave_adicionar_site = (
+        "topologia_site_para_adicionar_"
+        f"{st.session_state['topologia_site_para_adicionar_versao']}"
+    )
+    site_para_adicionar = st.selectbox(
         "Sites",
         opcoes_site,
-        key="sites_selecionados_multiplos"
+        index=None,
+        placeholder="Digite para pesquisar e selecione um site",
+        key=chave_adicionar_site
     )
+
+    if site_para_adicionar:
+        sites_atualizados = list(sites_ja_selecionados)
+
+        if site_para_adicionar not in sites_atualizados:
+            sites_atualizados.append(site_para_adicionar)
+
+        st.session_state["sites_selecionados_multiplos"] = sites_atualizados
+        st.session_state["topologia_site_para_adicionar_versao"] += 1
+        st.rerun()
+
+    sites_escolhidos = list(sites_ja_selecionados)
+    st.session_state["sites_selecionados_multiplos"] = sites_escolhidos
+
+    if sites_escolhidos:
+        st.caption(f"{len(sites_escolhidos)} site(s) selecionado(s)")
+
+        for indice, nome_site in enumerate(sites_escolhidos):
+            col_site, col_remover = st.columns(
+                [
+                    0.86,
+                    0.14
+                ],
+                vertical_alignment="center"
+            )
+
+            with col_site:
+                st.markdown(f"- {nome_site}")
+
+            with col_remover:
+                chave_remover = hashlib.md5(nome_site.encode()).hexdigest()
+
+                if st.button(
+                    "Remover",
+                    key=f"remover_site_topologia_{indice}_{chave_remover}",
+                    type="secondary",
+                    use_container_width=True
+                ):
+                    st.session_state["sites_selecionados_multiplos"] = [
+                        site_escolhido
+                        for site_escolhido in sites_escolhidos
+                        if site_escolhido != nome_site
+                    ]
+                    st.session_state["mostrar_clientes_sites_selecionados"] = False
+                    st.rerun()
+
+    col_tipos, col_limpar = st.columns(
+        [
+            0.84,
+            0.16
+        ],
+        vertical_alignment="bottom"
+    )
+
+    with col_tipos:
+        tipos_selecionados = st.multiselect(
+            "Tipos",
+            tipos_disponiveis,
+            default=tipos_estado,
+            key="tipos_sites_multiplos"
+        )
+
+    with col_limpar:
+        if st.button(
+            "Limpar",
+            key="limpar_busca_sites",
+            type="secondary",
+            use_container_width=True
+        ):
+            st.session_state["limpar_busca_sites_pendente"] = True
+            st.rerun()
+
+    if not tipos_selecionados:
+        st.info("Selecione ao menos um tipo para carregar opções de sites.")
 
     incluir_filhos = st.checkbox(
         "Incluir sites filhos",
