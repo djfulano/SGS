@@ -140,6 +140,15 @@ def mostrar_campo_resumo(rotulo, valor):
     st.markdown(f"**{valor}**")
 
 
+def mostrar_campo_resumo_multilinha(rotulo, valor):
+    st.caption(rotulo)
+    texto = html.escape(str(valor)).replace("\n", "<br>")
+    st.markdown(
+        f"<strong>{texto}</strong>",
+        unsafe_allow_html=True
+    )
+
+
 def site_valido_cliente(cliente):
     site = valor_resumo_cliente(cliente, "Site", "")
 
@@ -248,7 +257,15 @@ def mostrar_resumo_cliente(cliente):
             "topologia"
         ),
         ("GoTo SNMPc", valor_resumo_cliente(cliente, "GoTo SNMPc")),
-        ("Equipamentos", valor_resumo_cliente(cliente, "Equipamentos", "Nenhum equipamento associado"))
+        (
+            "Equipamentos",
+            valor_resumo_cliente(
+                cliente,
+                "Equipamentos",
+                "Nenhum equipamento associado"
+            ),
+            "multilinha"
+        )
     ]
 
     for inicio in range(0, len(campos), 3):
@@ -274,6 +291,8 @@ def mostrar_resumo_cliente(cliente):
                         "abrir_topologia_site",
                         site_cliente
                     )
+                elif acao == "multilinha":
+                    mostrar_campo_resumo_multilinha(rotulo, valor)
                 else:
                     mostrar_campo_resumo(rotulo, valor)
 

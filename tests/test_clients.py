@@ -182,7 +182,8 @@ class ClientsServiceTest(unittest.TestCase):
             {
                 "Assinatura": "123",
                 "Icone": "AP",
-                "Equipamento": "AP Cliente"
+                "Equipamento": "AP Cliente",
+                "Endereco": "10.0.0.2"
             }
         ]
 
@@ -199,9 +200,104 @@ class ClientsServiceTest(unittest.TestCase):
         self.assertEqual(df.loc[0, "Setorial"], "POP_S1")
         self.assertEqual(df.loc[0, "Gerente de contas"], "Maria Silva")
         self.assertEqual(df.loc[0, "Site"], "POP_A")
-        self.assertEqual(df.loc[0, "Equipamentos"], "AP Cliente")
+        self.assertEqual(
+            df.loc[0, "Equipamentos"],
+            "Equipamento: AP | IP: 10.0.0.2"
+        )
         self.assertNotIn("Site Completo", df.columns)
         self.assertNotIn("Tipo Produto", df.columns)
+
+    def test_base_consulta_clientes_usa_nome_cadastrado_e_ip_do_equipamento(self):
+        site = Site("POP_A", "POP")
+        cliente = Cliente("Cliente A", 120, "123")
+        site.adicionar_cliente(cliente)
+        equipamentos = [
+            {
+                "Assinatura": "123",
+                "Icone": "AP",
+                "Equipamento": "AP Cliente",
+                "Endereco": "10.0.0.2"
+            }
+        ]
+        catalogo = pd.DataFrame([
+            {
+                "Ícone": "AP",
+                "Nome": "Access Point",
+                "Tipo": "WiFi",
+                "Código": "EQ1",
+                "Valor": 50
+            }
+        ])
+
+        with patch(
+            "app.services.clients.load_equipment_catalog",
+            return_value=catalogo
+        ):
+            df = montar_base_consulta_clientes(
+                {"POP_A": site},
+                equipamentos,
+                clientes_base={}
+            )
+
+        self.assertEqual(
+            df.loc[0, "Equipamentos"],
+            "Equipamento: Access Point | IP: 10.0.0.2"
+        )
+
+    def test_base_consulta_clientes_sem_nome_cadastrado_usa_icone(self):
+        site = Site("POP_A", "POP")
+        cliente = Cliente("Cliente A", 120, "123")
+        site.adicionar_cliente(cliente)
+        equipamentos = [
+            {
+                "Assinatura": "123",
+                "Icone": "ONU",
+                "Equipamento": "ONU Cliente",
+                "Endereco": "10.0.0.3"
+            }
+        ]
+
+        with patch(
+            "app.services.clients.load_equipment_catalog",
+            return_value=pd.DataFrame()
+        ):
+            df = montar_base_consulta_clientes(
+                {"POP_A": site},
+                equipamentos,
+                clientes_base={}
+            )
+
+        self.assertEqual(
+            df.loc[0, "Equipamentos"],
+            "Equipamento: ONU | IP: 10.0.0.3"
+        )
+
+    def test_base_consulta_clientes_sem_ip_exibe_nao_informado(self):
+        site = Site("POP_A", "POP")
+        cliente = Cliente("Cliente A", 120, "123")
+        site.adicionar_cliente(cliente)
+        equipamentos = [
+            {
+                "Assinatura": "123",
+                "Icone": "ONU",
+                "Equipamento": "ONU Cliente"
+            }
+        ]
+
+        with patch(
+            "app.services.clients.load_equipment_catalog",
+            return_value=pd.DataFrame()
+        ):
+            df = montar_base_consulta_clientes(
+                {"POP_A": site},
+                equipamentos,
+                clientes_base={}
+            )
+
+        self.assertEqual(
+            df.loc[0, "Equipamentos"],
+            "Equipamento: ONU | IP: Não informado"
+        )
 
     def test_base_consulta_clientes_inclui_goto_snmpc(self):
         site = Site("POP_A", "POP")

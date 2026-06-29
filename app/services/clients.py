@@ -50,19 +50,29 @@ def montar_catalogo_por_icone():
 def equipamento_enriquecido(equipamento, catalogo):
     icone = str(equipamento.get("Icone") or "").strip()
     cadastro = catalogo.get(icone, {})
+    nome_cadastro = str(cadastro.get("Nome") or "").strip()
+    nome_snmpc = str(equipamento.get("Equipamento") or "").strip()
 
     return {
         "Ícone": icone,
-        "Equipamento": equipamento.get("Equipamento") or "",
-        "Nome Equipamento": cadastro.get("Nome") or equipamento.get("Equipamento") or icone,
+        "Equipamento": nome_snmpc,
+        "Nome Equipamento": nome_cadastro or icone or nome_snmpc,
         "Tipo Equipamento": cadastro.get("Tipo") or "",
         "Código Equipamento": cadastro.get("Código") or "",
         "Valor Equipamento": cadastro.get("Valor") or 0,
         "Status Equipamento": equipamento.get("Status") or "",
         "Site Equipamento": equipamento.get("Site") or "",
         "Setorial Equipamento": equipamento.get("Setorial") or "",
-        "Endereço Equipamento": equipamento.get("Endereco") or ""
+        "Endereço Equipamento": equipamento.get("Endereco") or "",
+        "IP Equipamento": equipamento.get("Endereco") or ""
     }
+
+
+def texto_resumo_equipamento(item):
+    nome = str(item.get("Nome Equipamento") or "").strip() or "Não informado"
+    ip = str(item.get("IP Equipamento") or "").strip() or "Não informado"
+
+    return f"Equipamento: {nome} | IP: {ip}"
 
 
 def resumo_equipamentos(assinatura, indice_equipamentos, catalogo):
@@ -84,11 +94,10 @@ def resumo_equipamentos(assinatura, indice_equipamentos, catalogo):
 
     return {
         "Qtd Equipamentos": len(enriquecidos),
-        "Equipamentos": ", ".join(sorted({
-            str(item["Nome Equipamento"])
+        "Equipamentos": "\n".join(
+            texto_resumo_equipamento(item)
             for item in enriquecidos
-            if str(item["Nome Equipamento"]).strip()
-        })),
+        ),
         "Ícones Equipamentos": ", ".join(sorted({
             str(item["Ícone"])
             for item in enriquecidos

@@ -1,5 +1,11 @@
 # Histórico de versões
 
+## 1.0.81
+
+- Clientes > Consulta passa a detalhar equipamentos com nome e IP.
+- Nome do equipamento prioriza cadastro da base de equipamentos e usa ícone SNMPc como fallback.
+- IP do equipamento passa a vir do endereço importado do device no SNMPc.
+
 ## 1.0.80
 
 - Clientes > Consulta passa a exibir o GoTo SNMPc do cliente.
