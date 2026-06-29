@@ -869,7 +869,8 @@ configurar_topologia(
     mostrar_grid,
     mostrar_dataframe_nativo,
     mostrar_botao_copiar_texto,
-    formatar_moeda
+    formatar_moeda,
+    usuario_logado
 )
 
 configurar_gerenciamento_sites(

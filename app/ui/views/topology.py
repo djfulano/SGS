@@ -4,6 +4,7 @@ import re
 import pandas as pd
 import streamlit as st
 
+from app.auth import has_permission
 from app.config import CLIENTES_FILE
 from app.services.product_catalog import infer_product_fields
 from app.services.product_catalog import load_product_catalog
@@ -17,30 +18,35 @@ from app.services.site_metrics import receita_indireta_site
 from app.services.site_metrics import receita_site
 from app.services.site_metrics import receita_total_site
 from app.services.site_metrics import sites_descendentes
+from app.ui.components.tables import primeira_linha_selecionada
 
 
 _mostrar_grid = None
 _mostrar_dataframe_nativo = None
 _mostrar_botao_copiar_texto = None
 _formatar_moeda = None
+_usuario_logado = None
 
 
 def configurar_topologia(
     mostrar_grid,
     mostrar_dataframe_nativo,
     mostrar_botao_copiar_texto,
-    formatar_moeda
+    formatar_moeda,
+    usuario_logado=None
 ):
 
     global _mostrar_grid
     global _mostrar_dataframe_nativo
     global _mostrar_botao_copiar_texto
     global _formatar_moeda
+    global _usuario_logado
 
     _mostrar_grid = mostrar_grid
     _mostrar_dataframe_nativo = mostrar_dataframe_nativo
     _mostrar_botao_copiar_texto = mostrar_botao_copiar_texto
     _formatar_moeda = formatar_moeda
+    _usuario_logado = usuario_logado
 
 
 def mostrar_grid(*args, **kwargs):
@@ -61,6 +67,15 @@ def mostrar_botao_copiar_texto(*args, **kwargs):
 def formatar_moeda(valor):
 
     return _formatar_moeda(valor)
+
+
+def usuario_atual():
+
+    if _usuario_logado:
+
+        return _usuario_logado() or {}
+
+    return {}
 
 
 def normalizar_velocidade_mbps(valor):
@@ -789,51 +804,65 @@ def mostrar_sites_receitas(sites, df_sites):
         key="grid_sites_usados"
     )
 
-    chave_clientes_selecionados = "mostrar_clientes_sites_selecionados"
+    df_clientes_selecionados = montar_clientes_sites_usados(
+        selecionados,
+        usados
+    )
 
-    if chave_clientes_selecionados not in st.session_state:
+    st.markdown("**Clientes dos dados selecionados**")
 
-        st.session_state[chave_clientes_selecionados] = False
+    if df_clientes_selecionados.empty:
 
-    if st.button(
-        "Mostrar tabela completa de clientes",
-        key="botao_clientes_sites_selecionados"
-    ):
-
-        st.session_state[chave_clientes_selecionados] = not st.session_state[
-            chave_clientes_selecionados
-        ]
-
-    if st.session_state[chave_clientes_selecionados]:
-
-        df_clientes_selecionados = montar_clientes_sites_usados(
-            selecionados,
-            usados
+        st.info(
+            "Os sites selecionados não possuem clientes."
         )
 
-        st.markdown("**Clientes dos dados selecionados**")
+    else:
 
-        if df_clientes_selecionados.empty:
+        df_clientes_selecionados = df_clientes_selecionados.sort_values(
+            by=[
+                "Site do Cliente",
+                "Setorial",
+                "Cliente"
+            ]
+        )
 
-            st.info(
-                "Os sites selecionados não possuem clientes."
-            )
+        resposta_clientes = mostrar_grid(
+            df_clientes_selecionados,
+            height=520,
+            key="grid_clientes_sites_selecionados",
+            habilitar_selecao=True,
+            mostrar_abrir_site=False
+        )
+        cliente_selecionado = primeira_linha_selecionada(
+            resposta_clientes or {}
+        )
+        assinatura_selecionada = str(
+            (cliente_selecionado or {}).get("Assinatura") or ""
+        ).strip()
 
-        else:
+        if st.button(
+            "Abrir cliente selecionado",
+            key="topologia_abrir_cliente_consulta",
+            type="secondary",
+            disabled=not bool(assinatura_selecionada)
+        ):
 
-            df_clientes_selecionados = df_clientes_selecionados.sort_values(
-                by=[
-                    "Site do Cliente",
-                    "Setorial",
-                    "Cliente"
-                ]
-            )
+            usuario = usuario_atual()
 
-            mostrar_grid(
-                df_clientes_selecionados,
-                height=520,
-                key="grid_clientes_sites_selecionados"
-            )
+            if not (
+                has_permission(usuario, "clientes")
+                or has_permission(usuario, "clientes_consulta")
+            ):
+                st.warning(
+                    "Seu usuário não possui permissão para abrir Clientes > Consulta."
+                )
+
+            else:
+                st.session_state["abrir_cliente_consulta"] = assinatura_selecionada
+                st.session_state["clientes_subaba"] = "clientes_consulta"
+                st.session_state["proxima_aba_principal"] = "clientes"
+                st.rerun()
 
 
 def mostrar_detalhe_site(site):

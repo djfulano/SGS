@@ -561,7 +561,14 @@ def chave_renderizacao_tabela(chave_base, colunas):
     return f"{chave_base}_render_{assinatura_colunas}"
 
 
-def mostrar_grid(df, height=400, botoes_copia=None, key=None):
+def mostrar_grid(
+    df,
+    height=400,
+    botoes_copia=None,
+    key=None,
+    habilitar_selecao=False,
+    mostrar_abrir_site=True
+):
 
     frame_chamador = inspect.currentframe().f_back
     chave_grid_base = (
@@ -667,7 +674,9 @@ def mostrar_grid(df, height=400, botoes_copia=None, key=None):
         df_exibicao
     )
 
-    if colunas_site:
+    selecao_habilitada = bool(colunas_site or habilitar_selecao)
+
+    if selecao_habilitada:
 
         grid_options.configure_selection(
             selection_mode="single",
@@ -686,13 +695,13 @@ def mostrar_grid(df, height=400, botoes_copia=None, key=None):
         allow_unsafe_jscode=True,
         update_mode=(
             GridUpdateMode.SELECTION_CHANGED
-            if colunas_site
+            if selecao_habilitada
             else GridUpdateMode.NO_UPDATE
         ),
         key=chave_renderizacao
     )
 
-    if colunas_site:
+    if colunas_site and mostrar_abrir_site:
 
         linha = primeira_linha_selecionada(
             resposta_grid
@@ -736,6 +745,8 @@ def mostrar_grid(df, height=400, botoes_copia=None, key=None):
                     rotulo=rotulo,
                     discreto=True
                 )
+
+    return resposta_grid
 
 
 def mostrar_dataframe_nativo(df, height=400, key=None):

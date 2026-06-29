@@ -1,5 +1,11 @@
 # Histórico de versões
 
+## 1.0.76
+
+- Topologia passa a carregar automaticamente a tabela de clientes dos sites selecionados.
+- Clientes da Topologia podem ser selecionados e abertos diretamente em Clientes > Consulta.
+- Consulta de Clientes passa a aceitar abertura direta por assinatura vinda de outros módulos.
+
 ## 1.0.75
 
 - Topologia passa a exibir o filtro de Sites antes do filtro de Tipos.

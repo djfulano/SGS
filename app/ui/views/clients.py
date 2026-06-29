@@ -89,13 +89,25 @@ def selecionar_cliente(df_clientes, key_prefix):
     opcoes, rotulos_por_assinatura, registros_por_assinatura = (
         preparar_busca_clientes(df_clientes)
     )
+    chave_selecao = f"{key_prefix}_selecionado"
+    assinatura_abrir = str(
+        st.session_state.pop("abrir_cliente_consulta", "") or ""
+    ).strip()
+
+    if assinatura_abrir:
+
+        if assinatura_abrir in registros_por_assinatura:
+            st.session_state[chave_selecao] = assinatura_abrir
+
+        else:
+            st.warning("Cliente não encontrado na base atual.")
 
     assinatura = st.selectbox(
         "Buscar cliente",
         opcoes,
         index=None,
         placeholder="Digite nome, assinatura, produto, gerente ou site",
-        key=f"{key_prefix}_selecionado",
+        key=chave_selecao,
         format_func=lambda valor: (
             rotulos_por_assinatura.get(str(valor), "")
             if valor
