@@ -144,7 +144,9 @@ class ClientsServiceTest(unittest.TestCase):
         catalogo = pd.DataFrame([
             {
                 "Ícone": "AP",
-                "Nome": "Access Point",
+                "Modelo": "Access Point",
+                "Fabricante": "Ubiquiti",
+                "Software": "AirOS",
                 "Tipo": "WiFi",
                 "Código": "EQ1",
                 "Valor": 50
@@ -222,7 +224,9 @@ class ClientsServiceTest(unittest.TestCase):
         catalogo = pd.DataFrame([
             {
                 "Ícone": "AP",
-                "Nome": "Access Point",
+                "Modelo": "Access Point",
+                "Fabricante": "Ubiquiti",
+                "Software": "AirOS",
                 "Tipo": "WiFi",
                 "Código": "EQ1",
                 "Valor": 50

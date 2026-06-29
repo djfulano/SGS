@@ -11,7 +11,9 @@ from app.storage import write_json_atomic
 
 EQUIPMENT_CATALOG_COLUMNS = [
     "Ícone",
-    "Nome",
+    "Modelo",
+    "Fabricante",
+    "Software",
     "Tipo",
     "Código",
     "Valor"
@@ -22,7 +24,10 @@ COLUMN_ALIASES = {
     "ICONES": "Ícone",
     "ICONE SNMPC": "Ícone",
     "ICONE DO SNMPC": "Ícone",
-    "NOME": "Nome",
+    "NOME": "Modelo",
+    "MODELO": "Modelo",
+    "FABRICANTE": "Fabricante",
+    "SOFTWARE": "Software",
     "TIPO": "Tipo",
     "CODIGO": "Código",
     "CODIGO EQUIPAMENTO": "Código",
@@ -57,7 +62,29 @@ def normalize_catalog_columns(df):
         if key in COLUMN_ALIASES:
             rename[column] = COLUMN_ALIASES[key]
 
-    return df.rename(columns=rename)
+    df = df.rename(columns=rename)
+
+    if not df.columns.duplicated().any():
+        return df
+
+    normalized = pd.DataFrame(index=df.index)
+
+    for column in dict.fromkeys(df.columns):
+        subset = df.loc[:, df.columns == column]
+
+        if subset.shape[1] == 1:
+            normalized[column] = subset.iloc[:, 0]
+            continue
+
+        normalized[column] = (
+            subset
+            .replace("", pd.NA)
+            .ffill(axis=1)
+            .iloc[:, -1]
+            .fillna("")
+        )
+
+    return normalized
 
 
 def normalize_icon(value):
@@ -103,7 +130,9 @@ def normalize_catalog_dataframe(df):
 
     df = df[EQUIPMENT_CATALOG_COLUMNS].fillna("")
     df["Ícone"] = df["Ícone"].apply(normalize_icon)
-    df["Nome"] = df["Nome"].astype(str).str.strip()
+    df["Modelo"] = df["Modelo"].astype(str).str.strip()
+    df["Fabricante"] = df["Fabricante"].astype(str).str.strip()
+    df["Software"] = df["Software"].astype(str).str.strip()
     df["Tipo"] = df["Tipo"].astype(str).str.strip()
     df["Código"] = df["Código"].astype(str).str.strip()
     df["Valor"] = df["Valor"].apply(normalize_money)
@@ -270,7 +299,9 @@ def enrich_equipments_with_catalog(df_equipamentos):
 
     df_catalog = df_catalog.rename(columns={
         "Ícone": "Icone",
-        "Nome": "Nome Base",
+        "Modelo": "Modelo Base",
+        "Fabricante": "Fabricante Base",
+        "Software": "Software Base",
         "Tipo": "Tipo Base",
         "Código": "Código Base",
         "Valor": "Valor Base"

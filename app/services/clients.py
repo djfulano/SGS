@@ -50,13 +50,18 @@ def montar_catalogo_por_icone():
 def equipamento_enriquecido(equipamento, catalogo):
     icone = str(equipamento.get("Icone") or "").strip()
     cadastro = catalogo.get(icone, {})
-    nome_cadastro = str(cadastro.get("Nome") or "").strip()
+    modelo_cadastro = str(
+        cadastro.get("Modelo") or cadastro.get("Nome") or ""
+    ).strip()
     nome_snmpc = str(equipamento.get("Equipamento") or "").strip()
 
     return {
         "Ícone": icone,
         "Equipamento": nome_snmpc,
-        "Nome Equipamento": nome_cadastro or icone or nome_snmpc,
+        "Nome Equipamento": modelo_cadastro or icone or nome_snmpc,
+        "Modelo Equipamento": modelo_cadastro,
+        "Fabricante Equipamento": cadastro.get("Fabricante") or "",
+        "Software Equipamento": cadastro.get("Software") or "",
         "Tipo Equipamento": cadastro.get("Tipo") or "",
         "Código Equipamento": cadastro.get("Código") or "",
         "Valor Equipamento": cadastro.get("Valor") or 0,

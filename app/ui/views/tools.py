@@ -468,7 +468,9 @@ def mostrar_consulta_equipamentos(sites, equipamentos):
         "Setorial",
         "Parent",
         "Icone",
-        "Nome Base",
+        "Modelo Base",
+        "Fabricante Base",
+        "Software Base",
         "Tipo Base",
         "Código Base",
         "Valor Base",
@@ -497,7 +499,15 @@ def mostrar_consulta_equipamentos(sites, equipamentos):
             "Parent",
             "Equipamento"
         ]
-    )
+    ).rename(columns={
+        "Icone": "Ícone",
+        "Modelo Base": "Modelo",
+        "Fabricante Base": "Fabricante",
+        "Software Base": "Software",
+        "Tipo Base": "Tipo",
+        "Código Base": "Código",
+        "Valor Base": "Valor"
+    })
 
     st.markdown("**Árvore de equipamentos**")
 
@@ -539,7 +549,9 @@ def montar_equipamentos_enriquecidos(equipamentos):
     )
 
     for coluna in [
-        "Nome Base",
+        "Modelo Base",
+        "Fabricante Base",
+        "Software Base",
         "Tipo Base",
         "Código Base",
         "Valor Base"
@@ -585,7 +597,7 @@ def mostrar_busca_equipamentos(sites, equipamentos):
 
     with col2:
         busca_nome = st.text_input(
-            "Nome",
+            "Modelo",
             key="buscar_equipamentos_nome"
         )
 
@@ -630,7 +642,7 @@ def mostrar_busca_equipamentos(sites, equipamentos):
 
     if busca_nome:
         filtro_nome = (
-            df_filtrado.get("Nome Base", pd.Series("", index=df_filtrado.index))
+            df_filtrado.get("Modelo Base", pd.Series("", index=df_filtrado.index))
             .astype(str)
             .str.contains(
                 busca_nome,
@@ -674,7 +686,9 @@ def mostrar_busca_equipamentos(sites, equipamentos):
 
     colunas_resultado = [
         "Icone",
-        "Nome Base",
+        "Modelo Base",
+        "Fabricante Base",
+        "Software Base",
         "Tipo Base",
         "Código Base",
         "Valor Base",
@@ -698,7 +712,9 @@ def mostrar_busca_equipamentos(sites, equipamentos):
         ]
     ].rename(columns={
         "Icone": "Ícone",
-        "Nome Base": "Nome",
+        "Modelo Base": "Modelo",
+        "Fabricante Base": "Fabricante",
+        "Software Base": "Software",
         "Tipo Base": "Tipo",
         "Código Base": "Código",
         "Valor Base": "Valor"
@@ -710,7 +726,7 @@ def mostrar_busca_equipamentos(sites, equipamentos):
                 coluna
                 for coluna in [
                     "Ícone",
-                    "Nome",
+                    "Modelo",
                     "Site",
                     "Equipamento"
                 ]
@@ -745,9 +761,9 @@ def mostrar_base_equipamentos(equipamentos):
         len(df_base)
     )
     col3.metric(
-        "Sem nome",
+        "Sem modelo",
         int(
-            df_base["Nome"].astype(str).str.strip().eq("").sum()
+            df_base["Modelo"].astype(str).str.strip().eq("").sum()
         )
     )
 
@@ -826,8 +842,14 @@ def mostrar_base_equipamentos(equipamentos):
                 "Ícone",
                 required=True
             ),
-            "Nome": st.column_config.TextColumn(
-                "Nome"
+            "Modelo": st.column_config.TextColumn(
+                "Modelo"
+            ),
+            "Fabricante": st.column_config.TextColumn(
+                "Fabricante"
+            ),
+            "Software": st.column_config.TextColumn(
+                "Software"
             ),
             "Tipo": st.column_config.TextColumn(
                 "Tipo"
@@ -940,7 +962,9 @@ def montar_equipamentos_retirada(equipamentos, assinatura):
 
     colunas_retirada = [
         "Icone",
-        "Nome Base",
+        "Modelo Base",
+        "Fabricante Base",
+        "Software Base",
         "Código Base",
         "Tipo Base",
         "Valor Base",
@@ -964,7 +988,9 @@ def montar_equipamentos_retirada(equipamentos, assinatura):
         ]
     ].rename(columns={
         "Icone": "Ícone",
-        "Nome Base": "Nome",
+        "Modelo Base": "Modelo",
+        "Fabricante Base": "Fabricante",
+        "Software Base": "Software",
         "Código Base": "Código",
         "Tipo Base": "Tipo",
         "Valor Base": "Valor"
@@ -1054,7 +1080,9 @@ def enriquecer_enlaces_com_base(df_enlaces):
     df_enriquecido = df_enlaces.copy()
     df_catalogo = load_equipment_catalog().rename(columns={
         "Ícone": "Icone Enlace",
-        "Nome": "Nome Equipamento",
+        "Modelo": "Nome Equipamento",
+        "Fabricante": "Fabricante Equipamento",
+        "Software": "Software Equipamento",
         "Tipo": "Tipo Equipamento",
         "Código": "Código Equipamento",
         "Valor": "Valor Equipamento"
@@ -1066,6 +1094,8 @@ def enriquecer_enlaces_com_base(df_enlaces):
                 [
                     "Icone Enlace",
                     "Nome Equipamento",
+                    "Fabricante Equipamento",
+                    "Software Equipamento",
                     "Tipo Equipamento",
                     "Código Equipamento",
                     "Valor Equipamento"
@@ -1077,6 +1107,8 @@ def enriquecer_enlaces_com_base(df_enlaces):
 
     for coluna in [
         "Nome Equipamento",
+        "Fabricante Equipamento",
+        "Software Equipamento",
         "Tipo Equipamento",
         "Código Equipamento",
         "Valor Equipamento"

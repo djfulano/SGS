@@ -1,5 +1,11 @@
 # Histórico de versões
 
+## 1.0.82
+
+- Base de equipamentos passa a usar Modelo no lugar de Nome.
+- Base de equipamentos passa a ter os campos Fabricante e Software.
+- Importação e leitura continuam aceitando planilhas antigas com a coluna Nome, convertendo para Modelo.
+
 ## 1.0.81
 
 - Clientes > Consulta passa a detalhar equipamentos com nome e IP.
