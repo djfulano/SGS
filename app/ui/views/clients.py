@@ -164,6 +164,62 @@ def mostrar_campo_resumo_link(rotulo, valor, parametro, site):
     )
 
 
+def assinatura_cliente(cliente):
+    assinatura = valor_resumo_cliente(cliente, "Assinatura", "")
+
+    if assinatura == "Não informado":
+        return ""
+
+    return assinatura
+
+
+def links_uteis_cliente(assinatura):
+    assinatura_codificada = quote(assinatura)
+
+    return [
+        (
+            "Aquiles",
+            (
+                "https://aquiles.directnet.net.br/AQLWEB/Paginas/"
+                "Assinaturas/Assinaturas/PagAssinaturasFrm.aspx"
+                f"?Operacao=V&ID={assinatura_codificada}"
+                f"&CodAssin={assinatura_codificada}"
+                "&CodClie=&CurrentPage=1&OrderBy="
+            )
+        ),
+        (
+            "Zabbix",
+            (
+                "http://neozabbix.neovia.com.br:8080/zabbix/zabbix.php"
+                f"?action=search&search={assinatura_codificada}"
+            )
+        )
+    ]
+
+
+def mostrar_links_uteis_cliente(cliente):
+    assinatura = assinatura_cliente(cliente)
+
+    if not assinatura:
+        st.caption("Links úteis indisponíveis para este cliente.")
+        return
+
+    st.markdown("**Links úteis**")
+
+    links = []
+
+    for rotulo, href in links_uteis_cliente(assinatura):
+        links.append(
+            f'<a href="{html.escape(href)}" target="_blank" rel="noopener noreferrer">'
+            f"{html.escape(rotulo)}</a>"
+        )
+
+    st.markdown(
+        " &nbsp; ".join(links),
+        unsafe_allow_html=True
+    )
+
+
 def mostrar_resumo_cliente(cliente):
     st.subheader(valor_resumo_cliente(cliente, "Cliente", "Cliente"))
 
@@ -219,6 +275,8 @@ def mostrar_resumo_cliente(cliente):
                     )
                 else:
                     mostrar_campo_resumo(rotulo, valor)
+
+    mostrar_links_uteis_cliente(cliente)
 
 
 def mostrar_consulta_clientes(sites, equipamentos):

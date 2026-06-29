@@ -1,5 +1,11 @@
 # Histórico de versões
 
+## 1.0.79
+
+- Clientes > Consulta passa a exibir Links úteis para Aquiles e Zabbix.
+- Links úteis são gerados automaticamente a partir da assinatura do cliente.
+- Links externos abrem em nova aba.
+
 ## 1.0.78
 
 - Clientes > Consulta passa a exibir Site SNMPc e Setorial como links de texto.
