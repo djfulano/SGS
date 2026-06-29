@@ -1,3 +1,6 @@
+import html
+from urllib.parse import quote
+
 import pandas as pd
 import streamlit as st
 
@@ -146,35 +149,19 @@ def site_valido_cliente(cliente):
     return site
 
 
-def abrir_site_cliente(site):
-    st.session_state["abrir_site_gerenciamento"] = site
-    st.session_state["gerenciamento_sites_subaba"] = "gerenciar_sites_resumo_financeiro"
-    st.session_state["proxima_aba_principal"] = "gerenciar_sites"
-    st.rerun()
-
-
-def abrir_topologia_cliente(site):
-    st.session_state["sites_selecionados_multiplos"] = [site]
-    st.session_state["incluir_filhos_sites"] = True
-    st.session_state["topologia_site_para_adicionar_versao"] = (
-        st.session_state.get("topologia_site_para_adicionar_versao", 0)
-        + 1
-    )
-    st.session_state["proxima_aba_principal"] = "sites"
-    st.rerun()
-
-
-def mostrar_campo_resumo_acao(rotulo, valor, chave, acao, desabilitado=False):
+def mostrar_campo_resumo_link(rotulo, valor, parametro, site):
     st.caption(rotulo)
 
-    if st.button(
-        str(valor),
-        key=chave,
-        type="secondary",
-        disabled=desabilitado,
-        use_container_width=True
-    ):
-        acao()
+    if not site:
+        st.markdown(f"**{valor}**")
+        return
+
+    href = f"?{parametro}={quote(site)}"
+    texto = html.escape(str(valor))
+    st.markdown(
+        f'<a href="{href}" target="_self">{texto}</a>',
+        unsafe_allow_html=True
+    )
 
 
 def mostrar_resumo_cliente(cliente):
@@ -217,20 +204,18 @@ def mostrar_resumo_cliente(cliente):
                 acao = campo[2] if len(campo) > 2 else ""
 
                 if acao == "site":
-                    mostrar_campo_resumo_acao(
+                    mostrar_campo_resumo_link(
                         rotulo,
                         valor,
-                        "cliente_consulta_abrir_site",
-                        lambda site=site_cliente: abrir_site_cliente(site),
-                        desabilitado=not bool(site_cliente)
+                        "abrir_site_gerenciamento",
+                        site_cliente
                     )
                 elif acao == "topologia":
-                    mostrar_campo_resumo_acao(
+                    mostrar_campo_resumo_link(
                         rotulo,
                         valor,
-                        "cliente_consulta_abrir_topologia",
-                        lambda site=site_cliente: abrir_topologia_cliente(site),
-                        desabilitado=not bool(site_cliente)
+                        "abrir_topologia_site",
+                        site_cliente
                     )
                 else:
                     mostrar_campo_resumo(rotulo, valor)

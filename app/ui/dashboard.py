@@ -440,6 +440,42 @@ if sistema_precisa_inicializacao():
 preparar_sessao_usuario()
 
 
+def consumir_links_navegacao_cliente():
+    site_gerenciamento = str(
+        st.query_params.get("abrir_site_gerenciamento") or ""
+    ).strip()
+    site_topologia = str(
+        st.query_params.get("abrir_topologia_site") or ""
+    ).strip()
+
+    if site_gerenciamento:
+        st.session_state["abrir_site_gerenciamento"] = site_gerenciamento
+        st.session_state["gerenciamento_sites_subaba"] = "gerenciar_sites_resumo_financeiro"
+        st.session_state["proxima_aba_principal"] = "gerenciar_sites"
+
+        try:
+            del st.query_params["abrir_site_gerenciamento"]
+        except KeyError:
+            pass
+
+    if site_topologia:
+        st.session_state["sites_selecionados_multiplos"] = [site_topologia]
+        st.session_state["incluir_filhos_sites"] = True
+        st.session_state["topologia_site_para_adicionar_versao"] = (
+            st.session_state.get("topologia_site_para_adicionar_versao", 0)
+            + 1
+        )
+        st.session_state["proxima_aba_principal"] = "sites"
+
+        try:
+            del st.query_params["abrir_topologia_site"]
+        except KeyError:
+            pass
+
+
+consumir_links_navegacao_cliente()
+
+
 @st.cache_resource(show_spinner=True)
 def carregar_dados(versao_cache):
 

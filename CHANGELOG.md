@@ -1,5 +1,11 @@
 # Histórico de versões
 
+## 1.0.78
+
+- Clientes > Consulta passa a exibir Site SNMPc e Setorial como links de texto.
+- Links do resumo do cliente usam query params para abrir Gerenciamento de Sites ou Topologia.
+- Navegação remove os parâmetros da URL após carregar o destino.
+
 ## 1.0.77
 
 - Clientes > Consulta passa a permitir abrir o Site SNMPc no Gerenciamento de Sites.
