@@ -8,7 +8,10 @@ from app.models.site import Site
 from app.services.clients import agrupar_clientes
 from app.services.clients import equipamentos_cliente
 from app.services.clients import filtrar_clientes
+from app.services.clients import filtrar_clientes_consulta
+from app.services.clients import montar_base_consulta_clientes
 from app.services.clients import montar_base_clientes
+from app.ui.views.clients import preparar_busca_clientes
 from app.ui.views.clients import rotulo_cliente
 from app.ui.views.clients import valor_resumo_cliente
 
@@ -165,6 +168,80 @@ class ClientsServiceTest(unittest.TestCase):
         self.assertEqual(df.loc[0, "Qtd Equipamentos"], 1)
         self.assertEqual(df.loc[0, "Valor Equipamentos"], 50)
         self.assertEqual(df_equipamentos.loc[0, "Nome Equipamento"], "Access Point")
+
+    def test_base_consulta_clientes_e_leve_e_mantem_setorial(self):
+        site = Site("POP_A", "POP")
+        cliente = Cliente("Cliente A", 120, "123")
+        cliente.produto = "NeoSoft 100"
+        cliente.gerente_contas = "Maria Silva"
+        site.adicionar_cliente(
+            cliente,
+            setorial="POP_S1"
+        )
+        equipamentos = [
+            {
+                "Assinatura": "123",
+                "Icone": "AP",
+                "Equipamento": "AP Cliente"
+            }
+        ]
+
+        with patch(
+            "app.services.clients.load_equipment_catalog",
+            return_value=pd.DataFrame()
+        ):
+            df = montar_base_consulta_clientes(
+                {"POP_A": site},
+                equipamentos,
+                clientes_base={}
+            )
+
+        self.assertEqual(df.loc[0, "Setorial"], "POP_S1")
+        self.assertEqual(df.loc[0, "Gerente de contas"], "Maria Silva")
+        self.assertEqual(df.loc[0, "Site"], "POP_A")
+        self.assertEqual(df.loc[0, "Equipamentos"], "AP Cliente")
+        self.assertNotIn("Site Completo", df.columns)
+        self.assertNotIn("Tipo Produto", df.columns)
+
+    def test_filtro_consulta_ignora_setorial_e_campos_pesados(self):
+        df = pd.DataFrame([
+            {
+                "Cliente": "Cliente A",
+                "Assinatura": "123",
+                "Produto": "NeoSoft",
+                "Gerente de contas": "Maria Silva",
+                "Site": "POP_A",
+                "Setorial": "SETORIAL_BUSCA",
+                "Site Completo": "SITE_COMPLETO_BUSCA",
+                "Cidade": "CIDADE_BUSCA",
+                "Endereço": "ENDERECO_BUSCA"
+            }
+        ])
+
+        self.assertEqual(len(filtrar_clientes_consulta(df, "Maria")), 1)
+        self.assertEqual(len(filtrar_clientes_consulta(df, "123")), 1)
+        self.assertEqual(len(filtrar_clientes_consulta(df, "NeoSoft")), 1)
+        self.assertEqual(len(filtrar_clientes_consulta(df, "POP_A")), 1)
+        self.assertEqual(len(filtrar_clientes_consulta(df, "SETORIAL_BUSCA")), 0)
+        self.assertEqual(len(filtrar_clientes_consulta(df, "SITE_COMPLETO_BUSCA")), 0)
+        self.assertEqual(len(filtrar_clientes_consulta(df, "CIDADE_BUSCA")), 0)
+        self.assertEqual(len(filtrar_clientes_consulta(df, "ENDERECO_BUSCA")), 0)
+
+    def test_prepara_busca_clientes_precalcula_rotulos_e_registros(self):
+        df = pd.DataFrame([
+            {
+                "Cliente": "Cliente A",
+                "Assinatura": "123",
+                "Produto": "NeoSoft",
+                "Site": "POP_A"
+            }
+        ])
+
+        opcoes, rotulos, registros = preparar_busca_clientes(df)
+
+        self.assertEqual(opcoes, ["", "123"])
+        self.assertEqual(rotulos["123"], "Cliente A - 123 / NeoSoft - POP_A")
+        self.assertEqual(registros["123"]["Cliente"], "Cliente A")
 
     def test_agregacao_por_produto_soma_receita(self):
         df = pd.DataFrame([

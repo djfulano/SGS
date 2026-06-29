@@ -138,6 +138,27 @@ def montar_clientes_vinculados(sites, indice_equipamentos, catalogo):
     return dados
 
 
+def montar_clientes_vinculados_consulta(sites, indice_equipamentos, catalogo):
+    dados = []
+
+    for site in sites.values():
+        for cliente in site.clientes:
+            assinatura = str(cliente.num_assinatura).strip()
+            dados.append({
+                "Cliente": cliente.nome,
+                "Assinatura": assinatura,
+                "Produto": getattr(cliente, "produto", ""),
+                "Gerente de contas": getattr(cliente, "gerente_contas", ""),
+                "Receita": cliente.receita,
+                "Vínculo": "Vinculado",
+                "Site": site.nome,
+                "Setorial": getattr(cliente, "setorial", None) or "Direto",
+                **resumo_equipamentos(assinatura, indice_equipamentos, catalogo)
+            })
+
+    return dados
+
+
 def montar_clientes_sem_vinculo(sites, indice_equipamentos, catalogo, clientes_base):
     dados = []
     vinculados = montar_indice_clientes_vinculados(sites)
@@ -168,6 +189,36 @@ def montar_clientes_sem_vinculo(sites, indice_equipamentos, catalogo, clientes_b
             "Endereço": cliente.get("Endereco") or "",
             "Bairro": cliente.get("Bairro") or "",
             "Cidade": cliente.get("Cidade") or "",
+            **resumo_equipamentos(assinatura, indice_equipamentos, catalogo)
+        })
+
+    return dados
+
+
+def montar_clientes_sem_vinculo_consulta(
+    sites,
+    indice_equipamentos,
+    catalogo,
+    clientes_base
+):
+    dados = []
+    vinculados = montar_indice_clientes_vinculados(sites)
+
+    for assinatura, cliente in clientes_base.items():
+        assinatura = str(assinatura).strip()
+
+        if not assinatura or assinatura in vinculados:
+            continue
+
+        dados.append({
+            "Cliente": cliente.get("Cliente") or "",
+            "Assinatura": assinatura,
+            "Produto": cliente.get("Produto") or "",
+            "Gerente de contas": cliente.get("Gerente Contas") or "",
+            "Receita": cliente.get("Receita") or 0,
+            "Vínculo": "Sem vínculo",
+            "Site": "",
+            "Setorial": "",
             **resumo_equipamentos(assinatura, indice_equipamentos, catalogo)
         })
 
@@ -217,6 +268,59 @@ def montar_base_clientes(sites, equipamentos, clientes_base=None):
     ).reset_index(drop=True)
 
 
+def montar_base_consulta_clientes(sites, equipamentos, clientes_base=None):
+    indice_equipamentos = montar_indice_equipamentos(equipamentos)
+    catalogo = montar_catalogo_por_icone()
+    clientes_base = (
+        clientes_base
+        if clientes_base is not None
+        else ler_clientes_base(CLIENTES_FILE)
+    )
+
+    dados = montar_clientes_vinculados_consulta(
+        sites,
+        indice_equipamentos,
+        catalogo
+    )
+    dados.extend(
+        montar_clientes_sem_vinculo_consulta(
+            sites,
+            indice_equipamentos,
+            catalogo,
+            clientes_base
+        )
+    )
+
+    df = pd.DataFrame(dados)
+
+    colunas = [
+        "Cliente",
+        "Assinatura",
+        "Produto",
+        "Gerente de contas",
+        "Receita",
+        "Vínculo",
+        "Site",
+        "Setorial",
+        "Qtd Equipamentos",
+        "Equipamentos"
+    ]
+
+    if df.empty:
+        return pd.DataFrame(columns=colunas)
+
+    for coluna in colunas:
+        if coluna not in df.columns:
+            df[coluna] = ""
+
+    return df[colunas].sort_values(
+        by=[
+            "Cliente",
+            "Assinatura"
+        ]
+    ).reset_index(drop=True)
+
+
 def equipamentos_cliente(assinatura, equipamentos):
     catalogo = montar_catalogo_por_icone()
     indice = montar_indice_equipamentos(equipamentos)
@@ -245,6 +349,36 @@ def filtrar_clientes(df, termo):
             "Endereço",
             "Cidade",
             "Bairro"
+        ]
+        if coluna in df.columns
+    ]
+    filtro = pd.Series(False, index=df.index)
+
+    for coluna in colunas_busca:
+        filtro = filtro | df[coluna].astype(str).str.contains(
+            termo,
+            case=False,
+            regex=False,
+            na=False
+        )
+
+    return df[filtro]
+
+
+def filtrar_clientes_consulta(df, termo):
+    termo = str(termo or "").strip()
+
+    if not termo or df.empty:
+        return df
+
+    colunas_busca = [
+        coluna
+        for coluna in [
+            "Cliente",
+            "Assinatura",
+            "Produto",
+            "Gerente de contas",
+            "Site"
         ]
         if coluna in df.columns
     ]

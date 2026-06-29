@@ -5,6 +5,7 @@ from app.auth import can_view_values
 from app.auth import has_permission
 from app.services.clients import agrupar_clientes
 from app.services.clients import filtrar_clientes
+from app.services.clients import montar_base_consulta_clientes
 from app.services.clients import montar_base_clientes
 from app.services.clients import resumo_clientes
 from app.ui.navigation import mostrar_subnavegacao
@@ -63,33 +64,49 @@ def base_filtrada_clientes(df_clientes, key_prefix):
     return filtrar_clientes(df_clientes, termo)
 
 
-def selecionar_cliente(df_clientes, key_prefix):
-    termo = st.selectbox(
-        "Buscar cliente",
-        [""] + df_clientes["Assinatura"].astype(str).tolist(),
-        index=None,
-        placeholder="Digite nome, assinatura, produto ou site",
-        key=f"{key_prefix}_selecionado",
-        format_func=lambda assinatura: (
-            ""
-            if not assinatura
-            else rotulo_cliente(
-                df_clientes[
-                    df_clientes["Assinatura"].astype(str) == str(assinatura)
-                ].iloc[0].to_dict()
-            )
-        )
+def preparar_busca_clientes(df_clientes):
+    df_clientes = df_clientes.copy()
+    df_clientes["Assinatura"] = df_clientes["Assinatura"].astype(str)
+    df_clientes["Rotulo Busca"] = df_clientes.apply(
+        lambda linha: rotulo_cliente(linha.to_dict()),
+        axis=1
     )
 
-    if not termo:
-        return None
-
-    registros = {
-        str(linha["Assinatura"]): linha.to_dict()
+    opcoes = [""] + df_clientes["Assinatura"].tolist()
+    rotulos_por_assinatura = {
+        str(linha["Assinatura"]): linha["Rotulo Busca"]
+        for _indice, linha in df_clientes.iterrows()
+    }
+    registros_por_assinatura = {
+        str(linha["Assinatura"]): linha.drop(labels=["Rotulo Busca"]).to_dict()
         for _indice, linha in df_clientes.iterrows()
     }
 
-    return registros.get(str(termo))
+    return opcoes, rotulos_por_assinatura, registros_por_assinatura
+
+
+def selecionar_cliente(df_clientes, key_prefix):
+    opcoes, rotulos_por_assinatura, registros_por_assinatura = (
+        preparar_busca_clientes(df_clientes)
+    )
+
+    assinatura = st.selectbox(
+        "Buscar cliente",
+        opcoes,
+        index=None,
+        placeholder="Digite nome, assinatura, produto, gerente ou site",
+        key=f"{key_prefix}_selecionado",
+        format_func=lambda valor: (
+            rotulos_por_assinatura.get(str(valor), "")
+            if valor
+            else ""
+        )
+    )
+
+    if not assinatura:
+        return None
+
+    return registros_por_assinatura.get(str(assinatura))
 
 
 def valor_resumo_cliente(cliente, campo, padrao="Não informado"):
@@ -124,6 +141,7 @@ def mostrar_resumo_cliente(cliente):
         ("Produto", valor_resumo_cliente(cliente, "Produto")),
         ("Gerente de contas", valor_resumo_cliente(cliente, "Gerente de contas")),
         ("Site SNMPc", valor_resumo_cliente(cliente, "Site", "Sem vínculo")),
+        ("Setorial", valor_resumo_cliente(cliente, "Setorial")),
         ("Equipamentos", valor_resumo_cliente(cliente, "Equipamentos", "Nenhum equipamento associado"))
     ]
 
@@ -137,7 +155,7 @@ def mostrar_resumo_cliente(cliente):
 
 def mostrar_consulta_clientes(sites, equipamentos):
     st.header("Clientes")
-    df_clientes = montar_base_clientes(sites, equipamentos)
+    df_clientes = montar_base_consulta_clientes(sites, equipamentos)
 
     if df_clientes.empty:
         st.warning("Nenhum cliente ativo foi encontrado na base atual.")

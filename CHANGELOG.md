@@ -1,5 +1,11 @@
 # Histórico de versões
 
+## 1.0.74
+
+- Clientes > Consulta passa a usar base leve para carregar mais rápido.
+- Busca de clientes passa a usar rótulos pré-calculados para evitar varreduras repetidas do DataFrame.
+- Resumo do cliente passa a exibir Setorial.
+
 ## 1.0.73
 
 - Clientes > Consulta passa a usar busca pesquisável em linha, no padrão da gestão de sites.
