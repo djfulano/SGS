@@ -1,5 +1,11 @@
 # Histórico de versões
 
+## 1.0.77
+
+- Clientes > Consulta passa a permitir abrir o Site SNMPc no Gerenciamento de Sites.
+- Clientes > Consulta passa a permitir abrir a Topologia pelo Setorial do cliente.
+- Gerenciamento de Sites > Resumo Financeiro passa a exibir somente Clientes total e Sites filhos.
+
 ## 1.0.76
 
 - Topologia passa a carregar automaticamente a tabela de clientes dos sites selecionados.

@@ -137,6 +137,46 @@ def mostrar_campo_resumo(rotulo, valor):
     st.markdown(f"**{valor}**")
 
 
+def site_valido_cliente(cliente):
+    site = valor_resumo_cliente(cliente, "Site", "")
+
+    if not site or site == "Sem vínculo":
+        return ""
+
+    return site
+
+
+def abrir_site_cliente(site):
+    st.session_state["abrir_site_gerenciamento"] = site
+    st.session_state["gerenciamento_sites_subaba"] = "gerenciar_sites_resumo_financeiro"
+    st.session_state["proxima_aba_principal"] = "gerenciar_sites"
+    st.rerun()
+
+
+def abrir_topologia_cliente(site):
+    st.session_state["sites_selecionados_multiplos"] = [site]
+    st.session_state["incluir_filhos_sites"] = True
+    st.session_state["topologia_site_para_adicionar_versao"] = (
+        st.session_state.get("topologia_site_para_adicionar_versao", 0)
+        + 1
+    )
+    st.session_state["proxima_aba_principal"] = "sites"
+    st.rerun()
+
+
+def mostrar_campo_resumo_acao(rotulo, valor, chave, acao, desabilitado=False):
+    st.caption(rotulo)
+
+    if st.button(
+        str(valor),
+        key=chave,
+        type="secondary",
+        disabled=desabilitado,
+        use_container_width=True
+    ):
+        acao()
+
+
 def mostrar_resumo_cliente(cliente):
     st.subheader(valor_resumo_cliente(cliente, "Cliente", "Cliente"))
 
@@ -146,23 +186,54 @@ def mostrar_resumo_cliente(cliente):
         else "Restrito"
     )
 
+    site_cliente = site_valido_cliente(cliente)
+    setorial = valor_resumo_cliente(cliente, "Setorial")
     campos = [
         ("Assinatura", valor_resumo_cliente(cliente, "Assinatura", "-")),
         ("Nome", valor_resumo_cliente(cliente, "Cliente")),
         ("Receita", receita),
         ("Produto", valor_resumo_cliente(cliente, "Produto")),
         ("Gerente de contas", valor_resumo_cliente(cliente, "Gerente de contas")),
-        ("Site SNMPc", valor_resumo_cliente(cliente, "Site", "Sem vínculo")),
-        ("Setorial", valor_resumo_cliente(cliente, "Setorial")),
+        (
+            "Site SNMPc",
+            valor_resumo_cliente(cliente, "Site", "Sem vínculo"),
+            "site"
+        ),
+        (
+            "Setorial",
+            setorial,
+            "topologia"
+        ),
         ("Equipamentos", valor_resumo_cliente(cliente, "Equipamentos", "Nenhum equipamento associado"))
     ]
 
     for inicio in range(0, len(campos), 3):
         colunas = st.columns(3)
 
-        for coluna, (rotulo, valor) in zip(colunas, campos[inicio:inicio + 3]):
+        for coluna, campo in zip(colunas, campos[inicio:inicio + 3]):
             with coluna:
-                mostrar_campo_resumo(rotulo, valor)
+                rotulo = campo[0]
+                valor = campo[1]
+                acao = campo[2] if len(campo) > 2 else ""
+
+                if acao == "site":
+                    mostrar_campo_resumo_acao(
+                        rotulo,
+                        valor,
+                        "cliente_consulta_abrir_site",
+                        lambda site=site_cliente: abrir_site_cliente(site),
+                        desabilitado=not bool(site_cliente)
+                    )
+                elif acao == "topologia":
+                    mostrar_campo_resumo_acao(
+                        rotulo,
+                        valor,
+                        "cliente_consulta_abrir_topologia",
+                        lambda site=site_cliente: abrir_topologia_cliente(site),
+                        desabilitado=not bool(site_cliente)
+                    )
+                else:
+                    mostrar_campo_resumo(rotulo, valor)
 
 
 def mostrar_consulta_clientes(sites, equipamentos):

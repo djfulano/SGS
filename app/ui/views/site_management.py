@@ -1606,100 +1606,44 @@ def mostrar_financeiro_site_selecionado(site, site_modelo=None):
         st.info("Não foi possível localizar o site na topologia carregada para listar clientes e filhos.")
         return
 
-    opcoes_tabelas = [
-        "Clientes diretos",
-        "Clientes indiretos",
-        "Clientes total",
-        "Sites filhos"
-    ]
-    tabelas = st.multiselect(
-        "Tabelas exibidas",
-        opcoes_tabelas,
-        default=opcoes_tabelas,
-        key=f"gerenciamento_financeiro_tabelas_{valor_exibicao_site(site.get('Codigo')) or valor_exibicao_site(site.get('Site SNMPc'))}"
+    st.markdown("**Clientes total**")
+    df_total = pd.DataFrame(
+        clientes_diretos_financeiro(site_modelo)
+        + clientes_indiretos_financeiro(site_modelo)
     )
 
-    if "Clientes diretos" in tabelas:
-        st.markdown("**Clientes diretos**")
-        df_diretos = pd.DataFrame(
-            clientes_diretos_financeiro(site_modelo)
+    if df_total.empty:
+        st.info("Este site não possui clientes diretos ou indiretos.")
+    else:
+        _mostrar_grid(
+            df_total.sort_values(
+                by=[
+                    "Vínculo",
+                    "Site",
+                    "Setorial",
+                    "Cliente"
+                ]
+            ),
+            height=420,
+            key="gerenciamento_financeiro_clientes_total"
         )
 
-        if df_diretos.empty:
-            st.info("Este site não possui clientes diretos.")
-        else:
-            _mostrar_grid(
-                df_diretos.sort_values(
-                    by=[
-                        "Setorial",
-                        "Cliente"
-                    ]
-                ),
-                height=320,
-                key="gerenciamento_financeiro_clientes_diretos"
-            )
+    st.markdown("**Sites filhos**")
+    df_filhos = pd.DataFrame(
+        sites_filhos_financeiro(site_modelo)
+    )
 
-    if "Clientes indiretos" in tabelas:
-        st.markdown("**Clientes indiretos**")
-        df_indiretos = pd.DataFrame(
-            clientes_indiretos_financeiro(site_modelo)
+    if df_filhos.empty:
+        st.info("Este site não possui sites filhos.")
+    else:
+        _mostrar_grid(
+            df_filhos.sort_values(
+                by="Receita Total",
+                ascending=False
+            ),
+            height=320,
+            key="gerenciamento_financeiro_sites_filhos"
         )
-
-        if df_indiretos.empty:
-            st.info("Este site não possui clientes indiretos.")
-        else:
-            _mostrar_grid(
-                df_indiretos.sort_values(
-                    by=[
-                        "Site",
-                        "Setorial",
-                        "Cliente"
-                    ]
-                ),
-                height=360,
-                key="gerenciamento_financeiro_clientes_indiretos"
-            )
-
-    if "Clientes total" in tabelas:
-        st.markdown("**Clientes total**")
-        df_total = pd.DataFrame(
-            clientes_diretos_financeiro(site_modelo)
-            + clientes_indiretos_financeiro(site_modelo)
-        )
-
-        if df_total.empty:
-            st.info("Este site não possui clientes diretos ou indiretos.")
-        else:
-            _mostrar_grid(
-                df_total.sort_values(
-                    by=[
-                        "Vínculo",
-                        "Site",
-                        "Setorial",
-                        "Cliente"
-                    ]
-                ),
-                height=420,
-                key="gerenciamento_financeiro_clientes_total"
-            )
-
-    if "Sites filhos" in tabelas:
-        st.markdown("**Sites filhos**")
-        df_filhos = pd.DataFrame(
-            sites_filhos_financeiro(site_modelo)
-        )
-
-        if df_filhos.empty:
-            st.info("Este site não possui sites filhos.")
-        else:
-            _mostrar_grid(
-                df_filhos.sort_values(
-                    by="Receita Total",
-                    ascending=False
-                ),
-                height=320,
-                key="gerenciamento_financeiro_sites_filhos"
-            )
 
 
 def mostrar_contratual_site_selecionado(site):
