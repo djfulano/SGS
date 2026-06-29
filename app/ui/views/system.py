@@ -42,6 +42,16 @@ from app.services.backup_service import save_backup_config
 from app.services.database_service import sincronizar_banco
 from app.services.contract_service import CONTRACTS_DIR
 from app.services.contract_service import index_contract_folders
+from app.services.data_export_service import arquivo_para_download
+from app.services.data_export_service import caminho_exportacao_clientes
+from app.services.data_export_service import caminho_exportacao_sites
+from app.services.data_export_service import caminho_exportacao_snmpc
+from app.services.data_export_service import exportar_contatos_sites_excel
+from app.services.data_export_service import exportar_equipamentos_excel
+from app.services.data_export_service import exportar_indice_documentos_excel
+from app.services.data_export_service import exportar_logs_excel
+from app.services.data_export_service import exportar_mapa
+from app.services.data_export_service import exportar_produtos_excel
 from app.services.map_settings import PROVEDORES_GEOCODING
 from app.services.map_settings import PROVEDORES_SATELITE
 from app.services.map_settings import load_map_config
@@ -1542,6 +1552,215 @@ def mostrar_backup(
                 st.error(f"Falha ao restaurar backup: {erro}")
 
 
+def registrar_download_exportacao(usuario_atual, item):
+    registrar_log_sistema(
+        "exportacao_dados",
+        usuario=usuario_atual["username"],
+        status="sucesso",
+        detalhes={
+            "item": item
+        }
+    )
+
+
+def mostrar_download_arquivo_exportacao(
+    usuario_atual,
+    titulo,
+    descricao,
+    path,
+    mime,
+    key
+):
+    st.markdown(f"**{titulo}**")
+    st.caption(descricao)
+    arquivo = arquivo_para_download(path)
+
+    if not arquivo:
+        st.warning(f"Arquivo não encontrado: {path}")
+        return
+
+    st.download_button(
+        f"Baixar {titulo}",
+        data=arquivo["data"],
+        file_name=arquivo["file_name"],
+        mime=mime,
+        key=key,
+        on_click=registrar_download_exportacao,
+        args=(usuario_atual, titulo)
+    )
+
+
+def mostrar_download_excel_exportacao(
+    usuario_atual,
+    titulo,
+    descricao,
+    gerador,
+    file_name,
+    key
+):
+    st.markdown(f"**{titulo}**")
+    st.caption(descricao)
+
+    try:
+        conteudo = gerador()
+    except Exception as erro:
+        st.warning(f"Não foi possível gerar {titulo}: {erro}")
+        return
+
+    st.download_button(
+        f"Baixar {titulo}",
+        data=conteudo,
+        file_name=file_name,
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        key=key,
+        on_click=registrar_download_exportacao,
+        args=(usuario_atual, titulo)
+    )
+
+
+def mostrar_exportacoes(usuario_atual):
+    st.header("Exportações")
+
+    if not has_permission(
+        usuario_atual,
+        "exportacoes"
+    ):
+        st.warning(
+            "Seu perfil não possui permissão para exportar dados."
+        )
+        return
+
+    st.caption(
+        "Baixe arquivos e bases operacionais do SGS. Para restauração completa, use a aba Backup."
+    )
+
+    st.subheader("Arquivos principais")
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        mostrar_download_arquivo_exportacao(
+            usuario_atual,
+            "Clientes",
+            "Arquivo Excel atual da base de clientes.",
+            caminho_exportacao_clientes(),
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "exportar_clientes"
+        )
+
+    with col2:
+        mostrar_download_arquivo_exportacao(
+            usuario_atual,
+            "SNMPc",
+            "Arquivo TXT atual da topologia SNMPc.",
+            caminho_exportacao_snmpc(),
+            "text/plain",
+            "exportar_snmpc"
+        )
+
+    with col3:
+        mostrar_download_arquivo_exportacao(
+            usuario_atual,
+            "Sites",
+            "Planilha atual de sites.",
+            caminho_exportacao_sites(),
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "exportar_sites"
+        )
+
+    st.divider()
+    st.subheader("Bases tratadas")
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        mostrar_download_excel_exportacao(
+            usuario_atual,
+            "Equipamentos",
+            "Base de equipamentos com Modelo, Fabricante e Software.",
+            exportar_equipamentos_excel,
+            "sgs_equipamentos.xlsx",
+            "exportar_equipamentos"
+        )
+
+    with col2:
+        mostrar_download_excel_exportacao(
+            usuario_atual,
+            "Produtos",
+            "Base de produtos classificada.",
+            exportar_produtos_excel,
+            "sgs_produtos.xlsx",
+            "exportar_produtos"
+        )
+
+    with col3:
+        mostrar_download_excel_exportacao(
+            usuario_atual,
+            "Contatos dos Sites",
+            "Contatos dos sites para conferência ou carga.",
+            exportar_contatos_sites_excel,
+            "sgs_contatos_sites.xlsx",
+            "exportar_contatos_sites"
+        )
+
+    st.divider()
+    st.subheader("Mapa")
+    formato_mapa = st.radio(
+        "Formato do mapa",
+        [
+            "KMZ",
+            "KML"
+        ],
+        horizontal=True,
+        key="exportacoes_mapa_formato"
+    )
+
+    conteudo_mapa = exportar_mapa(formato_mapa)
+
+    if not conteudo_mapa:
+        st.info(
+            "Nenhum mapa compilado encontrado. Acesse Mapa e compile o mapa antes de exportar."
+        )
+    else:
+        extensao = formato_mapa.lower()
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        st.download_button(
+            f"Baixar Mapa {formato_mapa}",
+            data=conteudo_mapa,
+            file_name=f"sgs_mapa_{timestamp}.{extensao}",
+            mime=(
+                "application/vnd.google-earth.kml+xml"
+                if formato_mapa == "KML"
+                else "application/vnd.google-earth.kmz"
+            ),
+            key="exportar_mapa",
+            on_click=registrar_download_exportacao,
+            args=(usuario_atual, f"Mapa {formato_mapa}")
+        )
+
+    st.divider()
+    st.subheader("Auditoria e documentos")
+    col1, col2 = st.columns(2)
+
+    with col1:
+        mostrar_download_excel_exportacao(
+            usuario_atual,
+            "Índice de documentos",
+            "Lista os documentos cadastrados, sem incluir os arquivos físicos.",
+            exportar_indice_documentos_excel,
+            "sgs_indice_documentos.xlsx",
+            "exportar_indice_documentos"
+        )
+
+    with col2:
+        mostrar_download_excel_exportacao(
+            usuario_atual,
+            "LOG do sistema",
+            "Logs de sistema e usuários para auditoria.",
+            exportar_logs_excel,
+            "sgs_logs.xlsx",
+            "exportar_logs"
+        )
+
+
 def mostrar_sistema(
     usuario_atual,
     carregar_dados,
@@ -1580,6 +1799,13 @@ def mostrar_sistema(
             lambda: mostrar_backup(
                 usuario_atual,
                 mostrar_grid
+            )
+        ),
+        (
+            "exportacoes",
+            "Exportações",
+            lambda: mostrar_exportacoes(
+                usuario_atual
             )
         )
     ]

@@ -1,5 +1,11 @@
 # Histórico de versões
 
+## 1.0.83
+
+- Sistema passa a ter subaba Exportações para download pontual de dados operacionais.
+- Exportações incluem Clientes, SNMPc, Sites, Equipamentos, Mapa, Produtos, Contatos, índice de documentos e LOG.
+- Exportação não inclui arquivos sensíveis de usuários, sessões, senhas ou chaves de API.
+
 ## 1.0.82
 
 - Base de equipamentos passa a usar Modelo no lugar de Nome.

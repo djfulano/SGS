@@ -73,6 +73,7 @@ MODULES = [
     ("configuracoes", "Sistema > Configurações"),
     ("editar_configuracoes", "Sistema > Editar Configurações"),
     ("backup", "Sistema > Backup"),
+    ("exportacoes", "Sistema > Exportações"),
     ("usuarios", "Sistema > Usuários"),
     ("gerenciar_perfis", "Sistema > Perfis"),
     ("editar_sites", "Ação > Editar cadastro de sites"),
