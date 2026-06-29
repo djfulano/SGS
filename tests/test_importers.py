@@ -3,10 +3,13 @@ import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
+import pandas as pd
+
 from app.importers.txt_importer import detectar_tipo
 from app.importers.txt_importer import extrair_assinatura
 from app.importers.txt_importer import importar_estrutura_de_linhas
 from app.importers.txt_importer import normalizar_nome_snmpc
+from app.importers.excel_importer import ler_clientes_base
 
 try:
     from app.services.data_loader import sistema_precisa_inicializacao
@@ -91,6 +94,35 @@ class ImportersTest(unittest.TestCase):
                 self.assertFalse(
                     sistema_precisa_inicializacao()
                 )
+
+
+    @unittest.skipIf(normalizar_assinatura is None, "pandas nao instalado")
+    def test_ler_clientes_base_carrega_gerente_contas(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            arquivo = Path(temp_dir) / "clientes.xlsx"
+            df = pd.DataFrame([
+                {
+                    "NOME CLIENTE": "Cliente A",
+                    "MENSALIDADE": 100,
+                    "NUM ASSINATURA": "123",
+                    "PRODUTO": "NeoSoft",
+                    "Gerente Contas": "Maria Silva"
+                }
+            ])
+
+            with pd.ExcelWriter(arquivo) as writer:
+                df.to_excel(
+                    writer,
+                    index=False,
+                    startrow=7
+                )
+
+            clientes = ler_clientes_base(arquivo)
+
+        self.assertEqual(
+            clientes["123"]["Gerente Contas"],
+            "Maria Silva"
+        )
 
     @unittest.skipIf(normalizar_assinatura is None, "pandas nao instalado")
     def test_normalizar_assinatura_mantem_apenas_digitos(self):

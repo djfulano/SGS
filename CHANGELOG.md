@@ -1,5 +1,11 @@
 # Histórico de versões
 
+## 1.0.73
+
+- Clientes > Consulta passa a usar busca pesquisável em linha, no padrão da gestão de sites.
+- Consulta de cliente passa a exibir resumo direto sem tabelas auxiliares.
+- Base de clientes passa a propagar o campo Gerente Contas da planilha.
+
 ## 1.0.72
 
 - Métrica de produtos por banda na Topologia passa a contar produtos com 100 Mbps ou mais.

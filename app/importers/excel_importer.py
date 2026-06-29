@@ -46,6 +46,24 @@ def valor_texto(linha, coluna):
     return texto
 
 
+def valor_primeira_coluna(linha, colunas):
+
+    for coluna in colunas:
+
+        if coluna in linha.index:
+
+            valor = valor_texto(
+                linha,
+                coluna
+            )
+
+            if valor:
+
+                return valor
+
+    return ""
+
+
 def ler_clientes_base(caminho_arquivo):
 
     df = pd.read_excel(
@@ -103,6 +121,13 @@ def ler_clientes_base(caminho_arquivo):
                 "Produto": valor_texto(
                     linha,
                     "PRODUTO"
+                ),
+                "Gerente Contas": valor_primeira_coluna(
+                    linha,
+                    [
+                        "Gerente Contas",
+                        "GERENTE CONTAS"
+                    ]
                 ),
                 "CEP": cep,
                 "Endereco": valor_texto(
@@ -204,6 +229,7 @@ def importar_clientes(
             cliente.bairro = cliente_data.get("Bairro", "")
             cliente.cidade = cliente_data.get("Cidade", "")
             cliente.produto = cliente_data.get("Produto", "")
+            cliente.gerente_contas = cliente_data.get("Gerente Contas", "")
 
             # Procurar assinatura
             if num_assinatura in assinaturas:

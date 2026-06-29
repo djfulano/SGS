@@ -27,3 +27,5 @@ class Cliente:
         self.cidade = ""
 
         self.produto = ""
+
+        self.gerente_contas = ""

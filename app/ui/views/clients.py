@@ -1,9 +1,9 @@
 import pandas as pd
 import streamlit as st
 
+from app.auth import can_view_values
 from app.auth import has_permission
 from app.services.clients import agrupar_clientes
-from app.services.clients import equipamentos_cliente
 from app.services.clients import filtrar_clientes
 from app.services.clients import montar_base_clientes
 from app.services.clients import resumo_clientes
@@ -64,92 +64,75 @@ def base_filtrada_clientes(df_clientes, key_prefix):
 
 
 def selecionar_cliente(df_clientes, key_prefix):
-    df_filtrado = base_filtrada_clientes(df_clientes, key_prefix)
+    termo = st.selectbox(
+        "Buscar cliente",
+        [""] + df_clientes["Assinatura"].astype(str).tolist(),
+        index=None,
+        placeholder="Digite nome, assinatura, produto ou site",
+        key=f"{key_prefix}_selecionado",
+        format_func=lambda assinatura: (
+            ""
+            if not assinatura
+            else rotulo_cliente(
+                df_clientes[
+                    df_clientes["Assinatura"].astype(str) == str(assinatura)
+                ].iloc[0].to_dict()
+            )
+        )
+    )
 
-    if df_filtrado.empty:
-        st.info("Nenhum cliente encontrado para a busca informada.")
-        return None, df_filtrado
+    if not termo:
+        return None
 
-    opcoes = [""] + df_filtrado["Assinatura"].astype(str).tolist()
     registros = {
         str(linha["Assinatura"]): linha.to_dict()
-        for _indice, linha in df_filtrado.iterrows()
+        for _indice, linha in df_clientes.iterrows()
     }
 
-    assinatura = st.selectbox(
-        "Selecionar cliente",
-        opcoes,
-        index=0,
-        key=f"{key_prefix}_selecionado",
-        format_func=lambda valor: (
-            "Selecione um cliente"
-            if not valor
-            else rotulo_cliente(registros.get(valor, {}))
-        )
+    return registros.get(str(termo))
+
+
+def valor_resumo_cliente(cliente, campo, padrao="Não informado"):
+    valor = cliente.get(campo)
+
+    if pd.isna(valor):
+        return padrao
+
+    texto = str(valor or "").strip()
+
+    return texto or padrao
+
+
+def mostrar_campo_resumo(rotulo, valor):
+    st.caption(rotulo)
+    st.markdown(f"**{valor}**")
+
+
+def mostrar_resumo_cliente(cliente):
+    st.subheader(valor_resumo_cliente(cliente, "Cliente", "Cliente"))
+
+    receita = (
+        _formatar_moeda(cliente.get("Receita") or 0)
+        if can_view_values(usuario_atual())
+        else "Restrito"
     )
 
-    if not assinatura:
-        return None, df_filtrado
+    campos = [
+        ("Assinatura", valor_resumo_cliente(cliente, "Assinatura", "-")),
+        ("Nome", valor_resumo_cliente(cliente, "Cliente")),
+        ("Receita", receita),
+        ("Produto", valor_resumo_cliente(cliente, "Produto")),
+        ("Gerente de contas", valor_resumo_cliente(cliente, "Gerente de contas")),
+        ("Site SNMPc", valor_resumo_cliente(cliente, "Site", "Sem vínculo")),
+        ("Equipamentos", valor_resumo_cliente(cliente, "Equipamentos", "Nenhum equipamento associado"))
+    ]
 
-    return registros.get(assinatura), df_filtrado
+    for inicio in range(0, len(campos), 3):
+        colunas = st.columns(3)
 
-
-def mostrar_ficha_cliente(cliente, equipamentos):
-    st.subheader(cliente.get("Cliente") or "Cliente")
-    col1, col2, col3, col4 = st.columns(4)
-
-    col1.metric("Assinatura", cliente.get("Assinatura") or "-")
-    col2.metric("Produto", cliente.get("Produto") or "-")
-    col3.metric("Receita", _formatar_moeda(cliente.get("Receita") or 0))
-    col4.metric("Vínculo", cliente.get("Vínculo") or "-")
-
-    st.markdown("**Dados do cliente**")
-    _mostrar_grid(
-        pd.DataFrame([
-            {
-                "Cliente": cliente.get("Cliente") or "",
-                "Assinatura": cliente.get("Assinatura") or "",
-                "Produto": cliente.get("Produto") or "",
-                "Receita": cliente.get("Receita") or 0,
-                "CEP": cliente.get("CEP") or "",
-                "Endereço": cliente.get("Endereço") or "",
-                "Bairro": cliente.get("Bairro") or "",
-                "Cidade": cliente.get("Cidade") or ""
-            }
-        ]),
-        height=120,
-        key="clientes_ficha_dados_cliente"
-    )
-
-    st.markdown("**Vínculo e site**")
-    _mostrar_grid(
-        pd.DataFrame([
-            {
-                "Vínculo": cliente.get("Vínculo") or "",
-                "Site": cliente.get("Site") or "",
-                "Setorial": cliente.get("Setorial") or "",
-                "Código Aquiles": cliente.get("Código Aquiles") or "",
-                "Código Microsiga": cliente.get("Código Microsiga") or "",
-                "Nome Site": cliente.get("Nome Site") or "",
-                "Status Site": cliente.get("Status Site") or "",
-                "Cidade Site": cliente.get("Cidade Site") or ""
-            }
-        ]),
-        height=140,
-        key="clientes_ficha_dados_site"
-    )
-
-    st.markdown("**Equipamentos associados**")
-    df_equipamentos = equipamentos_cliente(cliente.get("Assinatura"), equipamentos)
-
-    if df_equipamentos.empty:
-        st.info("Nenhum equipamento associado a esta assinatura foi encontrado.")
-    else:
-        _mostrar_grid(
-            df_equipamentos,
-            height=260,
-            key="clientes_ficha_equipamentos"
-        )
+        for coluna, (rotulo, valor) in zip(colunas, campos[inicio:inicio + 3]):
+            with coluna:
+                mostrar_campo_resumo(rotulo, valor)
 
 
 def mostrar_consulta_clientes(sites, equipamentos):
@@ -160,18 +143,13 @@ def mostrar_consulta_clientes(sites, equipamentos):
         st.warning("Nenhum cliente ativo foi encontrado na base atual.")
         return
 
-    cliente, df_filtrado = selecionar_cliente(df_clientes, "clientes_consulta")
-    mostrar_metricas_clientes(df_filtrado)
+    cliente = selecionar_cliente(df_clientes, "clientes_consulta")
 
-    st.markdown("**Clientes encontrados**")
-    _mostrar_grid(
-        df_filtrado,
-        height=360,
-        key="clientes_consulta_grid"
-    )
+    if not cliente:
+        st.info("Pesquise e selecione um cliente para abrir a consulta.")
+        return
 
-    if cliente:
-        mostrar_ficha_cliente(cliente, equipamentos)
+    mostrar_resumo_cliente(cliente)
 
 
 def mostrar_relatorios_clientes(sites, equipamentos):
