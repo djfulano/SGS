@@ -1,5 +1,10 @@
 # Histórico de versões
 
+## 1.0.86
+
+- Ranking de sites passa a exibir a coluna Custo.
+- Tabelas de maior e menor receita passam a usar uma visão padronizada do ranking.
+
 ## 1.0.85
 
 - Módulo Mapa passa a ter subabas Mapa Geral e Mapa Personalizado.

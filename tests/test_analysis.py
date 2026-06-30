@@ -8,6 +8,7 @@ from app.ui.views.analysis import classificar_site_deficitario
 from app.ui.views.analysis import extrair_sites_resumo_selecionados
 from app.ui.views.analysis import montar_clientes_custos_receita
 from app.ui.views.analysis import montar_sites_deficitarios
+from app.ui.views.analysis import preparar_ranking_sites
 from app.ui.views.analysis import sugerir_acao_site_deficitario
 
 
@@ -145,6 +146,43 @@ class AnalysisCostsRevenueTest(unittest.TestCase):
                 "POP_A",
                 "REP_C"
             ]
+        )
+
+    def test_preparar_ranking_sites_inclui_custo_apos_receita(self):
+        df_ranking = preparar_ranking_sites(pd.DataFrame([
+            {
+                "Site SNMPc": "POP_A",
+                "Tipo": "POP",
+                "Receita Total": "1200",
+                "Custo": "500",
+                "Clientes Total": 2
+            }
+        ]))
+
+        self.assertIn(
+            "Custo",
+            df_ranking.columns
+        )
+        self.assertEqual(
+            df_ranking.columns.tolist().index("Custo"),
+            df_ranking.columns.tolist().index("Receita Total") + 1
+        )
+        self.assertEqual(
+            df_ranking.loc[0, "Custo"],
+            500
+        )
+
+    def test_preparar_ranking_sites_cria_custo_quando_ausente(self):
+        df_ranking = preparar_ranking_sites(pd.DataFrame([
+            {
+                "Site SNMPc": "POP_A",
+                "Receita Total": 1200
+            }
+        ]))
+
+        self.assertEqual(
+            df_ranking.loc[0, "Custo"],
+            0
         )
 
     def test_monta_apenas_sites_deficitarios_ativos_no_snmpc_com_clientes(self):

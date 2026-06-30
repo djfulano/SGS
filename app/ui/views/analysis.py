@@ -1522,8 +1522,57 @@ def mostrar_clientes_sem_vinculo(clientes_sem_site):
     )
 
 
+def preparar_ranking_sites(df_sites):
+    if df_sites is None or df_sites.empty:
+        return pd.DataFrame()
+
+    df_ranking = df_sites.copy()
+
+    for coluna in [
+        "Receita Total",
+        "Custo"
+    ]:
+        if coluna not in df_ranking.columns:
+            df_ranking[coluna] = 0
+
+        df_ranking[coluna] = pd.to_numeric(
+            df_ranking[coluna],
+            errors="coerce"
+        ).fillna(0)
+
+    colunas = [
+        "Site SNMPc",
+        "Tipo",
+        "Nome Cadastro",
+        "Status Cadastro",
+        "Cidade",
+        "UF",
+        "Receita Total",
+        "Custo",
+        "Clientes Total",
+        "Clientes Diretos",
+        "Clientes Indiretos",
+        "Pai",
+        "Filhos"
+    ]
+
+    return df_ranking[
+        [
+            coluna
+            for coluna in colunas
+            if coluna in df_ranking.columns
+        ]
+    ]
+
+
 def mostrar_ranking_sites(df_sites):
     st.header("Ranking de sites")
+
+    df_ranking = preparar_ranking_sites(df_sites)
+
+    if df_ranking.empty:
+        st.info("Nenhum site disponível para ranking.")
+        return
 
     quantidade = st.slider(
         "Quantidade no ranking",
@@ -1534,7 +1583,7 @@ def mostrar_ranking_sites(df_sites):
     )
 
     maior_receita = (
-        df_sites
+        df_ranking
         .sort_values(
             by="Receita Total",
             ascending=False
@@ -1543,7 +1592,7 @@ def mostrar_ranking_sites(df_sites):
     )
 
     menor_receita = (
-        df_sites
+        df_ranking
         .sort_values(
             by="Receita Total",
             ascending=True
