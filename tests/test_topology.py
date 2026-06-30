@@ -7,6 +7,7 @@ from app.models.site import Site
 from app.ui.views.topology import formatar_banda_mbps
 from app.ui.views.topology import montar_metricas_banda_telecom_site
 from app.ui.views.topology import montar_metricas_banda_telecom_sites
+from app.ui.views.topology import montar_resumo_sites
 from app.ui.views.topology import normalizar_velocidade_mbps
 from app.ui.views.topology import velocidade_telecom_produto_mbps
 
@@ -33,6 +34,19 @@ class TopologyBandwidthTest(unittest.TestCase):
         )
         cliente.produto = produto
         return cliente
+
+    def test_resumo_sites_inclui_custo(self):
+        site = Site("POP_A", "POP")
+        site.custo = 1234.56
+
+        df_resumo = montar_resumo_sites({
+            "POP_A": site
+        })
+
+        self.assertEqual(
+            df_resumo.loc[0, "Custo"],
+            1234.56
+        )
 
     def test_normaliza_velocidades_em_mbps(self):
         self.assertEqual(

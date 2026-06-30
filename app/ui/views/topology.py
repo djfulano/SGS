@@ -261,7 +261,8 @@ def montar_resumo_sites(sites):
             "Clientes Total": clientes_diretos + clientes_indiretos,
             "Receita Direta": receita_direta,
             "Receita Indireta": receita_indireta,
-            "Receita Total": receita_direta + receita_indireta
+            "Receita Total": receita_direta + receita_indireta,
+            "Custo": getattr(site, "custo", 0)
         })
 
     return pd.DataFrame(dados)

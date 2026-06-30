@@ -1528,41 +1528,63 @@ def preparar_ranking_sites(df_sites):
 
     df_ranking = df_sites.copy()
 
+    if "Nome SNMPc" not in df_ranking.columns:
+        if "Site SNMPc" in df_ranking.columns:
+            df_ranking["Nome SNMPc"] = df_ranking["Site SNMPc"]
+        elif "Site" in df_ranking.columns:
+            df_ranking["Nome SNMPc"] = df_ranking["Site"]
+        else:
+            df_ranking["Nome SNMPc"] = ""
+
     for coluna in [
         "Receita Total",
+        "Clientes Total",
         "Custo"
     ]:
         if coluna not in df_ranking.columns:
             df_ranking[coluna] = 0
 
-        df_ranking[coluna] = pd.to_numeric(
-            df_ranking[coluna],
-            errors="coerce"
-        ).fillna(0)
+        df_ranking[coluna] = df_ranking[coluna].apply(
+            _valor_monetario_ranking
+        )
 
     colunas = [
-        "Site SNMPc",
-        "Tipo",
-        "Nome Cadastro",
-        "Status Cadastro",
-        "Cidade",
-        "UF",
+        "Nome SNMPc",
         "Receita Total",
-        "Custo",
         "Clientes Total",
-        "Clientes Diretos",
-        "Clientes Indiretos",
-        "Pai",
-        "Filhos"
+        "Custo"
     ]
 
-    return df_ranking[
-        [
-            coluna
-            for coluna in colunas
-            if coluna in df_ranking.columns
-        ]
-    ]
+    return df_ranking[colunas]
+
+
+def _valor_monetario_ranking(valor):
+    if pd.isna(valor):
+        return 0.0
+
+    if isinstance(valor, (int, float)):
+        return float(valor)
+
+    texto = str(valor).strip()
+
+    if not texto:
+        return 0.0
+
+    texto = (
+        texto
+        .replace("R$", "")
+        .replace(" ", "")
+    )
+
+    if "," in texto:
+        texto = texto.replace(".", "").replace(",", ".")
+
+    numero = pd.to_numeric(
+        texto,
+        errors="coerce"
+    )
+
+    return float(numero) if pd.notna(numero) else 0.0
 
 
 def mostrar_ranking_sites(df_sites):

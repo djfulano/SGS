@@ -148,28 +148,38 @@ class AnalysisCostsRevenueTest(unittest.TestCase):
             ]
         )
 
-    def test_preparar_ranking_sites_inclui_custo_apos_receita(self):
+    def test_preparar_ranking_sites_exibe_colunas_essenciais(self):
         df_ranking = preparar_ranking_sites(pd.DataFrame([
             {
-                "Site SNMPc": "POP_A",
+                "Site": "POP_A",
                 "Tipo": "POP",
                 "Receita Total": "1200",
-                "Custo": "500",
-                "Clientes Total": 2
+                "Custo": "R$ 500,25",
+                "Clientes Total": "2",
+                "Cidade": "Belo Horizonte"
             }
         ]))
 
-        self.assertIn(
-            "Custo",
-            df_ranking.columns
+        self.assertEqual(
+            df_ranking.columns.tolist(),
+            [
+                "Nome SNMPc",
+                "Receita Total",
+                "Clientes Total",
+                "Custo"
+            ]
         )
         self.assertEqual(
-            df_ranking.columns.tolist().index("Custo"),
-            df_ranking.columns.tolist().index("Receita Total") + 1
+            df_ranking.loc[0, "Nome SNMPc"],
+            "POP_A"
         )
         self.assertEqual(
             df_ranking.loc[0, "Custo"],
-            500
+            500.25
+        )
+        self.assertEqual(
+            df_ranking.loc[0, "Clientes Total"],
+            2
         )
 
     def test_preparar_ranking_sites_cria_custo_quando_ausente(self):

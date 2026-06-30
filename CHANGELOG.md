@@ -1,5 +1,11 @@
 # Histórico de versões
 
+## 1.0.87
+
+- Ranking de sites passa a usar o custo real do resumo de Topologia.
+- Ranking de sites passa a exibir somente Nome SNMPc, Receita Total, Clientes Total e Custo.
+- Valores numéricos do ranking passam a aceitar textos monetários simples sem zerar o custo.
+
 ## 1.0.86
 
 - Ranking de sites passa a exibir a coluna Custo.
