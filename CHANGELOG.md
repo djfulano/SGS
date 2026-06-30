@@ -1,5 +1,12 @@
 # Histórico de versões
 
+## 1.0.91
+
+- Novo módulo Viabilidade com subabas Viabilidade, Migração e Estudos de Engenharia.
+- Viabilidade passa a calcular visada com curvatura da Terra, zona de Fresnel e elevação via Open-Elevation.
+- Migração passa a salvar dados técnicos locais de clientes para latitude, longitude, altitude e altura.
+- Sistema passa a ter configurações de Open-Elevation, frequência, Fresnel e amostragem.
+
 ## 1.0.90
 
 - Sites Deficitários passa a gerar relatório executivo para apresentação à diretoria.

@@ -22,7 +22,13 @@ DEFAULT_MAP_CONFIG = {
     "mapbox_api_key": "",
     "max_site_site_distance_km": 30.0,
     "max_site_client_distance_km": 30.0,
-    "default_client_limit": 100
+    "default_client_limit": 100,
+    "elevation_provider": "open_elevation",
+    "open_elevation_url": "https://api.open-elevation.com/api/v1/lookup",
+    "line_of_sight_sample_distance_m": 100,
+    "line_of_sight_frequency_ghz": 5.8,
+    "line_of_sight_fresnel_clearance": 0.60,
+    "elevation_timeout_seconds": 8
 }
 
 
@@ -46,6 +52,18 @@ def normalizar_int_positivo(valor, padrao):
 
     if numero < 1:
         return int(padrao)
+
+    return numero
+
+
+def normalizar_float_maior_que_zero(valor, padrao):
+    try:
+        numero = float(valor)
+    except (TypeError, ValueError):
+        return float(padrao)
+
+    if numero <= 0:
+        return float(padrao)
 
     return numero
 
@@ -120,6 +138,31 @@ def load_map_config(path=None):
         config.get("default_client_limit"),
         DEFAULT_MAP_CONFIG["default_client_limit"]
     )
+    config["elevation_provider"] = str(
+        config.get("elevation_provider")
+        or DEFAULT_MAP_CONFIG["elevation_provider"]
+    ).strip()
+    config["open_elevation_url"] = str(
+        config.get("open_elevation_url")
+        or DEFAULT_MAP_CONFIG["open_elevation_url"]
+    ).strip()
+    config["line_of_sight_sample_distance_m"] = normalizar_float_positivo(
+        config.get("line_of_sight_sample_distance_m"),
+        DEFAULT_MAP_CONFIG["line_of_sight_sample_distance_m"]
+    )
+    config["line_of_sight_frequency_ghz"] = normalizar_float_positivo(
+        config.get("line_of_sight_frequency_ghz"),
+        DEFAULT_MAP_CONFIG["line_of_sight_frequency_ghz"]
+    )
+    config["line_of_sight_fresnel_clearance"] = normalizar_float_maior_que_zero(
+        config.get("line_of_sight_fresnel_clearance")
+        or DEFAULT_MAP_CONFIG["line_of_sight_fresnel_clearance"],
+        DEFAULT_MAP_CONFIG["line_of_sight_fresnel_clearance"]
+    )
+    config["elevation_timeout_seconds"] = normalizar_int_positivo(
+        config.get("elevation_timeout_seconds"),
+        DEFAULT_MAP_CONFIG["elevation_timeout_seconds"]
+    )
 
     return config
 
@@ -163,6 +206,31 @@ def save_map_config(config, path=None):
     config_nova["default_client_limit"] = normalizar_int_positivo(
         config_nova.get("default_client_limit"),
         DEFAULT_MAP_CONFIG["default_client_limit"]
+    )
+    config_nova["elevation_provider"] = str(
+        config_nova.get("elevation_provider")
+        or DEFAULT_MAP_CONFIG["elevation_provider"]
+    ).strip()
+    config_nova["open_elevation_url"] = str(
+        config_nova.get("open_elevation_url")
+        or DEFAULT_MAP_CONFIG["open_elevation_url"]
+    ).strip()
+    config_nova["line_of_sight_sample_distance_m"] = normalizar_float_positivo(
+        config_nova.get("line_of_sight_sample_distance_m"),
+        DEFAULT_MAP_CONFIG["line_of_sight_sample_distance_m"]
+    )
+    config_nova["line_of_sight_frequency_ghz"] = normalizar_float_positivo(
+        config_nova.get("line_of_sight_frequency_ghz"),
+        DEFAULT_MAP_CONFIG["line_of_sight_frequency_ghz"]
+    )
+    config_nova["line_of_sight_fresnel_clearance"] = normalizar_float_maior_que_zero(
+        config_nova.get("line_of_sight_fresnel_clearance")
+        or DEFAULT_MAP_CONFIG["line_of_sight_fresnel_clearance"],
+        DEFAULT_MAP_CONFIG["line_of_sight_fresnel_clearance"]
+    )
+    config_nova["elevation_timeout_seconds"] = normalizar_int_positivo(
+        config_nova.get("elevation_timeout_seconds"),
+        DEFAULT_MAP_CONFIG["elevation_timeout_seconds"]
     )
 
     write_json_atomic(

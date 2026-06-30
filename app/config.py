@@ -58,6 +58,10 @@ MAP_CONFIG_FILE = env_path(
     "SNMPC_MAP_CONFIG_FILE",
     str(CONFIG_DIR / "map_config.json")
 )
+CLIENT_VIABILITY_FILE = env_path(
+    "SNMPC_CLIENT_VIABILITY_FILE",
+    str(CONFIG_DIR / "client_viability.json")
+)
 
 CLIENTES_FILE = env_path("SNMPC_CLIENTES_FILE", str(IMPORTS_DIR / "clientes.xlsx"))
 GEOCODING_CACHE_FILE = env_path(
@@ -67,6 +71,10 @@ GEOCODING_CACHE_FILE = env_path(
 MAP_CACHE_FILE = env_path(
     "SNMPC_MAP_CACHE_FILE",
     str(CACHE_DIR / "mapa_clientes.json")
+)
+ELEVATION_CACHE_FILE = env_path(
+    "SNMPC_ELEVATION_CACHE_FILE",
+    str(CACHE_DIR / "elevation_cache.json")
 )
 STRUCTURE_LINKS_CACHE_FILE = env_path(
     "SNMPC_STRUCTURE_LINKS_CACHE_FILE",

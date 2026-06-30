@@ -257,6 +257,10 @@ def mostrar_resumo_cliente(cliente):
             "topologia"
         ),
         ("GoTo SNMPc", valor_resumo_cliente(cliente, "GoTo SNMPc")),
+        ("Latitude", valor_resumo_cliente(cliente, "Latitude", "0")),
+        ("Longitude", valor_resumo_cliente(cliente, "Longitude", "0")),
+        ("Altitude", valor_resumo_cliente(cliente, "Altitude", "0")),
+        ("Altura", valor_resumo_cliente(cliente, "Altura", "0")),
         (
             "Equipamentos",
             valor_resumo_cliente(

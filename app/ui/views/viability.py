@@ -1,0 +1,504 @@
+import pandas as pd
+import streamlit as st
+
+from app.auth import has_permission
+from app.services.client_viability import dados_cliente_viabilidade
+from app.services.client_viability import salvar_dados_cliente_viabilidade
+from app.services.elevation_service import carregar_cache_elevacao
+from app.services.elevation_service import elevacoes_pontos
+from app.services.line_of_sight import analisar_visada
+from app.services.line_of_sight import coordenada_valida
+from app.services.line_of_sight import distancia_km
+from app.services.line_of_sight import pontos_intermediarios
+from app.services.line_of_sight import valor_float
+from app.services.map_service import carregar_cache_geocoding
+from app.services.map_service import endereco_cliente
+from app.services.map_service import geocodificar_endereco
+from app.services.map_service import salvar_cache_geocoding
+from app.services.map_settings import load_map_config
+from app.ui.navigation import mostrar_subnavegacao
+
+
+_usuario_logado = None
+_mostrar_grid = None
+
+
+def configurar_viabilidade(usuario_logado, mostrar_grid=None):
+    global _usuario_logado
+    global _mostrar_grid
+
+    _usuario_logado = usuario_logado
+    _mostrar_grid = mostrar_grid
+
+
+def usuario_atual():
+    return _usuario_logado() if _usuario_logado else {}
+
+
+def ponto_site(site):
+    return {
+        "Tipo": "Site",
+        "Nome": getattr(site, "nome", ""),
+        "Latitude": valor_float(getattr(site, "latitude", 0)),
+        "Longitude": valor_float(getattr(site, "longitude", 0)),
+        "Altitude": 0.0,
+        "Altura": valor_float(getattr(site, "altura", 0))
+    }
+
+
+def cliente_por_assinatura(sites, assinatura):
+    assinatura = str(assinatura or "").strip()
+
+    for site in (sites or {}).values():
+        for cliente in getattr(site, "clientes", []):
+            if str(getattr(cliente, "num_assinatura", "")).strip() == assinatura:
+                return site, cliente
+
+    return None, None
+
+
+def opcoes_clientes(sites):
+    opcoes = []
+
+    for site in (sites or {}).values():
+        for cliente in getattr(site, "clientes", []):
+            assinatura = str(getattr(cliente, "num_assinatura", "") or "").strip()
+
+            if assinatura:
+                opcoes.append((
+                    assinatura,
+                    f"{cliente.nome} - {assinatura} / {site.nome}"
+                ))
+
+    return sorted(
+        opcoes,
+        key=lambda item: item[1].casefold()
+    )
+
+
+def geocodificar_texto(endereco):
+    cache = carregar_cache_geocoding()
+    ponto = geocodificar_endereco(
+        endereco,
+        cache
+    )
+    salvar_cache_geocoding(cache)
+    return ponto
+
+
+def ponto_cliente(site, cliente):
+    assinatura = str(getattr(cliente, "num_assinatura", "") or "").strip()
+    dados = dados_cliente_viabilidade(assinatura)
+    latitude = valor_float(dados.get("latitude", 0))
+    longitude = valor_float(dados.get("longitude", 0))
+
+    if not coordenada_valida(latitude, longitude):
+        endereco = endereco_cliente(cliente)
+        if endereco:
+            try:
+                ponto = geocodificar_texto(endereco)
+                if ponto:
+                    latitude = ponto["lat"]
+                    longitude = ponto["lon"]
+            except Exception:
+                pass
+
+    return {
+        "Tipo": "Cliente",
+        "Nome": getattr(cliente, "nome", ""),
+        "Assinatura": assinatura,
+        "Site Atual": getattr(site, "nome", ""),
+        "Latitude": latitude,
+        "Longitude": longitude,
+        "Altitude": valor_float(dados.get("altitude", 0)),
+        "Altura": valor_float(dados.get("altura", 0)),
+        "Endereco": endereco_cliente(cliente)
+    }
+
+
+def sites_candidatos(sites, ponto_origem, raio_km):
+    candidatos = []
+
+    for site in (sites or {}).values():
+        ponto = ponto_site(site)
+
+        if not coordenada_valida(ponto["Latitude"], ponto["Longitude"]):
+            continue
+
+        distancia = distancia_km(
+            ponto_origem["Latitude"],
+            ponto_origem["Longitude"],
+            ponto["Latitude"],
+            ponto["Longitude"]
+        )
+
+        if distancia <= raio_km:
+            candidatos.append((
+                site,
+                ponto,
+                distancia
+            ))
+
+    return sorted(
+        candidatos,
+        key=lambda item: item[2]
+    )
+
+
+def analisar_ponto_para_site(ponto_origem, ponto_destino, config):
+    pontos = pontos_intermediarios(
+        ponto_origem,
+        ponto_destino,
+        distancia_amostra_m=config.get("line_of_sight_sample_distance_m", 100)
+    )
+    elevacoes, estimado = elevacoes_pontos(
+        pontos,
+        config=config,
+        cache=carregar_cache_elevacao()
+    )
+
+    if elevacoes:
+        ponto_origem = {
+            **ponto_origem,
+            "Altitude": ponto_origem.get("Altitude") or elevacoes[0]
+        }
+        ponto_destino = {
+            **ponto_destino,
+            "Altitude": ponto_destino.get("Altitude") or elevacoes[-1]
+        }
+
+    return analisar_visada(
+        ponto_origem,
+        ponto_destino,
+        elevacoes=elevacoes,
+        estimado=estimado,
+        frequencia_ghz=config.get("line_of_sight_frequency_ghz", 5.8),
+        fresnel_minimo=config.get("line_of_sight_fresnel_clearance", 0.60),
+        distancia_amostra_m=config.get("line_of_sight_sample_distance_m", 100)
+    )
+
+
+def montar_resultados_viabilidade(sites, ponto_origem, raio_km, limite_sites=10):
+    if not coordenada_valida(ponto_origem.get("Latitude"), ponto_origem.get("Longitude")):
+        return pd.DataFrame(), {}
+
+    config = load_map_config()
+    registros = []
+    perfis = {}
+
+    for site, ponto_destino, distancia in sites_candidatos(
+        sites,
+        ponto_origem,
+        raio_km
+    )[:int(limite_sites)]:
+        analise = analisar_ponto_para_site(
+            ponto_origem,
+            ponto_destino,
+            config
+        )
+        chave = getattr(site, "nome", "")
+        perfis[chave] = analise.get("Perfil", pd.DataFrame())
+        ponto_critico = analise.get("Ponto crítico", {})
+        registros.append({
+            "Site": chave,
+            "Tipo": getattr(site, "tipo", ""),
+            "Nome": getattr(site, "nome_cadastro", ""),
+            "Distância km": distancia,
+            "Status": analise.get("Status"),
+            "Menor margem m": analise.get("Menor margem m"),
+            "Ponto crítico km": ponto_critico.get("Distância km", 0),
+            "Estimado": "Sim" if analise.get("Estimado") else "Não",
+            "Latitude Site": ponto_destino["Latitude"],
+            "Longitude Site": ponto_destino["Longitude"],
+            "Altura Site": ponto_destino["Altura"]
+        })
+
+    return pd.DataFrame(registros), perfis
+
+
+def mostrar_resultados(df_resultados, perfis, key):
+    if df_resultados.empty:
+        st.info("Nenhum site candidato encontrado para os critérios informados.")
+        return
+
+    st.markdown("**Sites candidatos**")
+    if _mostrar_grid:
+        _mostrar_grid(
+            df_resultados,
+            height=420,
+            key=f"{key}_resultados"
+        )
+    else:
+        st.dataframe(
+            df_resultados,
+            use_container_width=True,
+            hide_index=True
+        )
+
+    site_perfil = st.selectbox(
+        "Perfil de visada",
+        df_resultados["Site"].tolist(),
+        key=f"{key}_perfil_site"
+    )
+    perfil = perfis.get(site_perfil, pd.DataFrame())
+
+    if perfil.empty:
+        st.info("Perfil indisponível para o site selecionado.")
+    else:
+        st.dataframe(
+            perfil,
+            use_container_width=True,
+            hide_index=True,
+            height=360
+        )
+
+
+def mostrar_viabilidade_endereco(sites):
+    st.header("Viabilidade")
+    st.caption("Informe um endereço para avaliar quais sites próximos podem atender por rádio.")
+
+    endereco = st.text_input(
+        "Endereço",
+        key="viabilidade_endereco"
+    )
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        raio_km = st.number_input(
+            "Raio de busca (km)",
+            min_value=1.0,
+            value=10.0,
+            step=1.0,
+            key="viabilidade_raio_km"
+        )
+    with col2:
+        altura = st.number_input(
+            "Altura no endereço (m)",
+            min_value=0.0,
+            value=0.0,
+            step=1.0,
+            key="viabilidade_altura"
+        )
+    with col3:
+        limite_sites = st.number_input(
+            "Sites avaliados",
+            min_value=1,
+            max_value=50,
+            value=10,
+            step=1,
+            key="viabilidade_limite_sites"
+        )
+
+    if not st.button("Calcular viabilidade", key="viabilidade_calcular"):
+        return
+
+    if not endereco:
+        st.warning("Informe um endereço para calcular a viabilidade.")
+        return
+
+    try:
+        ponto_geo = geocodificar_texto(endereco)
+    except Exception as erro:
+        st.error(f"Falha ao geocodificar endereço: {erro}")
+        return
+
+    if not ponto_geo:
+        st.warning("Endereço não localizado pelo provedor de geocodificação.")
+        return
+
+    ponto_origem = {
+        "Tipo": "Endereço",
+        "Nome": endereco,
+        "Latitude": ponto_geo["lat"],
+        "Longitude": ponto_geo["lon"],
+        "Altitude": 0,
+        "Altura": altura
+    }
+    df_resultados, perfis = montar_resultados_viabilidade(
+        sites,
+        ponto_origem,
+        raio_km,
+        limite_sites=limite_sites
+    )
+    mostrar_resultados(
+        df_resultados,
+        perfis,
+        key="viabilidade_endereco"
+    )
+
+
+def mostrar_migracao_cliente(sites):
+    st.header("Migração")
+    st.caption("Busque um cliente para avaliar possíveis sites de atendimento.")
+
+    opcoes = opcoes_clientes(sites)
+
+    if not opcoes:
+        st.info("Nenhum cliente disponível na base atual.")
+        return
+
+    rotulos = {
+        assinatura: rotulo
+        for assinatura, rotulo in opcoes
+    }
+    assinatura = st.selectbox(
+        "Cliente",
+        [
+            ""
+        ] + [
+            assinatura
+            for assinatura, _rotulo in opcoes
+        ],
+        format_func=lambda valor: "Pesquisar cliente" if not valor else rotulos.get(valor, valor),
+        key="viabilidade_migracao_cliente"
+    )
+
+    if not assinatura:
+        return
+
+    site_atual, cliente = cliente_por_assinatura(
+        sites,
+        assinatura
+    )
+    ponto = ponto_cliente(
+        site_atual,
+        cliente
+    )
+
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        latitude = st.number_input(
+            "Latitude",
+            value=float(ponto["Latitude"] or 0),
+            format="%.6f",
+            key="viabilidade_cliente_latitude"
+        )
+    with col2:
+        longitude = st.number_input(
+            "Longitude",
+            value=float(ponto["Longitude"] or 0),
+            format="%.6f",
+            key="viabilidade_cliente_longitude"
+        )
+    with col3:
+        altitude = st.number_input(
+            "Altitude terreno (m)",
+            value=float(ponto["Altitude"] or 0),
+            step=1.0,
+            key="viabilidade_cliente_altitude"
+        )
+    with col4:
+        altura = st.number_input(
+            "Altura instalação (m)",
+            min_value=0.0,
+            value=float(ponto["Altura"] or 0),
+            step=1.0,
+            key="viabilidade_cliente_altura"
+        )
+
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        raio_km = st.number_input(
+            "Raio de busca (km)",
+            min_value=1.0,
+            value=10.0,
+            step=1.0,
+            key="viabilidade_migracao_raio"
+        )
+    with col2:
+        limite_sites = st.number_input(
+            "Sites avaliados",
+            min_value=1,
+            max_value=50,
+            value=10,
+            step=1,
+            key="viabilidade_migracao_limite"
+        )
+
+    usuario = usuario_atual()
+    if st.button("Salvar dados técnicos do cliente", key="viabilidade_salvar_cliente"):
+        salvar_dados_cliente_viabilidade(
+            assinatura,
+            latitude=latitude,
+            longitude=longitude,
+            altitude=altitude,
+            altura=altura,
+            usuario=usuario.get("username", "")
+        )
+        st.success("Dados técnicos do cliente salvos.")
+
+    if not st.button("Calcular migração", key="viabilidade_calcular_migracao"):
+        return
+
+    ponto_origem = {
+        **ponto,
+        "Latitude": latitude,
+        "Longitude": longitude,
+        "Altitude": altitude,
+        "Altura": altura
+    }
+
+    if not coordenada_valida(latitude, longitude):
+        st.warning("Cliente sem coordenadas válidas. Ajuste latitude/longitude antes de calcular.")
+        return
+
+    df_resultados, perfis = montar_resultados_viabilidade(
+        sites,
+        ponto_origem,
+        raio_km,
+        limite_sites=limite_sites
+    )
+    if site_atual is not None and not df_resultados.empty:
+        df_resultados = df_resultados[
+            df_resultados["Site"] != getattr(site_atual, "nome", "")
+        ].copy()
+
+    mostrar_resultados(
+        df_resultados,
+        perfis,
+        key="viabilidade_migracao"
+    )
+
+
+def mostrar_estudos_engenharia():
+    st.header("Estudos de Engenharia")
+    st.info(
+        "Este espaço será usado para estudos de concentração, otimização e redução de sites."
+    )
+
+
+def mostrar_viabilidade(sites, equipamentos=None):
+    usuario = usuario_atual()
+    subabas = [
+        (
+            "viabilidade_consulta",
+            "Viabilidade",
+            lambda: mostrar_viabilidade_endereco(sites)
+        ),
+        (
+            "viabilidade_migracao",
+            "Migração",
+            lambda: mostrar_migracao_cliente(sites)
+        ),
+        (
+            "viabilidade_estudos",
+            "Estudos de Engenharia",
+            mostrar_estudos_engenharia
+        )
+    ]
+    permitidas = [
+        subaba
+        for subaba in subabas
+        if has_permission(usuario, "viabilidade") or has_permission(usuario, subaba[0])
+    ]
+
+    if not permitidas:
+        st.warning("Seu usuário não possui permissões para Viabilidade.")
+        return
+
+    funcao = mostrar_subnavegacao(
+        permitidas,
+        key="viabilidade_subaba"
+    )
+
+    if funcao:
+        funcao()

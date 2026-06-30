@@ -29,3 +29,11 @@ class Cliente:
         self.produto = ""
 
         self.gerente_contas = ""
+
+        self.latitude = 0.0
+
+        self.longitude = 0.0
+
+        self.altitude = 0.0
+
+        self.altura = 0.0

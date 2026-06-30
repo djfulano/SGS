@@ -1043,6 +1043,50 @@ def mostrar_configuracoes(
                 step=100
             )
 
+        st.markdown("**Viabilidade e elevação**")
+        open_elevation_url = st.text_input(
+            "URL Open-Elevation",
+            value=str(
+                config_mapa.get("open_elevation_url")
+                or "https://api.open-elevation.com/api/v1/lookup"
+            )
+        )
+        col1, col2, col3, col4 = st.columns(4)
+
+        with col1:
+            line_of_sight_sample_distance_m = st.number_input(
+                "Amostragem visada (m)",
+                min_value=10.0,
+                value=float(config_mapa.get("line_of_sight_sample_distance_m") or 100),
+                step=10.0
+            )
+
+        with col2:
+            line_of_sight_frequency_ghz = st.number_input(
+                "Frequência padrão (GHz)",
+                min_value=0.1,
+                value=float(config_mapa.get("line_of_sight_frequency_ghz") or 5.8),
+                step=0.1
+            )
+
+        with col3:
+            line_of_sight_fresnel_clearance = st.number_input(
+                "Fresnel mínimo livre (%)",
+                min_value=1.0,
+                max_value=100.0,
+                value=float(config_mapa.get("line_of_sight_fresnel_clearance") or 0.60) * 100,
+                step=5.0
+            )
+
+        with col4:
+            elevation_timeout_seconds = st.number_input(
+                "Timeout elevação (s)",
+                min_value=1,
+                max_value=60,
+                value=int(config_mapa.get("elevation_timeout_seconds") or 8),
+                step=1
+            )
+
         salvar_mapa = st.form_submit_button(
             "Salvar configurações do mapa"
         )
@@ -1056,7 +1100,13 @@ def mostrar_configuracoes(
             "mapbox_api_key": mapbox_api_key,
             "max_site_site_distance_km": max_site_site_distance_km,
             "max_site_client_distance_km": max_site_client_distance_km,
-            "default_client_limit": default_client_limit
+            "default_client_limit": default_client_limit,
+            "elevation_provider": "open_elevation",
+            "open_elevation_url": open_elevation_url,
+            "line_of_sight_sample_distance_m": line_of_sight_sample_distance_m,
+            "line_of_sight_frequency_ghz": line_of_sight_frequency_ghz,
+            "line_of_sight_fresnel_clearance": line_of_sight_fresnel_clearance / 100,
+            "elevation_timeout_seconds": elevation_timeout_seconds
         })
         registrar_log_sistema(
             "mapa_configuracao_salva",
@@ -1074,7 +1124,8 @@ def mostrar_configuracoes(
                 ),
                 "distancia_site_site_km": config_mapa.get("max_site_site_distance_km"),
                 "distancia_site_cliente_km": config_mapa.get("max_site_client_distance_km"),
-                "limite_padrao_clientes": config_mapa.get("default_client_limit")
+                "limite_padrao_clientes": config_mapa.get("default_client_limit"),
+                "open_elevation_url": config_mapa.get("open_elevation_url")
             }
         )
         st.success("Configurações do mapa salvas.")

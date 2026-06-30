@@ -42,6 +42,36 @@ class ClientsServiceTest(unittest.TestCase):
         self.assertEqual(df.loc[0, "Setorial"], "Direto")
         self.assertEqual(df.loc[0, "Vínculo"], "Vinculado")
 
+    def test_consulta_cliente_inclui_dados_de_viabilidade(self):
+        site = Site("POP_A", "POP")
+        cliente = Cliente("Cliente A", 120, "123")
+        site.adicionar_cliente(cliente)
+
+        with patch(
+            "app.services.clients.load_equipment_catalog",
+            return_value=pd.DataFrame()
+        ), patch(
+            "app.services.clients.carregar_clientes_viabilidade",
+            return_value={
+                "123": {
+                    "latitude": -23.1,
+                    "longitude": -46.1,
+                    "altitude": 800,
+                    "altura": 12
+                }
+            }
+        ):
+            df = montar_base_consulta_clientes(
+                {"POP_A": site},
+                [],
+                clientes_base={}
+            )
+
+        self.assertEqual(df.loc[0, "Latitude"], -23.1)
+        self.assertEqual(df.loc[0, "Longitude"], -46.1)
+        self.assertEqual(df.loc[0, "Altitude"], 800)
+        self.assertEqual(df.loc[0, "Altura"], 12)
+
     def test_cliente_sem_vinculo_permanece_na_base(self):
         with patch(
             "app.services.clients.load_equipment_catalog",

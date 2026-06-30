@@ -2,6 +2,7 @@ import pandas as pd
 
 from app.config import CLIENTES_FILE
 from app.importers.excel_importer import ler_clientes_base
+from app.services.client_viability import carregar_clientes_viabilidade
 from app.services.equipment_catalog import load_equipment_catalog
 from app.services.map_service import endereco_cliente
 from app.services.product_catalog import enrich_products_with_catalog
@@ -171,10 +172,12 @@ def montar_clientes_vinculados(sites, indice_equipamentos, catalogo):
 
 def montar_clientes_vinculados_consulta(sites, indice_equipamentos, catalogo):
     dados = []
+    dados_viabilidade = carregar_clientes_viabilidade()
 
     for site in sites.values():
         for cliente in site.clientes:
             assinatura = str(cliente.num_assinatura).strip()
+            viabilidade = dados_viabilidade.get(assinatura, {})
             dados.append({
                 "Cliente": cliente.nome,
                 "Assinatura": assinatura,
@@ -185,6 +188,10 @@ def montar_clientes_vinculados_consulta(sites, indice_equipamentos, catalogo):
                 "Site": site.nome,
                 "Setorial": getattr(cliente, "setorial", None) or "Direto",
                 "GoTo SNMPc": goto_snmpc_cliente(site, assinatura),
+                "Latitude": viabilidade.get("latitude", getattr(cliente, "latitude", 0)),
+                "Longitude": viabilidade.get("longitude", getattr(cliente, "longitude", 0)),
+                "Altitude": viabilidade.get("altitude", getattr(cliente, "altitude", 0)),
+                "Altura": viabilidade.get("altura", getattr(cliente, "altura", 0)),
                 **resumo_equipamentos(assinatura, indice_equipamentos, catalogo)
             })
 
@@ -235,12 +242,14 @@ def montar_clientes_sem_vinculo_consulta(
 ):
     dados = []
     vinculados = montar_indice_clientes_vinculados(sites)
+    dados_viabilidade = carregar_clientes_viabilidade()
 
     for assinatura, cliente in clientes_base.items():
         assinatura = str(assinatura).strip()
 
         if not assinatura or assinatura in vinculados:
             continue
+        viabilidade = dados_viabilidade.get(assinatura, {})
 
         dados.append({
             "Cliente": cliente.get("Cliente") or "",
@@ -252,6 +261,10 @@ def montar_clientes_sem_vinculo_consulta(
             "Site": "",
             "Setorial": "",
             "GoTo SNMPc": "",
+            "Latitude": viabilidade.get("latitude", 0),
+            "Longitude": viabilidade.get("longitude", 0),
+            "Altitude": viabilidade.get("altitude", 0),
+            "Altura": viabilidade.get("altura", 0),
             **resumo_equipamentos(assinatura, indice_equipamentos, catalogo)
         })
 
@@ -336,6 +349,10 @@ def montar_base_consulta_clientes(sites, equipamentos, clientes_base=None):
         "Site",
         "Setorial",
         "GoTo SNMPc",
+        "Latitude",
+        "Longitude",
+        "Altitude",
+        "Altura",
         "Qtd Equipamentos",
         "Equipamentos"
     ]

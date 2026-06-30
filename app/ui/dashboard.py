@@ -85,6 +85,8 @@ from app.ui.views.products import configurar_produtos
 from app.ui.views.products import mostrar_produtos_equipamentos
 from app.ui.views.support import configurar_suporte
 from app.ui.views.support import mostrar_suporte
+from app.ui.views.viability import configurar_viabilidade
+from app.ui.views.viability import mostrar_viabilidade
 from app.ui.views.topology import configurar_topologia
 from app.ui.views.topology import montar_resumo_sites
 from app.ui.views.topology import mostrar_metricas
@@ -955,6 +957,10 @@ configurar_suporte(
     usuario_logado,
     mostrar_grid
 )
+configurar_viabilidade(
+    usuario_logado,
+    mostrar_grid
+)
 
 
 def seletor_site_gerenciamento(df_detalhes):
@@ -1495,6 +1501,14 @@ abas_disponiveis = [
         )
     ),
     (
+        "viabilidade",
+        "Viabilidade",
+        lambda: mostrar_viabilidade(
+            sites,
+            equipamentos
+        )
+    ),
+    (
         "mapa",
         "Mapa",
         lambda: mostrar_mapa_clientes(
@@ -1583,6 +1597,21 @@ def permissao_aba(aba):
                 "suporte_agendamento",
                 "retirada",
                 "predios"
+            ]
+        )
+
+    if chave == "viabilidade":
+
+        return any(
+            has_permission(
+                usuario_logado(),
+                permissao_viabilidade
+            )
+            for permissao_viabilidade in [
+                "viabilidade",
+                "viabilidade_consulta",
+                "viabilidade_migracao",
+                "viabilidade_estudos"
             ]
         )
 
