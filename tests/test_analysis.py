@@ -1,14 +1,18 @@
 import unittest
+from io import BytesIO
 
 import pandas as pd
 
 from app.models.cliente import Cliente
 from app.models.site import Site
 from app.ui.views.analysis import classificar_site_deficitario
+from app.ui.views.analysis import exportar_relatorio_sites_deficitarios_excel
 from app.ui.views.analysis import extrair_sites_resumo_selecionados
 from app.ui.views.analysis import montar_clientes_custos_receita
+from app.ui.views.analysis import montar_relatorio_executivo_sites_deficitarios
 from app.ui.views.analysis import montar_sites_deficitarios
 from app.ui.views.analysis import preparar_ranking_sites
+from app.ui.views.analysis import montar_justificativa_site_cancelamento
 from app.ui.views.analysis import sugerir_acao_site_deficitario
 
 
@@ -122,6 +126,137 @@ class AnalysisCostsRevenueTest(unittest.TestCase):
                 "Cliente Pai": "Direto",
                 "Cliente Filho": "Indireto"
             }
+        )
+
+    def test_clientes_associados_inclui_site_analisado(self):
+        site_pai = Site("POP_A", "POP")
+        site_filho = Site("BH_A", "BH")
+        site_filho.adicionar_cliente(
+            Cliente("Cliente Filho", 50, "222")
+        )
+        site_pai.adicionar_filho(site_filho)
+
+        df_clientes = montar_clientes_custos_receita(
+            {
+                "POP_A": site_pai,
+                "BH_A": site_filho
+            },
+            [
+                "POP_A"
+            ],
+            incluir_filhos=True
+        )
+
+        registro = df_clientes.iloc[0].to_dict()
+        self.assertEqual(
+            registro["Site Analisado"],
+            "POP_A"
+        )
+        self.assertEqual(
+            registro["Site"],
+            "BH_A"
+        )
+        self.assertEqual(
+            registro["Vínculo"],
+            "Indireto"
+        )
+
+    def test_relatorio_executivo_sites_deficitarios_monta_abas(self):
+        df_sites = pd.DataFrame([
+            {
+                "Site SNMPc": "POP_A",
+                "Nome Cadastro": "POP A",
+                "Tipo": "POP",
+                "Cidade": "Belo Horizonte",
+                "Status Cadastro": "Ativo",
+                "Favorecido": "Fornecedor A",
+                "Severidade": "Crítico",
+                "Ação Sugerida": "Avaliar cancelamento ou migração",
+                "Clientes Total": 2,
+                "Clientes Diretos": 1,
+                "Clientes Indiretos": 1,
+                "Sites Filhos Considerados": 1,
+                "Receita Considerada": 500,
+                "Custo": 1000,
+                "Resultado": -500,
+                "Prejuízo Mensal": 500,
+                "Prejuízo Anual": 6000,
+                "Margem %": -1.0,
+                "Custo por Cliente": 500,
+                "Ticket Médio": 250,
+                "Gap Receita": 500,
+                "Clientes Necessários para Equilíbrio": 2
+            }
+        ])
+        df_clientes = pd.DataFrame([
+            {
+                "Site Analisado": "POP_A",
+                "Vínculo": "Direto",
+                "Site": "POP_A",
+                "Cliente": "Cliente A",
+                "Assinatura": "123",
+                "Produto": "Internet",
+                "Receita": 500,
+                "Setorial": "S1",
+                "Cidade": "Belo Horizonte",
+                "Bairro": "Centro"
+            }
+        ])
+
+        relatorio = montar_relatorio_executivo_sites_deficitarios(
+            df_sites,
+            df_clientes,
+            {
+                "Resultado máximo": 0
+            }
+        )
+
+        self.assertEqual(
+            relatorio["sites"].loc[0, "Site SNMPc"],
+            "POP_A"
+        )
+        self.assertIn(
+            "resultado mensal negativo",
+            relatorio["sites"].loc[0, "Justificativa Executiva"]
+        )
+        self.assertEqual(
+            relatorio["clientes"].loc[0, "Cliente"],
+            "Cliente A"
+        )
+        self.assertEqual(
+            relatorio["parametros"].loc[0, "Parâmetro"],
+            "Resultado máximo"
+        )
+
+        conteudo = exportar_relatorio_sites_deficitarios_excel(relatorio)
+        xls = pd.ExcelFile(BytesIO(conteudo))
+        self.assertEqual(
+            set(xls.sheet_names),
+            {
+                "Resumo Executivo",
+                "Sites",
+                "Clientes",
+                "Resumo por Ação",
+                "Resumo por Severidade",
+                "Parâmetros Usados"
+            }
+        )
+
+    def test_justificativa_monitorar_quando_sem_sinais(self):
+        justificativa = montar_justificativa_site_cancelamento({
+            "Resultado": 500,
+            "Margem %": 0.30,
+            "Prejuízo Anual": 0,
+            "Clientes Total": 10,
+            "Custo por Cliente": 100,
+            "Ticket Médio": 200,
+            "Gap Receita": -500,
+            "Clientes Necessários para Equilíbrio": 0
+        })
+
+        self.assertIn(
+            "Monitorar",
+            justificativa
         )
 
     def test_extrai_sites_marcados_no_resumo_para_novo_filtro(self):

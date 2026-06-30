@@ -1,5 +1,6 @@
 import re
 import unicodedata
+from io import BytesIO
 
 import pandas as pd
 import streamlit as st
@@ -502,6 +503,7 @@ def montar_clientes_custos_receita(sites, nomes_sites, incluir_filhos=False):
 
             for cliente in site_consulta.clientes:
                 registros.append({
+                    "Site Analisado": site.nome,
                     "Vínculo": vinculo,
                     "Site": site_consulta.nome,
                     "Tipo Site": site_consulta.tipo,
@@ -518,6 +520,7 @@ def montar_clientes_custos_receita(sites, nomes_sites, incluir_filhos=False):
     return pd.DataFrame(
         registros,
         columns=[
+            "Site Analisado",
             "Vínculo",
             "Site",
             "Tipo Site",
@@ -819,6 +822,324 @@ def montar_sites_deficitarios(
             "Site SNMPc"
         ]
     )
+
+
+def montar_justificativa_site_cancelamento(linha):
+    sinais = []
+    resultado = _valor_float(linha.get("Resultado", 0))
+    margem = _valor_float(linha.get("Margem %", 0))
+    prejuizo_anual = _valor_float(linha.get("Prejuízo Anual", 0))
+    clientes_total = _valor_float(linha.get("Clientes Total", 0))
+    custo_por_cliente = _valor_float(linha.get("Custo por Cliente", 0))
+    ticket_medio = _valor_float(linha.get("Ticket Médio", 0))
+    gap_receita = _valor_float(linha.get("Gap Receita", 0))
+    clientes_equilibrio = _valor_float(
+        linha.get("Clientes Necessários para Equilíbrio", 0)
+    )
+
+    if resultado < 0:
+        sinais.append("resultado mensal negativo")
+    elif margem <= 0.10:
+        sinais.append("margem operacional baixa")
+
+    if prejuizo_anual > 0:
+        sinais.append("prejuízo anual projetado")
+
+    if clientes_total <= 3:
+        sinais.append("baixa quantidade de clientes")
+
+    if ticket_medio > 0 and custo_por_cliente > ticket_medio:
+        sinais.append("custo por cliente acima do ticket médio")
+
+    if gap_receita > 0:
+        sinais.append("receita insuficiente para equilíbrio")
+
+    if clientes_equilibrio > 0:
+        sinais.append("necessidade de clientes adicionais para equilíbrio")
+
+    if not sinais:
+        return "Monitorar desempenho financeiro e operacional antes de recomendar cancelamento."
+
+    return (
+        "Avaliar com prioridade porque o site apresenta "
+        + ", ".join(sinais)
+        + "."
+    )
+
+
+def _df_parametros_relatorio(parametros):
+    registros = [
+        {
+            "Parâmetro": chave,
+            "Valor": valor
+        }
+        for chave, valor in (parametros or {}).items()
+    ]
+
+    return pd.DataFrame(
+        registros,
+        columns=[
+            "Parâmetro",
+            "Valor"
+        ]
+    )
+
+
+def _resumo_executivo_sites_deficitarios(df_sites, df_clientes):
+    receita = _valor_float(df_sites["Receita Considerada"].sum())
+    custo = _valor_float(df_sites["Custo"].sum())
+    resultado = receita - custo
+    clientes = _valor_float(df_sites["Clientes Total"].sum())
+    prejuizo_mensal = _valor_float(df_sites["Prejuízo Mensal"].sum())
+    prejuizo_anual = _valor_float(df_sites["Prejuízo Anual"].sum())
+
+    registros = [
+        ("Sites analisados", len(df_sites)),
+        ("Clientes impactados", int(clientes)),
+        ("Clientes listados", len(df_clientes)),
+        ("Receita mensal", receita),
+        ("Custo mensal", custo),
+        ("Resultado mensal", resultado),
+        ("Prejuízo mensal", prejuizo_mensal),
+        ("Prejuízo anual projetado", prejuizo_anual),
+        (
+            "Sites críticos",
+            int((df_sites.get("Severidade", "") == "Crítico").sum())
+        ),
+        (
+            "Sites com recomendação de cancelamento ou migração",
+            int(
+                df_sites.get("Ação Sugerida", "").astype(str).str.contains(
+                    "cancelamento",
+                    case=False,
+                    regex=False,
+                    na=False
+                ).sum()
+            )
+        )
+    ]
+
+    return pd.DataFrame(
+        [
+            {
+                "Indicador": indicador,
+                "Valor": valor
+            }
+            for indicador, valor in registros
+        ]
+    )
+
+
+def montar_relatorio_executivo_sites_deficitarios(
+    df_sites,
+    df_clientes,
+    parametros=None
+):
+    if df_sites is None or df_sites.empty:
+        vazio = pd.DataFrame()
+        return {
+            "resumo": vazio,
+            "sites": vazio,
+            "clientes": vazio,
+            "resumo_acao": vazio,
+            "resumo_severidade": vazio,
+            "parametros": _df_parametros_relatorio(parametros)
+        }
+
+    sites_relatorio = df_sites.copy()
+    clientes_relatorio = (
+        df_clientes.copy()
+        if df_clientes is not None
+        else pd.DataFrame()
+    )
+
+    sites_relatorio["Justificativa Executiva"] = sites_relatorio.apply(
+        montar_justificativa_site_cancelamento,
+        axis=1
+    )
+
+    resumo_acao = (
+        sites_relatorio
+        .groupby("Ação Sugerida", dropna=False)
+        .agg({
+            "Site SNMPc": "nunique",
+            "Clientes Total": "sum",
+            "Receita Considerada": "sum",
+            "Custo": "sum",
+            "Resultado": "sum",
+            "Prejuízo Mensal": "sum",
+            "Prejuízo Anual": "sum"
+        })
+        .reset_index()
+        .rename(columns={
+            "Site SNMPc": "Sites",
+            "Clientes Total": "Clientes",
+            "Receita Considerada": "Receita"
+        })
+    )
+
+    resumo_severidade = (
+        sites_relatorio
+        .groupby("Severidade", dropna=False)
+        .agg({
+            "Site SNMPc": "nunique",
+            "Clientes Total": "sum",
+            "Receita Considerada": "sum",
+            "Custo": "sum",
+            "Resultado": "sum",
+            "Prejuízo Mensal": "sum",
+            "Prejuízo Anual": "sum"
+        })
+        .reset_index()
+        .rename(columns={
+            "Site SNMPc": "Sites",
+            "Clientes Total": "Clientes",
+            "Receita Considerada": "Receita"
+        })
+    )
+
+    return {
+        "resumo": _resumo_executivo_sites_deficitarios(
+            sites_relatorio,
+            clientes_relatorio
+        ),
+        "sites": sites_relatorio,
+        "clientes": clientes_relatorio,
+        "resumo_acao": resumo_acao,
+        "resumo_severidade": resumo_severidade,
+        "parametros": _df_parametros_relatorio(parametros)
+    }
+
+
+def exportar_relatorio_sites_deficitarios_excel(relatorio):
+    output = BytesIO()
+
+    abas = [
+        ("Resumo Executivo", relatorio.get("resumo")),
+        ("Sites", relatorio.get("sites")),
+        ("Clientes", relatorio.get("clientes")),
+        ("Resumo por Ação", relatorio.get("resumo_acao")),
+        ("Resumo por Severidade", relatorio.get("resumo_severidade")),
+        ("Parâmetros Usados", relatorio.get("parametros"))
+    ]
+
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+        for nome_aba, df in abas:
+            df_exportacao = (
+                df
+                if isinstance(df, pd.DataFrame)
+                else pd.DataFrame()
+            )
+            df_exportacao.to_excel(
+                writer,
+                sheet_name=nome_aba,
+                index=False
+            )
+
+    output.seek(0)
+    return output.getvalue()
+
+
+def _mostrar_relatorio_executivo_sites_deficitarios(relatorio):
+    st.subheader("Relatório executivo")
+
+    df_resumo = relatorio["resumo"]
+    df_sites = relatorio["sites"]
+    df_clientes = relatorio["clientes"]
+
+    col1, col2, col3, col4 = st.columns(4)
+    resumo = dict(
+        zip(
+            df_resumo["Indicador"],
+            df_resumo["Valor"]
+        )
+    )
+    col1.metric("Sites analisados", int(resumo.get("Sites analisados", 0)))
+    col2.metric("Clientes impactados", int(resumo.get("Clientes impactados", 0)))
+    col3.metric("Resultado mensal", _formatar_moeda(resumo.get("Resultado mensal", 0)))
+    col4.metric(
+        "Prejuízo anual",
+        _formatar_moeda(resumo.get("Prejuízo anual projetado", 0))
+    )
+
+    excel = exportar_relatorio_sites_deficitarios_excel(relatorio)
+    st.download_button(
+        "Baixar relatório Excel",
+        data=excel,
+        file_name="sgs_sites_potencial_cancelamento.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        key="sites_deficitarios_relatorio_excel"
+    )
+
+    for _indice, site in df_sites.sort_values(
+        by=[
+            "Resultado",
+            "Site SNMPc"
+        ]
+    ).iterrows():
+        titulo = (
+            f"{site.get('Site SNMPc', '')} - "
+            f"{site.get('Nome Cadastro', '') or 'Sem nome cadastral'}"
+        )
+
+        with st.expander(titulo):
+            st.markdown(
+                f"**Ação sugerida:** {site.get('Ação Sugerida', '')}  \n"
+                f"**Severidade:** {site.get('Severidade', '')}  \n"
+                f"**Justificativa:** {site.get('Justificativa Executiva', '')}"
+            )
+
+            col1, col2, col3, col4 = st.columns(4)
+            col1.metric("Receita", _formatar_moeda(site.get("Receita Considerada", 0)))
+            col2.metric("Custo", _formatar_moeda(site.get("Custo", 0)))
+            col3.metric("Resultado", _formatar_moeda(site.get("Resultado", 0)))
+            col4.metric("Margem", f"{_valor_float(site.get('Margem %', 0)):.1%}")
+
+            col1, col2, col3, col4 = st.columns(4)
+            col1.metric("Clientes", int(_valor_float(site.get("Clientes Total", 0))))
+            col2.metric(
+                "Custo por cliente",
+                _formatar_moeda(site.get("Custo por Cliente", 0))
+            )
+            col3.metric("Ticket médio", _formatar_moeda(site.get("Ticket Médio", 0)))
+            col4.metric(
+                "Clientes para equilíbrio",
+                int(_valor_float(site.get("Clientes Necessários para Equilíbrio", 0)))
+            )
+
+            if "Site Analisado" in df_clientes.columns:
+                clientes_site = df_clientes[
+                    df_clientes["Site Analisado"].astype(str)
+                    == str(site.get("Site SNMPc", ""))
+                ].copy()
+            else:
+                clientes_site = pd.DataFrame()
+
+            if clientes_site.empty:
+                st.caption("Nenhum cliente localizado para este site.")
+            else:
+                colunas_clientes = [
+                    "Vínculo",
+                    "Site",
+                    "Cliente",
+                    "Assinatura",
+                    "Produto",
+                    "Receita",
+                    "Setorial",
+                    "Cidade",
+                    "Bairro"
+                ]
+                st.dataframe(
+                    clientes_site[
+                        [
+                            coluna
+                            for coluna in colunas_clientes
+                            if coluna in clientes_site.columns
+                        ]
+                    ],
+                    use_container_width=True,
+                    hide_index=True
+                )
 
 
 def mostrar_sites_deficitarios(sites):
@@ -1171,6 +1492,41 @@ def mostrar_sites_deficitarios(sites):
             height=420,
             key="sites_deficitarios_clientes"
         )
+
+    parametros_relatorio = {
+        "Somente sites ativos": "Sim" if somente_ativos else "Não",
+        "Somente sites presentes no SNMPc": "Sim" if somente_no_snmpc else "Não",
+        "Somente sites com clientes": "Sim" if somente_com_clientes else "Não",
+        "Incluir sites filhos e clientes dos filhos": "Sim" if incluir_filhos else "Não",
+        "Receita considerada": receita_coluna,
+        "Resultado mínimo": (
+            resultado_minimo
+            if resultado_minimo is not None
+            else "Não aplicado"
+        ),
+        "Resultado máximo": resultado_maximo,
+        "Prejuízo mínimo": prejuizo_minimo,
+        "Margem máxima (%)": margem_maxima_percentual,
+        "Custo por cliente mínimo": custo_por_cliente_minimo,
+        "Máximo de clientes": (
+            int(max_clientes_valor)
+            if max_clientes_valor
+            else "Não aplicado"
+        ),
+        "Clientes necessários para equilíbrio mínimo": int(clientes_equilibrio_minimo),
+        "Prejuízo alto mensal": prejuizo_alto,
+        "Margem crítica (%)": margem_critica_percentual,
+        "Poucos clientes": int(poucos_clientes),
+        "Busca": busca or "",
+        "Severidade": ", ".join(severidades or []),
+        "Ação sugerida": ", ".join(acoes_sugeridas or [])
+    }
+    relatorio_executivo = montar_relatorio_executivo_sites_deficitarios(
+        df_filtrado,
+        df_clientes,
+        parametros_relatorio
+    )
+    _mostrar_relatorio_executivo_sites_deficitarios(relatorio_executivo)
 
     st.subheader("Resumo por ação sugerida")
     df_acoes = (

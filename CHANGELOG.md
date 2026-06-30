@@ -1,5 +1,11 @@
 # Histórico de versões
 
+## 1.0.90
+
+- Sites Deficitários passa a gerar relatório executivo para apresentação à diretoria.
+- Relatório executivo exibe resumo por site, justificativa, clientes associados e download em Excel.
+- Exportação do relatório inclui abas de resumo, sites, clientes, ações, severidade e parâmetros usados.
+
 ## 1.0.89
 
 - Ranking de sites passa a carregar o nome cadastral do resumo de Topologia.
