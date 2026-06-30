@@ -1,5 +1,10 @@
 # Histórico de versões
 
+## 1.0.88
+
+- Ranking de sites passa a exibir Nome Cadastro como primeira coluna.
+- Ranking de sites passa a exibir Nome SNMPc como última coluna.
+
 ## 1.0.87
 
 - Ranking de sites passa a usar o custo real do resumo de Topologia.

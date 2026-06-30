@@ -156,6 +156,7 @@ class AnalysisCostsRevenueTest(unittest.TestCase):
                 "Receita Total": "1200",
                 "Custo": "R$ 500,25",
                 "Clientes Total": "2",
+                "Nome Cadastro": "POP A Cadastro",
                 "Cidade": "Belo Horizonte"
             }
         ]))
@@ -163,11 +164,16 @@ class AnalysisCostsRevenueTest(unittest.TestCase):
         self.assertEqual(
             df_ranking.columns.tolist(),
             [
-                "Nome SNMPc",
+                "Nome Cadastro",
                 "Receita Total",
                 "Clientes Total",
-                "Custo"
+                "Custo",
+                "Nome SNMPc"
             ]
+        )
+        self.assertEqual(
+            df_ranking.loc[0, "Nome Cadastro"],
+            "POP A Cadastro"
         )
         self.assertEqual(
             df_ranking.loc[0, "Nome SNMPc"],
