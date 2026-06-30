@@ -1,5 +1,11 @@
 # Histórico de versões
 
+## 1.0.85
+
+- Módulo Mapa passa a ter subabas Mapa Geral e Mapa Personalizado.
+- Mapa Geral exibe apenas busca e mapa, usando cache geral compilado.
+- Mapa Personalizado preserva filtros, resumo, exportação e tabelas do mapa atual.
+
 ## 1.0.84
 
 - Equipamentos > Buscar equipamentos passa a usar filtros por lista para Ícone, Fabricante, Modelo e Tipo.

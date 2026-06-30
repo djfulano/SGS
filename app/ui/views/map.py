@@ -24,8 +24,11 @@ from app.services.map_export import montar_kmz_mapa
 from app.services.site_metrics import montar_escopo_sites
 from app.services.site_metrics import montar_resumo_selecao_sites
 from app.ui.components.tables import mostrar_grid
+from app.ui.navigation import mostrar_subnavegacao
 from app.ui.session import usuario_logado
 
+
+MAPA_GERAL_CACHE_KEY = "__mapa_geral__"
 
 COLUNAS_BUSCA_SITES = [
     "Site",
@@ -655,9 +658,442 @@ def centro_zoom_mapa(
     return latitudes, longitudes, 9
 
 
-def mostrar_mapa_clientes(sites, enlaces_sites=None):
+def deve_atualizar_cache_mapa_geral(
+    sites_escolhidos,
+    sites,
+    incluir_filhos,
+    incluir_clientes,
+    limite_clientes,
+    resumo
+):
+    return (
+        set(sites_escolhidos) == set(sites.keys())
+        and bool(incluir_filhos)
+        and bool(incluir_clientes)
+        and int(limite_clientes) >= int(resumo.get("clientes_total") or 0)
+    )
 
-    st.header("Mapa de clientes")
+
+def salvar_cache_mapa_geral(pacote):
+    cache = carregar_cache_mapa()
+    cache[MAPA_GERAL_CACHE_KEY] = pacote
+    salvar_cache_mapa(cache)
+
+
+def carregar_pacote_mapa_geral():
+    cache = carregar_cache_mapa()
+    pacote = cache.get(MAPA_GERAL_CACHE_KEY)
+
+    return pacote if isinstance(pacote, dict) else None
+
+
+def renderizar_pacote_mapa(
+    pacote,
+    *,
+    visualizacao="Satélite",
+    busca_key="mapa_busca",
+    limpar_key="mapa_limpar_busca",
+    limpar_flag_key="mapa_busca_limpar_pendente",
+    mostrar_metricas=True,
+    mostrar_exportador=True,
+    mostrar_tabelas=True,
+    prefixo_key="mapa"
+):
+    df_sites, df_clientes, df_links_clientes, df_links_sites, df_nao_plotados = dataframes_mapa(
+        pacote
+    )
+    pode_ver_valores_clientes = usuario_pode_ver_valores_clientes()
+    df_clientes = ocultar_valores_clientes_mapa(
+        df_clientes,
+        pode_ver_valores_clientes
+    )
+    df_links_clientes = ocultar_valores_clientes_mapa(
+        df_links_clientes,
+        pode_ver_valores_clientes
+    )
+    df_nao_plotados = ocultar_valores_clientes_mapa(
+        df_nao_plotados,
+        pode_ver_valores_clientes
+    )
+
+    if st.session_state.pop(limpar_flag_key, False):
+        st.session_state[busca_key] = ""
+
+    col_busca, col_limpar = st.columns([4, 1])
+
+    with col_busca:
+        termo_busca_mapa = st.text_input(
+            "Buscar no mapa",
+            placeholder="Site, cliente, assinatura, produto, equipamento ou endereço",
+            key=busca_key
+        )
+
+    with col_limpar:
+        st.write("")
+        if st.button(
+            "Limpar busca",
+            key=limpar_key,
+            disabled=not bool(str(termo_busca_mapa or "").strip())
+        ):
+            st.session_state[limpar_flag_key] = True
+            st.rerun()
+
+    resultado_busca = aplicar_busca_mapa(
+        df_sites,
+        df_clientes,
+        df_links_clientes,
+        df_links_sites,
+        df_nao_plotados,
+        termo_busca_mapa
+    )
+    df_marcador_busca = pd.DataFrame()
+
+    if resultado_busca["ativo"]:
+        st.caption(
+            "Busca ativa: "
+            f"{resultado_busca['resultados_plotados']} item(ns) plotado(s) e "
+            f"{resultado_busca['resultados_nao_plotados']} item(ns) não plotado(s) encontrado(s)."
+        )
+
+        if resultado_busca["sem_resultado"]:
+            df_marcador_busca = buscar_endereco_temporario(
+                termo_busca_mapa
+            )
+
+            if df_marcador_busca.empty:
+                st.warning(
+                    "Nenhum item ou endereço encontrado para a busca informada."
+                )
+            else:
+                st.info(
+                    "Endereço encontrado e marcado temporariamente no mapa."
+                )
+
+    df_sites_mapa = resultado_busca["sites"]
+    df_clientes_mapa = resultado_busca["clientes"]
+    df_links_clientes_mapa = resultado_busca["links_clientes"]
+    df_links_sites_mapa = resultado_busca["links_sites"]
+    df_sites_tabela = resultado_busca["sites_tabela"]
+    df_clientes_tabela = resultado_busca["clientes_tabela"]
+    df_links_clientes_tabela = resultado_busca["links_clientes_tabela"]
+    df_links_sites_tabela = resultado_busca["links_sites_tabela"]
+    df_nao_plotados_tabela = resultado_busca["nao_plotados"]
+
+    if mostrar_exportador:
+        mostrar_exportador_mapa(
+            resultado_busca,
+            df_sites,
+            df_clientes,
+            df_links_clientes,
+            df_links_sites,
+            df_nao_plotados,
+            df_sites_tabela,
+            df_clientes_tabela,
+            df_links_clientes_tabela,
+            df_links_sites_tabela,
+            df_nao_plotados_tabela
+        )
+
+    if df_sites.empty and df_clientes.empty:
+
+        st.warning(
+            "Não há coordenadas de sites ou clientes para exibir neste escopo."
+        )
+
+        return
+
+    pontos_lat, pontos_lon, zoom_mapa = centro_zoom_mapa(
+        df_sites_mapa,
+        df_clientes_mapa,
+        resultado_busca["sites_resultado"],
+        resultado_busca["clientes_resultado"],
+        df_marcador_busca,
+        resultado_busca["ativo"]
+    )
+
+    if not pontos_lat:
+        pontos_lat, pontos_lon, zoom_mapa = centro_zoom_mapa(
+            df_sites,
+            df_clientes,
+            pd.DataFrame(),
+            pd.DataFrame(),
+            pd.DataFrame(),
+            False
+        )
+
+    if mostrar_metricas:
+        col1, col2, col3 = st.columns(3)
+
+        col1.metric(
+            "Sites com coordenada",
+            len(df_sites)
+        )
+
+        col2.metric(
+            "Clientes no mapa",
+            len(df_clientes)
+        )
+
+        col3.metric(
+            "Vínculos desenhados",
+            len(df_links_clientes) + len(df_links_sites)
+        )
+        st.caption(
+            f"Itens não plotados: {len(df_nao_plotados)}"
+        )
+
+    view_state = pdk.ViewState(
+        latitude=sum(pontos_lat) / len(pontos_lat),
+        longitude=sum(pontos_lon) / len(pontos_lon),
+        zoom=zoom_mapa,
+        pitch=0
+    )
+
+    camadas = []
+    df_rotulos_distancia = pd.concat(
+        [
+            df_links_sites_mapa,
+            df_links_clientes_mapa
+        ],
+        ignore_index=True
+    )
+    if not df_rotulos_distancia.empty:
+        df_rotulos_distancia = df_rotulos_distancia[
+            df_rotulos_distancia["Ponto Rotulo"].notna()
+        ]
+
+    if not df_links_clientes_mapa.empty:
+
+        camadas.append(pdk.Layer(
+            "LineLayer",
+            data=df_links_clientes_mapa,
+            get_source_position="Origem",
+            get_target_position="Destino",
+            get_color="Cor",
+            get_width=3,
+            pickable=True
+        ))
+
+    if not df_links_sites_mapa.empty:
+
+        camadas.append(pdk.Layer(
+            "LineLayer",
+            data=df_links_sites_mapa,
+            get_source_position="Origem",
+            get_target_position="Destino",
+            get_color="Cor",
+            get_width=7,
+            pickable=True
+        ))
+
+    if not df_rotulos_distancia.empty:
+
+        camadas.append(pdk.Layer(
+            "TextLayer",
+            data=df_rotulos_distancia,
+            get_position="Ponto Rotulo",
+            get_text="Rotulo Distancia",
+            get_color="Cor",
+            get_size=12,
+            get_alignment_baseline="'center'",
+            get_pixel_offset=[0, -10],
+            pickable=True
+        ))
+
+    if not df_clientes_mapa.empty:
+        df_marcadores_clientes = preparar_marcadores_clientes(
+            df_clientes_mapa,
+            zoom_mapa
+        )
+
+        camadas.extend(
+            camadas_marcadores_geometricos(df_marcadores_clientes)
+        )
+
+    if not df_sites_mapa.empty:
+        df_marcadores_sites = preparar_marcadores_sites(
+            df_sites_mapa,
+            zoom_mapa
+        )
+
+        camadas.extend(
+            camadas_marcadores_geometricos(df_marcadores_sites)
+        )
+
+    if not df_marcador_busca.empty:
+        df_marcador_busca_visual = preparar_marcadores_busca(
+            df_marcador_busca,
+            zoom_mapa
+        )
+
+        camadas.extend(
+            camadas_marcadores_geometricos(df_marcador_busca_visual)
+        )
+
+    estilo_ruas = "https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json"
+    estilo_satelite = "mapbox://styles/mapbox/satellite-streets-v12"
+    provedor_satelite = provedor_mapa_satelite()
+    token_mapbox = mapbox_api_key()
+
+    if visualizacao == "Satélite" and provedor_satelite == "maptiler":
+
+        estilo_maptiler = maptiler_satellite_style_url()
+
+        if estilo_maptiler:
+
+            estilo_satelite = estilo_maptiler
+
+        else:
+
+            st.caption(
+                "A visualização por satélite usa MapTiler; configure "
+                "MAPTILER_API_KEY no ambiente."
+            )
+
+    elif visualizacao == "Satélite" and not token_mapbox:
+
+        st.caption(
+            "A visualização por satélite usa estilo Mapbox; se o fundo não "
+            "aparecer, configure MAPBOX_API_KEY no ambiente."
+        )
+
+    estilos_mapa = {
+        "Ruas": estilo_ruas,
+        "Satélite": estilo_satelite
+    }
+
+    api_keys = (
+        {
+            "mapbox": token_mapbox
+        }
+        if token_mapbox and provedor_satelite == "mapbox"
+        else None
+    )
+
+    st.pydeck_chart(
+        pdk.Deck(
+            map_style=estilos_mapa[visualizacao],
+            map_provider="mapbox" if visualizacao == "Satélite" else "carto",
+            api_keys=api_keys,
+            initial_view_state=view_state,
+            layers=camadas,
+            tooltip={
+                "html": "{Tooltip}"
+            }
+        )
+    )
+
+    if not mostrar_tabelas:
+        return
+
+    opcoes_abas_mapa = [
+        "Sites",
+        "Clientes",
+        "Vinculos",
+        "Não plotados"
+    ]
+
+    aba_mapa = st.segmented_control(
+        "Dados do mapa",
+        opcoes_abas_mapa,
+        selection_mode="single",
+        key=f"{prefixo_key}_aba_dados",
+        label_visibility="collapsed",
+        width="stretch"
+    )
+
+    if not aba_mapa:
+
+        aba_mapa = "Sites"
+
+    if aba_mapa == "Sites":
+
+        if df_sites_tabela.empty:
+
+            st.info("Nenhum site com latitude/longitude no cadastro.")
+
+        else:
+
+            mostrar_grid(
+                df_sites_tabela.drop(
+                    columns=[
+                        "Cor",
+                        "Cor Suave",
+                        "Icone",
+                        "Tooltip"
+                    ],
+                    errors="ignore"
+                ),
+                height=260,
+                key=f"{prefixo_key}_sites_plotados"
+            )
+
+    elif aba_mapa == "Clientes":
+
+        if df_clientes_tabela.empty:
+
+            st.info("Nenhum cliente geocodificado para este escopo.")
+
+        else:
+
+            mostrar_grid(
+                df_clientes_tabela.drop(
+                    columns=[
+                        "Cor",
+                        "Tooltip"
+                    ],
+                    errors="ignore"
+                ),
+                height=260,
+                key=f"{prefixo_key}_clientes_plotados"
+            )
+
+    elif aba_mapa == "Vinculos":
+
+        dados_vinculos = []
+
+        if not df_links_sites_tabela.empty:
+
+            dados_vinculos.extend(
+                df_links_sites_tabela.assign(Tipo="Site filho").to_dict("records")
+            )
+
+        if not df_links_clientes_tabela.empty:
+
+            dados_vinculos.extend(
+                df_links_clientes_tabela.assign(Tipo="Cliente").to_dict("records")
+            )
+
+        if not dados_vinculos:
+
+            st.info("Nenhum vínculo com coordenadas para desenhar.")
+
+        else:
+
+            mostrar_grid(
+                pd.DataFrame(dados_vinculos),
+                height=260,
+                key=f"{prefixo_key}_vinculos_plotados"
+            )
+
+    elif aba_mapa == "Não plotados":
+
+        if df_nao_plotados_tabela.empty:
+
+            st.info("Todos os itens elegíveis foram plotados ou vinculados.")
+
+        else:
+
+            mostrar_grid(
+                df_nao_plotados_tabela,
+                height=320,
+                key=f"{prefixo_key}_itens_nao_plotados"
+            )
+
+
+def mostrar_mapa_personalizado(sites, enlaces_sites=None):
+
+    st.header("Mapa personalizado")
     enlaces_sites = enlaces_sites or []
     config_limites_mapa = limites_mapa()
 
@@ -870,388 +1306,73 @@ def mostrar_mapa_clientes(sites, enlaces_sites=None):
             else "Mapa compilado e salvo no cache local."
         )
 
-    df_sites, df_clientes, df_links_clientes, df_links_sites, df_nao_plotados = dataframes_mapa(
-        pacote
-    )
-    pode_ver_valores_clientes = usuario_pode_ver_valores_clientes()
-    df_clientes = ocultar_valores_clientes_mapa(
-        df_clientes,
-        pode_ver_valores_clientes
-    )
-    df_links_clientes = ocultar_valores_clientes_mapa(
-        df_links_clientes,
-        pode_ver_valores_clientes
-    )
-    df_nao_plotados = ocultar_valores_clientes_mapa(
-        df_nao_plotados,
-        pode_ver_valores_clientes
+    if deve_atualizar_cache_mapa_geral(
+        sites_escolhidos,
+        sites,
+        incluir_filhos,
+        incluir_clientes,
+        limite_clientes,
+        resumo
+    ):
+        salvar_cache_mapa_geral(pacote)
+
+    renderizar_pacote_mapa(
+        pacote,
+        visualizacao=visualizacao,
+        busca_key="mapa_personalizado_busca",
+        limpar_key="mapa_personalizado_limpar_busca",
+        limpar_flag_key="mapa_personalizado_busca_limpar_pendente",
+        mostrar_metricas=True,
+        mostrar_exportador=True,
+        mostrar_tabelas=True,
+        prefixo_key="mapa_personalizado"
     )
 
-    if st.session_state.pop("mapa_busca_limpar_pendente", False):
-        st.session_state["mapa_busca"] = ""
 
-    col_busca, col_limpar = st.columns([4, 1])
+def mostrar_mapa_geral():
+    st.header("Mapa geral")
 
-    with col_busca:
-        termo_busca_mapa = st.text_input(
-            "Buscar no mapa",
-            placeholder="Site, cliente, assinatura, produto, equipamento ou endereço",
-            key="mapa_busca"
+    pacote = carregar_pacote_mapa_geral()
+
+    if not pacote:
+        st.info(
+            "Mapa geral ainda não compilado. Use Mapa Personalizado com todos os sites, "
+            "sites filhos e clientes para compilar o mapa geral."
         )
-
-    with col_limpar:
-        st.write("")
-        if st.button(
-            "Limpar busca",
-            key="mapa_limpar_busca",
-            disabled=not bool(str(termo_busca_mapa or "").strip())
-        ):
-            st.session_state["mapa_busca_limpar_pendente"] = True
-            st.rerun()
-
-    resultado_busca = aplicar_busca_mapa(
-        df_sites,
-        df_clientes,
-        df_links_clientes,
-        df_links_sites,
-        df_nao_plotados,
-        termo_busca_mapa
-    )
-    df_marcador_busca = pd.DataFrame()
-
-    if resultado_busca["ativo"]:
-        st.caption(
-            "Busca ativa: "
-            f"{resultado_busca['resultados_plotados']} item(ns) plotado(s) e "
-            f"{resultado_busca['resultados_nao_plotados']} item(ns) não plotado(s) encontrado(s)."
-        )
-
-        if resultado_busca["sem_resultado"]:
-            df_marcador_busca = buscar_endereco_temporario(
-                termo_busca_mapa
-            )
-
-            if df_marcador_busca.empty:
-                st.warning(
-                    "Nenhum item ou endereço encontrado para a busca informada."
-                )
-            else:
-                st.info(
-                    "Endereço encontrado e marcado temporariamente no mapa."
-                )
-
-    df_sites_mapa = resultado_busca["sites"]
-    df_clientes_mapa = resultado_busca["clientes"]
-    df_links_clientes_mapa = resultado_busca["links_clientes"]
-    df_links_sites_mapa = resultado_busca["links_sites"]
-    df_sites_tabela = resultado_busca["sites_tabela"]
-    df_clientes_tabela = resultado_busca["clientes_tabela"]
-    df_links_clientes_tabela = resultado_busca["links_clientes_tabela"]
-    df_links_sites_tabela = resultado_busca["links_sites_tabela"]
-    df_nao_plotados_tabela = resultado_busca["nao_plotados"]
-
-    mostrar_exportador_mapa(
-        resultado_busca,
-        df_sites,
-        df_clientes,
-        df_links_clientes,
-        df_links_sites,
-        df_nao_plotados,
-        df_sites_tabela,
-        df_clientes_tabela,
-        df_links_clientes_tabela,
-        df_links_sites_tabela,
-        df_nao_plotados_tabela
-    )
-
-    if df_sites.empty and df_clientes.empty:
-
-        st.warning(
-            "Não há coordenadas de sites ou clientes para exibir neste escopo."
-        )
-
         return
 
-    pontos_lat, pontos_lon, zoom_mapa = centro_zoom_mapa(
-        df_sites_mapa,
-        df_clientes_mapa,
-        resultado_busca["sites_resultado"],
-        resultado_busca["clientes_resultado"],
-        df_marcador_busca,
-        resultado_busca["ativo"]
+    renderizar_pacote_mapa(
+        pacote,
+        visualizacao="Satélite",
+        busca_key="mapa_geral_busca",
+        limpar_key="mapa_geral_limpar_busca",
+        limpar_flag_key="mapa_geral_busca_limpar_pendente",
+        mostrar_metricas=False,
+        mostrar_exportador=False,
+        mostrar_tabelas=False,
+        prefixo_key="mapa_geral"
     )
 
-    if not pontos_lat:
-        pontos_lat, pontos_lon, zoom_mapa = centro_zoom_mapa(
-            df_sites,
-            df_clientes,
-            pd.DataFrame(),
-            pd.DataFrame(),
-            pd.DataFrame(),
-            False
-        )
 
-    col1, col2, col3 = st.columns(3)
-
-    col1.metric(
-        "Sites com coordenada",
-        len(df_sites)
-    )
-
-    col2.metric(
-        "Clientes no mapa",
-        len(df_clientes)
-    )
-
-    col3.metric(
-        "Vínculos desenhados",
-        len(df_links_clientes) + len(df_links_sites)
-    )
-    st.caption(
-        f"Itens não plotados: {len(df_nao_plotados)}"
-    )
-
-    view_state = pdk.ViewState(
-        latitude=sum(pontos_lat) / len(pontos_lat),
-        longitude=sum(pontos_lon) / len(pontos_lon),
-        zoom=zoom_mapa,
-        pitch=0
-    )
-
-    camadas = []
-    df_rotulos_distancia = pd.concat(
+def mostrar_mapa_clientes(sites, enlaces_sites=None):
+    funcao = mostrar_subnavegacao(
         [
-            df_links_sites_mapa,
-            df_links_clientes_mapa
+            (
+                "mapa_geral",
+                "Mapa Geral",
+                mostrar_mapa_geral
+            ),
+            (
+                "mapa_personalizado",
+                "Mapa Personalizado",
+                lambda: mostrar_mapa_personalizado(
+                    sites,
+                    enlaces_sites
+                )
+            )
         ],
-        ignore_index=True
-    )
-    if not df_rotulos_distancia.empty:
-        df_rotulos_distancia = df_rotulos_distancia[
-            df_rotulos_distancia["Ponto Rotulo"].notna()
-        ]
-
-    if not df_links_clientes_mapa.empty:
-
-        camadas.append(pdk.Layer(
-            "LineLayer",
-            data=df_links_clientes_mapa,
-            get_source_position="Origem",
-            get_target_position="Destino",
-            get_color="Cor",
-            get_width=3,
-            pickable=True
-        ))
-
-    if not df_links_sites_mapa.empty:
-
-        camadas.append(pdk.Layer(
-            "LineLayer",
-            data=df_links_sites_mapa,
-            get_source_position="Origem",
-            get_target_position="Destino",
-            get_color="Cor",
-            get_width=7,
-            pickable=True
-        ))
-
-    if not df_rotulos_distancia.empty:
-
-        camadas.append(pdk.Layer(
-            "TextLayer",
-            data=df_rotulos_distancia,
-            get_position="Ponto Rotulo",
-            get_text="Rotulo Distancia",
-            get_color="Cor",
-            get_size=12,
-            get_alignment_baseline="'center'",
-            get_pixel_offset=[0, -10],
-            pickable=True
-        ))
-
-    if not df_clientes_mapa.empty:
-        df_marcadores_clientes = preparar_marcadores_clientes(
-            df_clientes_mapa,
-            zoom_mapa
-        )
-
-        camadas.extend(
-            camadas_marcadores_geometricos(df_marcadores_clientes)
-        )
-
-    if not df_sites_mapa.empty:
-        df_marcadores_sites = preparar_marcadores_sites(
-            df_sites_mapa,
-            zoom_mapa
-        )
-
-        camadas.extend(
-            camadas_marcadores_geometricos(df_marcadores_sites)
-        )
-
-    if not df_marcador_busca.empty:
-        df_marcador_busca_visual = preparar_marcadores_busca(
-            df_marcador_busca,
-            zoom_mapa
-        )
-
-        camadas.extend(
-            camadas_marcadores_geometricos(df_marcador_busca_visual)
-        )
-
-    estilo_ruas = "https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json"
-    estilo_satelite = "mapbox://styles/mapbox/satellite-streets-v12"
-    provedor_satelite = provedor_mapa_satelite()
-    token_mapbox = mapbox_api_key()
-
-    if visualizacao == "Satélite" and provedor_satelite == "maptiler":
-
-        estilo_maptiler = maptiler_satellite_style_url()
-
-        if estilo_maptiler:
-
-            estilo_satelite = estilo_maptiler
-
-        else:
-
-            st.caption(
-                "A visualização por satélite usa MapTiler; configure "
-                "MAPTILER_API_KEY no ambiente."
-            )
-
-    elif visualizacao == "Satélite" and not token_mapbox:
-
-        st.caption(
-            "A visualização por satélite usa estilo Mapbox; se o fundo não "
-            "aparecer, configure MAPBOX_API_KEY no ambiente."
-        )
-
-    estilos_mapa = {
-        "Ruas": estilo_ruas,
-        "Satélite": estilo_satelite
-    }
-
-    api_keys = (
-        {
-            "mapbox": token_mapbox
-        }
-        if token_mapbox and provedor_satelite == "mapbox"
-        else None
+        key="mapa_subaba"
     )
 
-    st.pydeck_chart(
-        pdk.Deck(
-            map_style=estilos_mapa[visualizacao],
-            map_provider="mapbox" if visualizacao == "Satélite" else "carto",
-            api_keys=api_keys,
-            initial_view_state=view_state,
-            layers=camadas,
-            tooltip={
-                "html": "{Tooltip}"
-            }
-        )
-    )
-
-    opcoes_abas_mapa = [
-        "Sites",
-        "Clientes",
-        "Vinculos",
-        "Não plotados"
-    ]
-
-    aba_mapa = st.segmented_control(
-        "Dados do mapa",
-        opcoes_abas_mapa,
-        selection_mode="single",
-        key="mapa_aba_dados",
-        label_visibility="collapsed",
-        width="stretch"
-    )
-
-    if not aba_mapa:
-
-        aba_mapa = "Sites"
-
-    if aba_mapa == "Sites":
-
-        if df_sites_tabela.empty:
-
-            st.info("Nenhum site com latitude/longitude no cadastro.")
-
-        else:
-
-            mostrar_grid(
-                df_sites_tabela.drop(
-                    columns=[
-                        "Cor",
-                        "Cor Suave",
-                        "Icone",
-                        "Tooltip"
-                    ],
-                    errors="ignore"
-                ),
-                height=260,
-                key="mapa_sites_plotados"
-            )
-
-    elif aba_mapa == "Clientes":
-
-        if df_clientes_tabela.empty:
-
-            st.info("Nenhum cliente geocodificado para este escopo.")
-
-        else:
-
-            mostrar_grid(
-                df_clientes_tabela.drop(
-                    columns=[
-                        "Cor",
-                        "Tooltip"
-                    ],
-                    errors="ignore"
-                ),
-                height=260,
-                key="mapa_clientes_plotados"
-            )
-
-    elif aba_mapa == "Vinculos":
-
-        dados_vinculos = []
-
-        if not df_links_sites_tabela.empty:
-
-            dados_vinculos.extend(
-                df_links_sites_tabela.assign(Tipo="Site filho").to_dict("records")
-            )
-
-        if not df_links_clientes_tabela.empty:
-
-            dados_vinculos.extend(
-                df_links_clientes_tabela.assign(Tipo="Cliente").to_dict("records")
-            )
-
-        if not dados_vinculos:
-
-            st.info("Nenhum vínculo com coordenadas para desenhar.")
-
-        else:
-
-            mostrar_grid(
-                pd.DataFrame(dados_vinculos),
-                height=260,
-                key="mapa_vinculos_plotados"
-            )
-
-    elif aba_mapa == "Não plotados":
-
-        if df_nao_plotados_tabela.empty:
-
-            st.info("Todos os itens elegíveis foram plotados ou vinculados.")
-
-        else:
-
-            mostrar_grid(
-                df_nao_plotados_tabela,
-                height=320,
-                key="mapa_itens_nao_plotados"
-            )
+    if funcao:
+        funcao()

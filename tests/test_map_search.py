@@ -6,6 +6,7 @@ try:
     from app.ui.views.map import aplicar_busca_mapa
     from app.ui.views.map import camadas_marcadores_geometricos
     from app.ui.views.map import centro_zoom_mapa
+    from app.ui.views.map import deve_atualizar_cache_mapa_geral
     from app.ui.views.map import marcador_endereco_temporario
     from app.ui.views.map import ocultar_valores_clientes_mapa
     from app.ui.views.map import pontos_centro_mapa
@@ -18,6 +19,7 @@ except ModuleNotFoundError:
     aplicar_busca_mapa = None
     camadas_marcadores_geometricos = None
     centro_zoom_mapa = None
+    deve_atualizar_cache_mapa_geral = None
     marcador_endereco_temporario = None
     ocultar_valores_clientes_mapa = None
     pontos_centro_mapa = None
@@ -93,6 +95,57 @@ class MapSearchTest(unittest.TestCase):
                 "Vínculo": ""
             }
         ])
+
+    def test_cache_mapa_geral_exige_todos_os_sites_clientes_e_filhos(self):
+        self.assertTrue(
+            deve_atualizar_cache_mapa_geral(
+                ["SITE_A", "SITE_B"],
+                {
+                    "SITE_A": object(),
+                    "SITE_B": object()
+                },
+                True,
+                True,
+                10,
+                {
+                    "clientes_total": 10
+                }
+            )
+        )
+
+    def test_cache_mapa_geral_bloqueia_mapa_parcial(self):
+        self.assertFalse(
+            deve_atualizar_cache_mapa_geral(
+                ["SITE_A"],
+                {
+                    "SITE_A": object(),
+                    "SITE_B": object()
+                },
+                True,
+                True,
+                10,
+                {
+                    "clientes_total": 10
+                }
+            )
+        )
+
+    def test_cache_mapa_geral_bloqueia_limite_menor_que_clientes(self):
+        self.assertFalse(
+            deve_atualizar_cache_mapa_geral(
+                ["SITE_A", "SITE_B"],
+                {
+                    "SITE_A": object(),
+                    "SITE_B": object()
+                },
+                True,
+                True,
+                5,
+                {
+                    "clientes_total": 10
+                }
+            )
+        )
 
     def test_busca_encontra_site_por_endereco(self):
         resultado = aplicar_busca_mapa(
