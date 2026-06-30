@@ -156,7 +156,7 @@ class AnalysisCostsRevenueTest(unittest.TestCase):
                 "Receita Total": "1200",
                 "Custo": "R$ 500,25",
                 "Clientes Total": "2",
-                "Nome Cadastro": "POP A Cadastro",
+                "Nome": "POP A Cadastro",
                 "Cidade": "Belo Horizonte"
             }
         ]))
@@ -164,7 +164,7 @@ class AnalysisCostsRevenueTest(unittest.TestCase):
         self.assertEqual(
             df_ranking.columns.tolist(),
             [
-                "Nome Cadastro",
+                "Nome",
                 "Receita Total",
                 "Clientes Total",
                 "Custo",
@@ -172,7 +172,7 @@ class AnalysisCostsRevenueTest(unittest.TestCase):
             ]
         )
         self.assertEqual(
-            df_ranking.loc[0, "Nome Cadastro"],
+            df_ranking.loc[0, "Nome"],
             "POP A Cadastro"
         )
         self.assertEqual(
@@ -192,6 +192,7 @@ class AnalysisCostsRevenueTest(unittest.TestCase):
         df_ranking = preparar_ranking_sites(pd.DataFrame([
             {
                 "Site SNMPc": "POP_A",
+                "Nome Cadastro": "POP A Cadastro",
                 "Receita Total": 1200
             }
         ]))
@@ -199,6 +200,10 @@ class AnalysisCostsRevenueTest(unittest.TestCase):
         self.assertEqual(
             df_ranking.loc[0, "Custo"],
             0
+        )
+        self.assertEqual(
+            df_ranking.loc[0, "Nome"],
+            "POP A Cadastro"
         )
 
     def test_monta_apenas_sites_deficitarios_ativos_no_snmpc_com_clientes(self):

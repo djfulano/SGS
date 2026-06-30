@@ -38,6 +38,7 @@ class TopologyBandwidthTest(unittest.TestCase):
     def test_resumo_sites_inclui_custo(self):
         site = Site("POP_A", "POP")
         site.custo = 1234.56
+        site.nome_cadastro = "POP A Cadastro"
 
         df_resumo = montar_resumo_sites({
             "POP_A": site
@@ -46,6 +47,10 @@ class TopologyBandwidthTest(unittest.TestCase):
         self.assertEqual(
             df_resumo.loc[0, "Custo"],
             1234.56
+        )
+        self.assertEqual(
+            df_resumo.loc[0, "Nome"],
+            "POP A Cadastro"
         )
 
     def test_normaliza_velocidades_em_mbps(self):

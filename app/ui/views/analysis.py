@@ -1536,8 +1536,11 @@ def preparar_ranking_sites(df_sites):
         else:
             df_ranking["Nome SNMPc"] = ""
 
-    if "Nome Cadastro" not in df_ranking.columns:
-        df_ranking["Nome Cadastro"] = ""
+    if "Nome" not in df_ranking.columns:
+        if "Nome Cadastro" in df_ranking.columns:
+            df_ranking["Nome"] = df_ranking["Nome Cadastro"]
+        else:
+            df_ranking["Nome"] = ""
 
     for coluna in [
         "Receita Total",
@@ -1552,7 +1555,7 @@ def preparar_ranking_sites(df_sites):
         )
 
     colunas = [
-        "Nome Cadastro",
+        "Nome",
         "Receita Total",
         "Clientes Total",
         "Custo",

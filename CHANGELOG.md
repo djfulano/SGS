@@ -1,5 +1,10 @@
 # Histórico de versões
 
+## 1.0.89
+
+- Ranking de sites passa a carregar o nome cadastral do resumo de Topologia.
+- Coluna Nome Cadastro do ranking passa a ser exibida como Nome.
+
 ## 1.0.88
 
 - Ranking de sites passa a exibir Nome Cadastro como primeira coluna.

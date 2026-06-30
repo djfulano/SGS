@@ -255,6 +255,7 @@ def montar_resumo_sites(sites):
 
         dados.append({
             "Site": site.nome,
+            "Nome": getattr(site, "nome_cadastro", ""),
             "Tipo": site.tipo,
             "Clientes Diretos": clientes_diretos,
             "Clientes Indiretos": clientes_indiretos,
