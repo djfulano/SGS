@@ -1,5 +1,11 @@
 # Histórico de versões
 
+## 1.0.84
+
+- Equipamentos > Buscar equipamentos passa a usar filtros por lista para Ícone, Fabricante, Modelo e Tipo.
+- Filtros de equipamentos passam a ser encadeados, exibindo apenas opções compatíveis com os demais filtros selecionados.
+- Busca de equipamentos passa a ter botão para limpar os filtros aplicados.
+
 ## 1.0.83
 
 - Sistema passa a ter subaba Exportações para download pontual de dados operacionais.

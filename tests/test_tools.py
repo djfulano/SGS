@@ -2,10 +2,13 @@ import unittest
 
 import pandas as pd
 
+from app.ui.views.tools import aplicar_filtros_equipamentos
 from app.ui.views.tools import filtrar_enlaces_clientes_cancelados
 from app.ui.views.tools import filtrar_equipamentos_cancelados
 from app.ui.views.tools import marcar_status_cliente_equipamentos
 from app.ui.views.tools import montar_enlaces_cliente
+from app.ui.views.tools import normalizar_selecao_filtro
+from app.ui.views.tools import opcoes_filtro_equipamentos
 
 
 class ToolsViewHelpersTest(unittest.TestCase):
@@ -132,6 +135,127 @@ class ToolsViewHelpersTest(unittest.TestCase):
         self.assertEqual(
             filtrado["Equipamento"].tolist(),
             ["Cancelado"]
+        )
+
+    def test_opcoes_filtro_equipamentos_considera_outros_filtros(self):
+        df = pd.DataFrame([
+            {
+                "Icone": "AP",
+                "Fabricante Base": "Ubiquiti",
+                "Modelo Base": "UAP",
+                "Tipo Base": "WiFi"
+            },
+            {
+                "Icone": "SW",
+                "Fabricante Base": "Cisco",
+                "Modelo Base": "Catalyst",
+                "Tipo Base": "Switch"
+            },
+            {
+                "Icone": "ONU",
+                "Fabricante Base": "Ubiquiti",
+                "Modelo Base": "UFiber",
+                "Tipo Base": "Fibra"
+            }
+        ])
+
+        opcoes = opcoes_filtro_equipamentos(
+            df,
+            "Modelo Base",
+            {
+                "Fabricante Base": ["Ubiquiti"]
+            }
+        )
+
+        self.assertEqual(
+            opcoes,
+            [
+                "UAP",
+                "UFiber"
+            ]
+        )
+
+    def test_opcoes_filtro_equipamentos_ignora_propria_coluna(self):
+        df = pd.DataFrame([
+            {
+                "Icone": "AP",
+                "Fabricante Base": "Ubiquiti",
+                "Modelo Base": "UAP",
+                "Tipo Base": "WiFi"
+            },
+            {
+                "Icone": "ONU",
+                "Fabricante Base": "Ubiquiti",
+                "Modelo Base": "UFiber",
+                "Tipo Base": "Fibra"
+            }
+        ])
+
+        opcoes = opcoes_filtro_equipamentos(
+            df,
+            "Modelo Base",
+            {
+                "Fabricante Base": ["Ubiquiti"],
+                "Modelo Base": ["UAP"]
+            }
+        )
+
+        self.assertEqual(
+            opcoes,
+            [
+                "UAP",
+                "UFiber"
+            ]
+        )
+
+    def test_aplicar_filtros_equipamentos_combina_filtros(self):
+        df = pd.DataFrame([
+            {
+                "Icone": "AP",
+                "Fabricante Base": "Ubiquiti",
+                "Modelo Base": "UAP",
+                "Tipo Base": "WiFi"
+            },
+            {
+                "Icone": "ONU",
+                "Fabricante Base": "Ubiquiti",
+                "Modelo Base": "UFiber",
+                "Tipo Base": "Fibra"
+            },
+            {
+                "Icone": "SW",
+                "Fabricante Base": "Cisco",
+                "Modelo Base": "Catalyst",
+                "Tipo Base": "Switch"
+            }
+        ])
+
+        filtrado = aplicar_filtros_equipamentos(
+            df,
+            {
+                "Fabricante Base": ["Ubiquiti"],
+                "Tipo Base": ["Fibra"]
+            }
+        )
+
+        self.assertEqual(
+            filtrado["Icone"].tolist(),
+            ["ONU"]
+        )
+
+    def test_normalizar_selecao_filtro_remove_invalidos(self):
+        self.assertEqual(
+            normalizar_selecao_filtro(
+                [
+                    "UAP",
+                    "Invalido"
+                ],
+                [
+                    "UAP",
+                    "UFiber"
+                ]
+            ),
+            ["UAP"]
         )
 
 

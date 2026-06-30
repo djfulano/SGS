@@ -571,6 +571,65 @@ def filtrar_equipamentos_cancelados(df_equipamentos):
     ].copy()
 
 
+def normalizar_selecao_filtro(valores, opcoes_validas):
+    opcoes_validas = set(
+        str(valor)
+        for valor in opcoes_validas
+    )
+
+    return [
+        valor
+        for valor in valores or []
+        if str(valor) in opcoes_validas
+    ]
+
+
+def aplicar_filtros_equipamentos(df_equipamentos, filtros):
+    if df_equipamentos.empty:
+        return df_equipamentos
+
+    df_filtrado = df_equipamentos.copy()
+
+    for coluna, valores in (filtros or {}).items():
+        valores = [
+            str(valor)
+            for valor in valores or []
+            if str(valor).strip()
+        ]
+
+        if not valores or coluna not in df_filtrado.columns:
+            continue
+
+        df_filtrado = df_filtrado[
+            df_filtrado[coluna].astype(str).isin(valores)
+        ]
+
+    return df_filtrado
+
+
+def opcoes_filtro_equipamentos(df_equipamentos, coluna, filtros_atuais):
+    filtros_sem_coluna = {
+        chave: valor
+        for chave, valor in (filtros_atuais or {}).items()
+        if chave != coluna
+    }
+    df_base = aplicar_filtros_equipamentos(
+        df_equipamentos,
+        filtros_sem_coluna
+    )
+
+    if df_base.empty or coluna not in df_base.columns:
+        return []
+
+    return sorted(
+        {
+            str(valor).strip()
+            for valor in df_base[coluna].dropna().unique()
+            if str(valor).strip()
+        }
+    )
+
+
 def mostrar_busca_equipamentos(sites, equipamentos):
     st.header("Buscar equipamentos")
 
@@ -587,36 +646,6 @@ def mostrar_busca_equipamentos(sites, equipamentos):
         assinaturas_ativas_sites(sites)
     )
 
-    col1, col2, col3 = st.columns(3)
-
-    with col1:
-        busca_icone = st.text_input(
-            "Ícone",
-            key="buscar_equipamentos_icone"
-        )
-
-    with col2:
-        busca_nome = st.text_input(
-            "Modelo",
-            key="buscar_equipamentos_nome"
-        )
-
-    with col3:
-        tipos = sorted(
-            valor
-            for valor in df_equipamentos.get(
-                "Tipo Base",
-                pd.Series(dtype=object)
-            ).dropna().unique()
-            if str(valor).strip()
-        )
-        tipos_selecionados = st.multiselect(
-            "Tipo",
-            tipos,
-            default=[],
-            key="buscar_equipamentos_tipo"
-        )
-
     df_filtrado = df_equipamentos.copy()
 
     somente_cancelados = st.checkbox(
@@ -630,39 +659,83 @@ def mostrar_busca_equipamentos(sites, equipamentos):
             df_filtrado
         )
 
-    if busca_icone:
-        df_filtrado = df_filtrado[
-            df_filtrado["Icone"].astype(str).str.contains(
-                busca_icone,
-                case=False,
-                regex=False,
-                na=False
-            )
-        ]
-
-    if busca_nome:
-        filtro_nome = (
-            df_filtrado.get("Modelo Base", pd.Series("", index=df_filtrado.index))
-            .astype(str)
-            .str.contains(
-                busca_nome,
-                case=False,
-                regex=False,
-                na=False
-            )
-            | df_filtrado["Equipamento"].astype(str).str.contains(
-                busca_nome,
-                case=False,
-                regex=False,
-                na=False
-            )
+    filtros_chaves = {
+        "Icone": "buscar_equipamentos_icones",
+        "Fabricante Base": "buscar_equipamentos_fabricantes",
+        "Modelo Base": "buscar_equipamentos_modelos",
+        "Tipo Base": "buscar_equipamentos_tipos"
+    }
+    filtros_atuais = {
+        coluna: st.session_state.get(chave, [])
+        for coluna, chave in filtros_chaves.items()
+    }
+    opcoes_por_coluna = {
+        coluna: opcoes_filtro_equipamentos(
+            df_filtrado,
+            coluna,
+            filtros_atuais
         )
-        df_filtrado = df_filtrado[filtro_nome]
+        for coluna in filtros_chaves
+    }
 
-    if tipos_selecionados and "Tipo Base" in df_filtrado.columns:
-        df_filtrado = df_filtrado[
-            df_filtrado["Tipo Base"].isin(tipos_selecionados)
-        ]
+    for coluna, chave in filtros_chaves.items():
+        selecao_normalizada = normalizar_selecao_filtro(
+            st.session_state.get(chave, []),
+            opcoes_por_coluna[coluna]
+        )
+
+        if selecao_normalizada != st.session_state.get(chave, []):
+            st.session_state[chave] = selecao_normalizada
+
+    col1, col2 = st.columns(2)
+    with col1:
+        icones_selecionados = st.multiselect(
+            "Ícone",
+            opcoes_por_coluna["Icone"],
+            key="buscar_equipamentos_icones"
+        )
+    with col2:
+        fabricantes_selecionados = st.multiselect(
+            "Fabricante",
+            opcoes_por_coluna["Fabricante Base"],
+            key="buscar_equipamentos_fabricantes"
+        )
+
+    col1, col2 = st.columns(2)
+    with col1:
+        modelos_selecionados = st.multiselect(
+            "Modelo",
+            opcoes_por_coluna["Modelo Base"],
+            key="buscar_equipamentos_modelos"
+        )
+    with col2:
+        tipos_selecionados = st.multiselect(
+            "Tipo",
+            opcoes_por_coluna["Tipo Base"],
+            key="buscar_equipamentos_tipos"
+        )
+
+    col_limpar, _col_espaco = st.columns([1, 4])
+    with col_limpar:
+        if st.button(
+            "Limpar filtros",
+            key="buscar_equipamentos_limpar"
+        ):
+            for chave in list(filtros_chaves.values()) + [
+                "buscar_equipamentos_somente_cancelados"
+            ]:
+                st.session_state.pop(chave, None)
+            st.rerun()
+
+    df_filtrado = aplicar_filtros_equipamentos(
+        df_filtrado,
+        {
+            "Icone": icones_selecionados,
+            "Fabricante Base": fabricantes_selecionados,
+            "Modelo Base": modelos_selecionados,
+            "Tipo Base": tipos_selecionados
+        }
+    )
 
     if df_filtrado.empty:
         st.info("Nenhum equipamento encontrado para os filtros informados.")
