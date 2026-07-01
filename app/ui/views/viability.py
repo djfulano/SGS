@@ -406,14 +406,62 @@ def montar_grafico_perfil_visada(perfil, site="", status=""):
             "width": 3
         }
     ))
+    ponta_origem = dados.iloc[0]
+    ponta_destino = dados.iloc[-1]
+    for nome_haste, ponta in [
+        (
+            "Haste origem",
+            ponta_origem
+        ),
+        (
+            "Haste destino",
+            ponta_destino
+        )
+    ]:
+        altura_aplicada = float(ponta.get("Altura Ponta m") or 0)
+        fig.add_trace(go.Scatter(
+            x=[
+                ponta["Distância km"],
+                ponta["Distância km"]
+            ],
+            y=[
+                ponta["Terreno Ajustado m"],
+                ponta["Linha Visada m"]
+            ],
+            mode="lines",
+            name=nome_haste,
+            line={
+                "color": "rgba(29, 78, 216, 0.75)",
+                "width": 2
+            },
+            customdata=[
+                [
+                    ponta["Terreno Ajustado m"],
+                    altura_aplicada,
+                    ponta["Linha Visada m"]
+                ],
+                [
+                    ponta["Terreno Ajustado m"],
+                    altura_aplicada,
+                    ponta["Linha Visada m"]
+                ]
+            ],
+            hovertemplate=(
+                f"{nome_haste}<br>"
+                "Solo: %{customdata[0]:.1f} m<br>"
+                "Altura aplicada: %{customdata[1]:.1f} m<br>"
+                "Altura final: %{customdata[2]:.1f} m<extra></extra>"
+            ),
+            showlegend=True
+        ))
     fig.add_trace(go.Scatter(
         x=[
-            dados.iloc[0]["Distância km"],
-            dados.iloc[-1]["Distância km"]
+            ponta_origem["Distância km"],
+            ponta_destino["Distância km"]
         ],
         y=[
-            dados.iloc[0]["Linha Visada m"],
-            dados.iloc[-1]["Linha Visada m"]
+            ponta_origem["Linha Visada m"],
+            ponta_destino["Linha Visada m"]
         ],
         mode="markers+text",
         name="Pontas",
@@ -432,7 +480,25 @@ def montar_grafico_perfil_visada(perfil, site="", status=""):
                 "color": "#eff6ff",
                 "width": 2
             }
-        }
+        },
+        customdata=[
+            [
+                ponta_origem["Terreno Ajustado m"],
+                float(ponta_origem.get("Altura Ponta m") or 0),
+                ponta_origem["Linha Visada m"]
+            ],
+            [
+                ponta_destino["Terreno Ajustado m"],
+                float(ponta_destino.get("Altura Ponta m") or 0),
+                ponta_destino["Linha Visada m"]
+            ]
+        ],
+        hovertemplate=(
+            "%{text}<br>"
+            "Solo: %{customdata[0]:.1f} m<br>"
+            "Altura aplicada: %{customdata[1]:.1f} m<br>"
+            "Altura final: %{customdata[2]:.1f} m<extra></extra>"
+        )
     ))
     fig.add_trace(go.Scatter(
         x=[

@@ -1,5 +1,11 @@
 # Histórico de versões
 
+## 1.0.96
+
+- Cálculo de visada passa a ter teste garantindo a altura aplicada nas duas pontas do enlace.
+- Gráfico do perfil de visada passa a exibir hastes entre o solo e a altura final em origem e destino.
+- Tooltip das pontas passa a mostrar solo, altura aplicada e altura final.
+
 ## 1.0.95
 
 - Gráfico do perfil de visada passa a suavizar visualmente o terreno para reduzir aparência em degraus.

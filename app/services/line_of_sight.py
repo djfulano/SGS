@@ -177,6 +177,13 @@ def montar_perfil_visada(
             "Altitude Terreno m": altitude_terreno,
             "Curvatura Terra m": curvatura,
             "Linha Visada m": linha_visada,
+            "Altura Ponta m": (
+                valor_float(origem.get("Altura"))
+                if indice == 0
+                else valor_float(destino.get("Altura"))
+                if indice == len(pontos) - 1
+                else 0.0
+            ),
             "Fresnel 1 m": fresnel,
             "Fresnel Exigido m": fresnel_exigido,
             "Margem m": margem

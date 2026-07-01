@@ -56,6 +56,31 @@ class LineOfSightTest(unittest.TestCase):
             "Obstruída"
         )
 
+    def test_linha_visada_considera_altura_das_duas_pontas(self):
+        origem = self.ponto(-23.0, -46.0, altitude=800, altura=10)
+        destino = self.ponto(-23.02, -46.02, altitude=800, altura=40)
+
+        perfil = montar_perfil_visada(
+            origem,
+            destino,
+            elevacoes=[
+                800,
+                800,
+                800
+            ],
+            distancia_amostra_m=2500
+        )
+
+        self.assertEqual(perfil.iloc[0]["Linha Visada m"], 810)
+        self.assertEqual(perfil.iloc[-1]["Linha Visada m"], 840)
+        self.assertAlmostEqual(
+            perfil.iloc[1]["Linha Visada m"],
+            825,
+            places=1
+        )
+        self.assertEqual(perfil.iloc[0]["Altura Ponta m"], 10)
+        self.assertEqual(perfil.iloc[-1]["Altura Ponta m"], 40)
+
     def test_dados_insuficientes_sem_coordenada(self):
         analise = analisar_visada(
             self.ponto(0, 0),

@@ -14,6 +14,7 @@ def perfil_exemplo():
         "Altitude Terreno m": [800.0, 815.0, 810.0],
         "Curvatura Terra m": [0.0, 0.02, 0.0],
         "Linha Visada m": [830.0, 835.0, 840.0],
+        "Altura Ponta m": [30.0, 0.0, 30.0],
         "Fresnel Exigido m": [0.0, 4.0, 0.0],
         "Margem m": [30.0, 15.98, 30.0]
     })
@@ -58,6 +59,24 @@ class ViabilityProfileChartTest(unittest.TestCase):
         self.assertIn("Linha de visada", nomes)
         self.assertIn("Fresnel exigido", nomes)
         self.assertIn("Ponto crítico", nomes)
+
+    def test_grafico_exibe_hastes_das_duas_pontas(self):
+        fig = montar_grafico_perfil_visada(perfil_exemplo())
+        origem = next(
+            trace
+            for trace in fig.data
+            if trace.name == "Haste origem"
+        )
+        destino = next(
+            trace
+            for trace in fig.data
+            if trace.name == "Haste destino"
+        )
+
+        self.assertEqual(list(origem.x), [0.0, 0.0])
+        self.assertEqual(list(origem.y), [800.0, 830.0])
+        self.assertEqual(list(destino.x), [1.0, 1.0])
+        self.assertEqual(list(destino.y), [810.0, 840.0])
 
     def test_grafico_nao_preenche_terreno_ate_zero(self):
         fig = montar_grafico_perfil_visada(perfil_exemplo())
