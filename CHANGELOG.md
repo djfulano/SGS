@@ -1,5 +1,9 @@
 # Histórico de versões
 
+## 1.1.5
+
+- Ranking por receita total com filhos passa a manter o custo apenas do site principal.
+
 ## 1.1.4
 
 - Corrigida a formatação do texto dos sites deficitários no Relatório Gerencial.

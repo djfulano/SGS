@@ -1959,11 +1959,8 @@ def _linha_site_relatorio_gerencial_total(site):
         )
         for cliente in clientes
     )
-    custo = sum(
-        _valor_monetario_ranking(
-            getattr(site_consulta, "custo", 0)
-        )
-        for site_consulta in sites_consulta
+    custo = _valor_monetario_ranking(
+        getattr(site, "custo", 0)
     )
 
     return {

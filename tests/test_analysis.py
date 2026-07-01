@@ -75,6 +75,14 @@ class AnalysisCostsRevenueTest(unittest.TestCase):
             relatorio["ranking_total"].iloc[0]["Receita Total"],
             1990
         )
+        self.assertEqual(
+            relatorio["ranking_total"].iloc[0]["Clientes Total"],
+            2
+        )
+        self.assertEqual(
+            relatorio["ranking_total"].iloc[0]["Custo"],
+            2000
+        )
         self.assertEqual(len(relatorio["deficitarios"]), 20)
         self.assertEqual(relatorio["deficitarios"].iloc[0]["Nome SNMPc"], "SITE_00")
         self.assertEqual(relatorio["deficitarios"].iloc[0]["Receita Total"], 1000)
