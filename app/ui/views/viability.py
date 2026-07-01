@@ -1,4 +1,5 @@
 import pandas as pd
+import plotly.graph_objects as go
 import streamlit as st
 
 from app.auth import has_permission
@@ -216,6 +217,167 @@ def montar_resultados_viabilidade(sites, ponto_origem, raio_km, limite_sites=10)
     return pd.DataFrame(registros), perfis
 
 
+def preparar_dados_grafico_visada(perfil):
+    if perfil is None or perfil.empty:
+        return pd.DataFrame()
+
+    dados = perfil.copy()
+    dados["Terreno Ajustado m"] = (
+        dados["Altitude Terreno m"].astype(float)
+        + dados["Curvatura Terra m"].astype(float)
+    )
+    dados["Fresnel Inferior m"] = (
+        dados["Linha Visada m"].astype(float)
+        - dados["Fresnel Exigido m"].astype(float)
+    )
+    dados["Fresnel Superior m"] = (
+        dados["Linha Visada m"].astype(float)
+        + dados["Fresnel Exigido m"].astype(float)
+    )
+
+    return dados
+
+
+def montar_grafico_perfil_visada(perfil, site="", status=""):
+    dados = preparar_dados_grafico_visada(perfil)
+    fig = go.Figure()
+
+    if dados.empty:
+        fig.update_layout(
+            title="Perfil de visada indisponível",
+            height=360
+        )
+        return fig
+
+    ponto_critico = dados.sort_values("Margem m").iloc[0]
+    cor_critico = (
+        "#ef4444"
+        if float(ponto_critico["Margem m"]) < 0
+        else "#f59e0b"
+    )
+
+    fig.add_trace(go.Scatter(
+        x=dados["Distância km"],
+        y=dados["Terreno Ajustado m"],
+        mode="lines",
+        name="Terreno + curvatura",
+        fill="tozeroy",
+        line={
+            "color": "rgba(116, 105, 135, 0.55)",
+            "width": 1
+        },
+        fillcolor="rgba(116, 105, 135, 0.35)"
+    ))
+    fig.add_trace(go.Scatter(
+        x=dados["Distância km"],
+        y=dados["Fresnel Superior m"],
+        mode="lines",
+        name="Fresnel superior",
+        line={
+            "color": "rgba(96, 165, 250, 0.45)",
+            "width": 1,
+            "dash": "dash"
+        }
+    ))
+    fig.add_trace(go.Scatter(
+        x=dados["Distância km"],
+        y=dados["Fresnel Inferior m"],
+        mode="lines",
+        name="Fresnel exigido",
+        fill="tonexty",
+        line={
+            "color": "rgba(96, 165, 250, 0.70)",
+            "width": 1,
+            "dash": "dash"
+        },
+        fillcolor="rgba(96, 165, 250, 0.18)"
+    ))
+    fig.add_trace(go.Scatter(
+        x=dados["Distância km"],
+        y=dados["Linha Visada m"],
+        mode="lines",
+        name="Linha de visada",
+        line={
+            "color": "#2563eb",
+            "width": 3
+        }
+    ))
+    fig.add_trace(go.Scatter(
+        x=[
+            dados.iloc[0]["Distância km"],
+            dados.iloc[-1]["Distância km"]
+        ],
+        y=[
+            dados.iloc[0]["Linha Visada m"],
+            dados.iloc[-1]["Linha Visada m"]
+        ],
+        mode="markers+text",
+        name="Pontas",
+        text=[
+            "Origem",
+            site or "Destino"
+        ],
+        textposition=[
+            "top center",
+            "top center"
+        ],
+        marker={
+            "color": "#1d4ed8",
+            "size": 14,
+            "line": {
+                "color": "#eff6ff",
+                "width": 2
+            }
+        }
+    ))
+    fig.add_trace(go.Scatter(
+        x=[
+            ponto_critico["Distância km"]
+        ],
+        y=[
+            ponto_critico["Terreno Ajustado m"]
+        ],
+        mode="markers+text",
+        name="Ponto crítico",
+        text=[
+            f"Margem {float(ponto_critico['Margem m']):.1f} m"
+        ],
+        textposition="bottom center",
+        marker={
+            "color": cor_critico,
+            "size": 13,
+            "symbol": "diamond",
+            "line": {
+                "color": "#111827",
+                "width": 1
+            }
+        }
+    ))
+    fig.update_layout(
+        title=f"Perfil de visada - {site or 'Destino'} ({status or 'sem status'})",
+        height=390,
+        margin={
+            "l": 12,
+            "r": 12,
+            "t": 48,
+            "b": 12
+        },
+        xaxis_title="Distância (km)",
+        yaxis_title="Elevação / altura (m)",
+        legend={
+            "orientation": "h",
+            "yanchor": "bottom",
+            "y": 1.02,
+            "xanchor": "right",
+            "x": 1
+        },
+        hovermode="x unified",
+        template="plotly_white"
+    )
+
+    return fig
+
+
 def mostrar_resultados(df_resultados, perfis, key):
     if df_resultados.empty:
         st.info("Nenhum site candidato encontrado para os critérios informados.")
@@ -245,12 +407,31 @@ def mostrar_resultados(df_resultados, perfis, key):
     if perfil.empty:
         st.info("Perfil indisponível para o site selecionado.")
     else:
-        st.dataframe(
-            perfil,
-            use_container_width=True,
-            hide_index=True,
-            height=360
+        linha_site = df_resultados[
+            df_resultados["Site"].astype(str) == str(site_perfil)
+        ].iloc[0]
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("Distância", f"{float(linha_site.get('Distância km') or 0):.2f} km")
+        col2.metric("Menor margem", f"{float(linha_site.get('Menor margem m') or 0):.1f} m")
+        col3.metric("Status", str(linha_site.get("Status") or ""))
+        col4.metric("Ponto crítico", f"{float(linha_site.get('Ponto crítico km') or 0):.2f} km")
+
+        st.plotly_chart(
+            montar_grafico_perfil_visada(
+                perfil,
+                site=site_perfil,
+                status=linha_site.get("Status")
+            ),
+            use_container_width=True
         )
+
+        with st.expander("Dados técnicos do perfil"):
+            st.dataframe(
+                perfil,
+                use_container_width=True,
+                hide_index=True,
+                height=360
+            )
 
 
 def mostrar_viabilidade_endereco(sites):

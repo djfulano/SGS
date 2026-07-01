@@ -1,5 +1,11 @@
 # Histórico de versões
 
+## 1.0.92
+
+- Perfil de visada passa a ser exibido em gráfico interativo.
+- Gráfico do perfil exibe relevo, linha de visada, zona de Fresnel e ponto crítico.
+- Dados técnicos do perfil ficam recolhidos em detalhe para conferência.
+
 ## 1.0.91
 
 - Novo módulo Viabilidade com subabas Viabilidade, Migração e Estudos de Engenharia.
