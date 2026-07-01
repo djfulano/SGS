@@ -1,5 +1,10 @@
 # Histórico de versões
 
+## 1.0.99
+
+- Migração passa a recarregar latitude, longitude e altura ao trocar o cliente selecionado.
+- Resultado anterior da migração é limpo quando o cliente muda, evitando cálculo antigo na tela.
+
 ## 1.0.98
 
 - Migração passa a manter o site atual do cliente na lista de sites possíveis.

@@ -249,6 +249,19 @@ def carregar_resultados_visada_estado(key):
     return df_resultados, perfis
 
 
+def sincronizar_estado_migracao_cliente(session_state, assinatura, ponto):
+    if session_state.get("viabilidade_migracao_cliente_carregado") == assinatura:
+        return False
+
+    session_state["viabilidade_migracao_cliente_carregado"] = assinatura
+    session_state["viabilidade_cliente_latitude"] = float(ponto["Latitude"] or 0)
+    session_state["viabilidade_cliente_longitude"] = float(ponto["Longitude"] or 0)
+    session_state["viabilidade_cliente_altura"] = float(ponto["Altura"] or 0)
+    session_state.pop(chave_estado_resultados_visada("viabilidade_migracao"), None)
+
+    return True
+
+
 def preparar_dados_grafico_visada(perfil):
     if perfil is None or perfil.empty:
         return pd.DataFrame()
@@ -744,6 +757,11 @@ def mostrar_migracao_cliente(sites):
     ponto = ponto_cliente(
         site_atual,
         cliente
+    )
+    sincronizar_estado_migracao_cliente(
+        st.session_state,
+        assinatura,
+        ponto
     )
 
     col1, col2, col3 = st.columns(3)

@@ -7,7 +7,9 @@ from app.services.client_viability import dados_cliente_viabilidade
 from app.services.client_viability import salvar_dados_cliente_viabilidade
 from app.services.elevation_service import elevacoes_pontos
 from app.ui.views.viability import analisar_ponto_para_site
+from app.ui.views.viability import chave_estado_resultados_visada
 from app.ui.views.viability import ponto_migracao_cliente
+from app.ui.views.viability import sincronizar_estado_migracao_cliente
 
 
 class ViabilityServicesTest(unittest.TestCase):
@@ -82,6 +84,63 @@ class ViabilityServicesTest(unittest.TestCase):
         self.assertEqual(resultado["Longitude"], -46.2)
         self.assertEqual(resultado["Altitude"], 0)
         self.assertEqual(resultado["Altura"], 12)
+
+    def test_sincroniza_estado_ao_trocar_cliente_migracao(self):
+        estado = {
+            "viabilidade_migracao_cliente_carregado": "111",
+            "viabilidade_cliente_latitude": -1,
+            "viabilidade_cliente_longitude": -2,
+            "viabilidade_cliente_altura": 3,
+            chave_estado_resultados_visada("viabilidade_migracao"): {
+                "df_resultados": "antigo",
+                "perfis": {}
+            }
+        }
+        ponto = {
+            "Latitude": -23.5,
+            "Longitude": -46.6,
+            "Altura": 15
+        }
+
+        alterou = sincronizar_estado_migracao_cliente(
+            estado,
+            "222",
+            ponto
+        )
+
+        self.assertTrue(alterou)
+        self.assertEqual(estado["viabilidade_migracao_cliente_carregado"], "222")
+        self.assertEqual(estado["viabilidade_cliente_latitude"], -23.5)
+        self.assertEqual(estado["viabilidade_cliente_longitude"], -46.6)
+        self.assertEqual(estado["viabilidade_cliente_altura"], 15)
+        self.assertNotIn(
+            chave_estado_resultados_visada("viabilidade_migracao"),
+            estado
+        )
+
+    def test_mantem_estado_quando_cliente_migracao_nao_muda(self):
+        estado = {
+            "viabilidade_migracao_cliente_carregado": "111",
+            "viabilidade_cliente_latitude": -1,
+            "viabilidade_cliente_longitude": -2,
+            "viabilidade_cliente_altura": 3
+        }
+        ponto = {
+            "Latitude": -23.5,
+            "Longitude": -46.6,
+            "Altura": 15
+        }
+
+        alterou = sincronizar_estado_migracao_cliente(
+            estado,
+            "111",
+            ponto
+        )
+
+        self.assertFalse(alterou)
+        self.assertEqual(estado["viabilidade_cliente_latitude"], -1)
+        self.assertEqual(estado["viabilidade_cliente_longitude"], -2)
+        self.assertEqual(estado["viabilidade_cliente_altura"], 3)
 
     def test_analise_preenche_altitude_origem_por_elevacao(self):
         origem = {
