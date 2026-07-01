@@ -1,5 +1,10 @@
 # Histórico de versões
 
+## 1.0.94
+
+- Viabilidade passa a manter o último resultado calculado na sessão.
+- Trocar o site no Perfil de visada deixa de apagar os resultados após o rerun do Streamlit.
+
 ## 1.0.93
 
 - Gráfico do perfil de visada passa a usar escala vertical focada na altitude do trajeto.

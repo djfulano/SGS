@@ -217,6 +217,28 @@ def montar_resultados_viabilidade(sites, ponto_origem, raio_km, limite_sites=10)
     return pd.DataFrame(registros), perfis
 
 
+def chave_estado_resultados_visada(key):
+    return f"{key}_resultados_visada"
+
+
+def salvar_resultados_visada_estado(key, df_resultados, perfis):
+    st.session_state[chave_estado_resultados_visada(key)] = {
+        "df_resultados": df_resultados,
+        "perfis": perfis
+    }
+
+
+def carregar_resultados_visada_estado(key):
+    dados = st.session_state.get(chave_estado_resultados_visada(key), {})
+    df_resultados = dados.get("df_resultados")
+    perfis = dados.get("perfis")
+
+    if df_resultados is None or perfis is None:
+        return None, None
+
+    return df_resultados, perfis
+
+
 def preparar_dados_grafico_visada(perfil):
     if perfil is None or perfil.empty:
         return pd.DataFrame()
@@ -526,7 +548,17 @@ def mostrar_viabilidade_endereco(sites):
             key="viabilidade_limite_sites"
         )
 
-    if not st.button("Calcular viabilidade", key="viabilidade_calcular"):
+    calcular = st.button("Calcular viabilidade", key="viabilidade_calcular")
+
+    if not calcular:
+        df_salvo, perfis_salvos = carregar_resultados_visada_estado("viabilidade_endereco")
+        if df_salvo is not None:
+            st.caption("Resultado da última análise calculada.")
+            mostrar_resultados(
+                df_salvo,
+                perfis_salvos,
+                key="viabilidade_endereco"
+            )
         return
 
     if not endereco:
@@ -556,6 +588,11 @@ def mostrar_viabilidade_endereco(sites):
         ponto_origem,
         raio_km,
         limite_sites=limite_sites
+    )
+    salvar_resultados_visada_estado(
+        "viabilidade_endereco",
+        df_resultados,
+        perfis
     )
     mostrar_resultados(
         df_resultados,
@@ -664,7 +701,17 @@ def mostrar_migracao_cliente(sites):
         )
         st.success("Dados técnicos do cliente salvos.")
 
-    if not st.button("Calcular migração", key="viabilidade_calcular_migracao"):
+    calcular = st.button("Calcular migração", key="viabilidade_calcular_migracao")
+
+    if not calcular:
+        df_salvo, perfis_salvos = carregar_resultados_visada_estado("viabilidade_migracao")
+        if df_salvo is not None:
+            st.caption("Resultado da última análise calculada.")
+            mostrar_resultados(
+                df_salvo,
+                perfis_salvos,
+                key="viabilidade_migracao"
+            )
         return
 
     ponto_origem = {
@@ -690,6 +737,11 @@ def mostrar_migracao_cliente(sites):
             df_resultados["Site"] != getattr(site_atual, "nome", "")
         ].copy()
 
+    salvar_resultados_visada_estado(
+        "viabilidade_migracao",
+        df_resultados,
+        perfis
+    )
     mostrar_resultados(
         df_resultados,
         perfis,
