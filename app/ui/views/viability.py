@@ -127,16 +127,6 @@ def ponto_migracao_cliente(ponto, latitude, longitude, altura):
     }
 
 
-def adicionar_site_atual_resultados_migracao(df_resultados, site_atual):
-    if df_resultados is None or df_resultados.empty:
-        return df_resultados
-
-    df = df_resultados.copy()
-    df["Site Atual"] = getattr(site_atual, "nome", "") if site_atual else ""
-
-    return df
-
-
 def sites_candidatos(sites, ponto_origem, raio_km):
     candidatos = []
 
@@ -840,14 +830,6 @@ def mostrar_migracao_cliente(sites):
         ponto_origem,
         raio_km,
         limite_sites=limite_sites
-    )
-    if site_atual is not None and not df_resultados.empty:
-        df_resultados = df_resultados[
-            df_resultados["Site"] != getattr(site_atual, "nome", "")
-        ].copy()
-    df_resultados = adicionar_site_atual_resultados_migracao(
-        df_resultados,
-        site_atual
     )
 
     salvar_resultados_visada_estado(

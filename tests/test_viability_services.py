@@ -1,15 +1,11 @@
 import tempfile
 import unittest
 from pathlib import Path
-from types import SimpleNamespace
 from unittest.mock import patch
-
-import pandas as pd
 
 from app.services.client_viability import dados_cliente_viabilidade
 from app.services.client_viability import salvar_dados_cliente_viabilidade
 from app.services.elevation_service import elevacoes_pontos
-from app.ui.views.viability import adicionar_site_atual_resultados_migracao
 from app.ui.views.viability import analisar_ponto_para_site
 from app.ui.views.viability import ponto_migracao_cliente
 
@@ -136,21 +132,6 @@ class ViabilityServicesTest(unittest.TestCase):
         perfil = analise["Perfil"]
         self.assertEqual(perfil.iloc[0]["Linha Visada m"], 810)
         self.assertEqual(perfil.iloc[-1]["Linha Visada m"], 840)
-
-    def test_resultados_migracao_incluem_site_atual(self):
-        df = pd.DataFrame({
-            "Site": [
-                "CANDIDATO"
-            ]
-        })
-        site_atual = SimpleNamespace(nome="SITE_ATUAL")
-
-        resultado = adicionar_site_atual_resultados_migracao(
-            df,
-            site_atual
-        )
-
-        self.assertEqual(resultado.iloc[0]["Site Atual"], "SITE_ATUAL")
 
 
 if __name__ == "__main__":

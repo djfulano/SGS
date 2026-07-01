@@ -1,5 +1,10 @@
 # Histórico de versões
 
+## 1.0.98
+
+- Migração passa a manter o site atual do cliente na lista de sites possíveis.
+- Removida a coluna adicional de site atual nos resultados de migração.
+
 ## 1.0.97
 
 - Migração deixa de solicitar altitude do terreno do cliente.
