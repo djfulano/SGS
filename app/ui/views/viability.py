@@ -117,6 +117,26 @@ def ponto_cliente(site, cliente):
     }
 
 
+def ponto_migracao_cliente(ponto, latitude, longitude, altura):
+    return {
+        **ponto,
+        "Latitude": latitude,
+        "Longitude": longitude,
+        "Altitude": 0,
+        "Altura": altura
+    }
+
+
+def adicionar_site_atual_resultados_migracao(df_resultados, site_atual):
+    if df_resultados is None or df_resultados.empty:
+        return df_resultados
+
+    df = df_resultados.copy()
+    df["Site Atual"] = getattr(site_atual, "nome", "") if site_atual else ""
+
+    return df
+
+
 def sites_candidatos(sites, ponto_origem, raio_km):
     candidatos = []
 
@@ -736,7 +756,7 @@ def mostrar_migracao_cliente(sites):
         cliente
     )
 
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col2, col3 = st.columns(3)
     with col1:
         latitude = st.number_input(
             "Latitude",
@@ -752,13 +772,6 @@ def mostrar_migracao_cliente(sites):
             key="viabilidade_cliente_longitude"
         )
     with col3:
-        altitude = st.number_input(
-            "Altitude terreno (m)",
-            value=float(ponto["Altitude"] or 0),
-            step=1.0,
-            key="viabilidade_cliente_altitude"
-        )
-    with col4:
         altura = st.number_input(
             "Altura instalação (m)",
             min_value=0.0,
@@ -792,7 +805,7 @@ def mostrar_migracao_cliente(sites):
             assinatura,
             latitude=latitude,
             longitude=longitude,
-            altitude=altitude,
+            altitude=0,
             altura=altura,
             usuario=usuario.get("username", "")
         )
@@ -811,13 +824,12 @@ def mostrar_migracao_cliente(sites):
             )
         return
 
-    ponto_origem = {
-        **ponto,
-        "Latitude": latitude,
-        "Longitude": longitude,
-        "Altitude": altitude,
-        "Altura": altura
-    }
+    ponto_origem = ponto_migracao_cliente(
+        ponto,
+        latitude,
+        longitude,
+        altura
+    )
 
     if not coordenada_valida(latitude, longitude):
         st.warning("Cliente sem coordenadas válidas. Ajuste latitude/longitude antes de calcular.")
@@ -833,6 +845,10 @@ def mostrar_migracao_cliente(sites):
         df_resultados = df_resultados[
             df_resultados["Site"] != getattr(site_atual, "nome", "")
         ].copy()
+    df_resultados = adicionar_site_atual_resultados_migracao(
+        df_resultados,
+        site_atual
+    )
 
     salvar_resultados_visada_estado(
         "viabilidade_migracao",

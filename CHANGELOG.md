@@ -1,5 +1,11 @@
 # Histórico de versões
 
+## 1.0.97
+
+- Migração deixa de solicitar altitude do terreno do cliente.
+- Altitude do cliente em migração passa a ser sempre obtida via Open-Elevation durante o cálculo.
+- Resultados de migração passam a exibir o site atual do cliente.
+
 ## 1.0.96
 
 - Cálculo de visada passa a ter teste garantindo a altura aplicada nas duas pontas do enlace.
