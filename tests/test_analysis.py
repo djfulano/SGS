@@ -58,6 +58,7 @@ class AnalysisCostsRevenueTest(unittest.TestCase):
         registros[0]["Custo"] = 100
         registros[1]["Custo"] = 100
         registros[2]["Custo"] = 100
+        sites["SITE_00"].adicionar_filho(sites["SITE_10"])
         df_sites = pd.DataFrame(registros)
 
         relatorio = montar_relatorio_gerencial(
@@ -68,6 +69,12 @@ class AnalysisCostsRevenueTest(unittest.TestCase):
         self.assertEqual(len(relatorio["ranking"]), 20)
         self.assertEqual(relatorio["ranking"].iloc[0]["Nome SNMPc"], "SITE_00")
         self.assertEqual(relatorio["ranking"].iloc[0]["Receita Total"], 1000)
+        self.assertEqual(len(relatorio["ranking_total"]), 20)
+        self.assertEqual(relatorio["ranking_total"].iloc[0]["Nome SNMPc"], "SITE_00")
+        self.assertEqual(
+            relatorio["ranking_total"].iloc[0]["Receita Total"],
+            1990
+        )
         self.assertEqual(len(relatorio["deficitarios"]), 20)
         self.assertEqual(relatorio["deficitarios"].iloc[0]["Nome SNMPc"], "SITE_00")
         self.assertEqual(relatorio["deficitarios"].iloc[0]["Receita Total"], 1000)

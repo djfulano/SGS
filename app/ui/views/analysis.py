@@ -2,6 +2,7 @@ import re
 import unicodedata
 from datetime import datetime
 from io import BytesIO
+from xml.sax.saxutils import escape
 
 import pandas as pd
 import streamlit as st
@@ -1945,6 +1946,37 @@ def _linha_site_relatorio_gerencial(site):
     }
 
 
+def _linha_site_relatorio_gerencial_total(site):
+    sites_consulta = sites_descendentes(site)
+    clientes = [
+        cliente
+        for site_consulta in sites_consulta
+        for cliente in (getattr(site_consulta, "clientes", []) or [])
+    ]
+    receita = sum(
+        _valor_monetario_ranking(
+            getattr(cliente, "receita", 0)
+        )
+        for cliente in clientes
+    )
+    custo = sum(
+        _valor_monetario_ranking(
+            getattr(site_consulta, "custo", 0)
+        )
+        for site_consulta in sites_consulta
+    )
+
+    return {
+        "Nome": getattr(site, "nome_cadastro", "") or "",
+        "Receita Total": receita,
+        "Clientes Total": len(clientes),
+        "Custo": custo,
+        "Nome SNMPc": getattr(site, "nome", "") or "",
+        "Resultado": receita - custo,
+        "Status Cadastro": getattr(site, "status_cadastro", "") or ""
+    }
+
+
 def _df_base_relatorio_gerencial(sites, df_sites=None):
     if not sites:
         return pd.DataFrame()
@@ -1952,6 +1984,18 @@ def _df_base_relatorio_gerencial(sites, df_sites=None):
     return pd.DataFrame(
         [
             _linha_site_relatorio_gerencial(site)
+            for site in sites.values()
+        ]
+    )
+
+
+def _df_base_relatorio_gerencial_total(sites):
+    if not sites:
+        return pd.DataFrame()
+
+    return pd.DataFrame(
+        [
+            _linha_site_relatorio_gerencial_total(site)
             for site in sites.values()
         ]
     )
@@ -2004,14 +2048,22 @@ def montar_relatorio_gerencial(sites, df_sites):
         )
         return {
             "ranking": vazio,
+            "ranking_total": vazio,
             "deficitarios": vazio,
             "clientes_deficitarios": pd.DataFrame(),
             "deficitarios_detalhado": [],
             "sem_clientes": vazio
         }
 
+    df_base_total = _df_base_relatorio_gerencial_total(sites)
     ranking = _colunas_relatorio_gerencial(
         df_base.sort_values(
+            by="Receita Total",
+            ascending=False
+        ).head(20)
+    )
+    ranking_total = _colunas_relatorio_gerencial(
+        df_base_total.sort_values(
             by="Receita Total",
             ascending=False
         ).head(20)
@@ -2090,6 +2142,7 @@ def montar_relatorio_gerencial(sites, df_sites):
 
     return {
         "ranking": ranking,
+        "ranking_total": ranking_total,
         "deficitarios": deficitarios,
         "clientes_deficitarios": clientes_deficitarios_exibicao,
         "deficitarios_detalhado": deficitarios_detalhado,
@@ -2100,6 +2153,22 @@ def montar_relatorio_gerencial(sites, df_sites):
 def _pdf_texto(valor):
     texto = "" if pd.isna(valor) else str(valor)
     return texto[:80]
+
+
+def _texto_moeda_relatorio(valor):
+    if callable(_formatar_moeda):
+        return _formatar_moeda(
+            _valor_monetario_ranking(valor)
+        )
+
+    return f"R$ {_valor_monetario_ranking(valor):,.2f}"
+
+
+def _paragrafo_pdf(texto, estilo):
+    return Paragraph(
+        escape(str(texto)).replace("\n", "<br/>"),
+        estilo
+    )
 
 
 def _pdf_dataframe(df, colunas=None, limite_linhas=None):
@@ -2189,34 +2258,57 @@ def exportar_relatorio_gerencial_pdf(relatorio):
         elementos.append(Spacer(1, 12))
 
     adicionar_tabela(
-        "Ranking - 20 maiores sites em receita total",
+        "Ranking - 20 maiores sites por receita direta",
         relatorio.get("ranking")
+    )
+    adicionar_tabela(
+        "Ranking - 20 maiores sites por receita total com filhos",
+        relatorio.get("ranking_total")
     )
     elementos.append(
         Paragraph(
-            "Sites Deficitários - 20 piores resultados",
+            "Sites Deficitários - 20 piores resultados diretos",
             estilos["Heading2"]
         )
     )
     elementos.append(Spacer(1, 6))
 
     for bloco in relatorio.get("deficitarios_detalhado", []):
-        adicionar_tabela(
-            "Site",
-            bloco.get("site")
+        df_site = bloco.get("site")
+        if df_site is None or df_site.empty:
+            continue
+
+        linha = df_site.iloc[0]
+        elementos.append(
+            _paragrafo_pdf(
+                (
+                    f"{linha.get('Nome SNMPc', '')} - {linha.get('Nome', '')}\n"
+                    f"Receita direta: {_texto_moeda_relatorio(linha.get('Receita Total', 0))} | "
+                    f"Custo: {_texto_moeda_relatorio(linha.get('Custo', 0))} | "
+                    f"Resultado: {_texto_moeda_relatorio(_valor_monetario_ranking(linha.get('Receita Total', 0)) - _valor_monetario_ranking(linha.get('Custo', 0)))} | "
+                    f"Clientes: {linha.get('Clientes Total', 0)}"
+                ),
+                estilos["Heading3"]
+            )
         )
-        adicionar_tabela(
-            "Clientes",
-            bloco.get("clientes"),
-            colunas=[
-                "Site",
-                "Cliente",
-                "Assinatura",
-                "Produto",
-                "Receita",
-                "Setorial"
-            ]
-        )
+        clientes = bloco.get("clientes")
+        if clientes is None or clientes.empty:
+            elementos.append(_paragrafo_pdf("Sem clientes listados.", estilos["Normal"]))
+        else:
+            for _, cliente in clientes.iterrows():
+                elementos.append(
+                    _paragrafo_pdf(
+                        (
+                            f"- {cliente.get('Cliente', '')} | "
+                            f"Assinatura: {cliente.get('Assinatura', '')} | "
+                            f"Produto: {cliente.get('Produto', '')} | "
+                            f"Receita: {_texto_moeda_relatorio(cliente.get('Receita', 0))} | "
+                            f"Setorial: {cliente.get('Setorial', '')}"
+                        ),
+                        estilos["Normal"]
+                    )
+                )
+        elementos.append(Spacer(1, 8))
 
     adicionar_tabela(
         "Sites Ativos Sem Clientes",
@@ -2247,34 +2339,59 @@ def mostrar_relatorio_gerencial(sites, df_sites):
         key="relatorio_gerencial_pdf"
     )
 
-    st.subheader("Ranking - 20 maiores sites em receita total")
+    st.subheader("Ranking - 20 maiores sites por receita direta")
     _mostrar_grid(
         relatorio["ranking"],
         height=420,
         key="relatorio_gerencial_ranking"
     )
-    st.subheader("Sites Deficitários - 20 piores resultados")
+    st.subheader("Ranking - 20 maiores sites por receita total com filhos")
+    _mostrar_grid(
+        relatorio["ranking_total"],
+        height=420,
+        key="relatorio_gerencial_ranking_total"
+    )
+    st.subheader("Sites Deficitários - 20 piores resultados diretos")
     if relatorio["deficitarios"].empty:
         st.info("Nenhum site deficitário encontrado.")
     else:
         for indice, bloco in enumerate(relatorio["deficitarios_detalhado"]):
             site_bloco = bloco["site"]
-            nome_site = (
-                site_bloco.iloc[0].get("Nome SNMPc")
-                if not site_bloco.empty
-                else f"Site {indice + 1}"
+            if site_bloco.empty:
+                continue
+
+            linha = site_bloco.iloc[0]
+            receita = _valor_monetario_ranking(
+                linha.get("Receita Total", 0)
             )
-            st.markdown(f"#### {nome_site}")
-            _mostrar_grid(
-                site_bloco,
-                height=120,
-                key=f"relatorio_gerencial_deficitario_site_{indice}"
+            custo = _valor_monetario_ranking(
+                linha.get("Custo", 0)
             )
-            _mostrar_grid(
-                bloco["clientes"],
-                height=260,
-                key=f"relatorio_gerencial_deficitario_clientes_{indice}"
+            resultado = receita - custo
+            st.markdown(
+                "\n".join([
+                    f"#### {linha.get('Nome SNMPc', '')} - {linha.get('Nome', '')}",
+                    f"**Receita direta:** {_texto_moeda_relatorio(receita)}  ",
+                    f"**Custo:** {_texto_moeda_relatorio(custo)}  ",
+                    f"**Resultado:** {_texto_moeda_relatorio(resultado)}  ",
+                    f"**Clientes:** {linha.get('Clientes Total', 0)}"
+                ])
             )
+            clientes = bloco["clientes"]
+            if clientes.empty:
+                st.caption("Sem clientes listados.")
+            else:
+                for _, cliente in clientes.iterrows():
+                    st.markdown(
+                        (
+                            f"- **{cliente.get('Cliente', '')}** "
+                            f"({cliente.get('Assinatura', '')}) - "
+                            f"{cliente.get('Produto', '')} - "
+                            f"{_texto_moeda_relatorio(cliente.get('Receita', 0))} - "
+                            f"Setorial: {cliente.get('Setorial', '')}"
+                        )
+                    )
+            st.divider()
 
     st.subheader("Sites Ativos Sem Clientes")
     _mostrar_grid(

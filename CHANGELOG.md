@@ -1,5 +1,10 @@
 # Histórico de versões
 
+## 1.1.2
+
+- Relatório Gerencial passa a exibir ranking por receita direta e ranking por receita total com filhos.
+- Sites deficitários passam a ser apresentados em texto simples com seus clientes, sem tabelas aninhadas.
+
 ## 1.1.1
 
 - Relatório Gerencial passa a calcular receita pela soma direta dos clientes vinculados ao site.
