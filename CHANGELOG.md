@@ -1,5 +1,9 @@
 # Histórico de versões
 
+## 1.1.6
+
+- Sites deficitários do Relatório Gerencial passam a considerar receita e clientes indiretos dos sites filhos.
+
 ## 1.1.5
 
 - Ranking por receita total com filhos passa a manter o custo apenas do site principal.

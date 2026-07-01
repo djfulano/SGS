@@ -2066,9 +2066,10 @@ def montar_relatorio_gerencial(sites, df_sites):
         ).head(20)
     )
     ativos = _sites_ativos(df_base)
+    ativos_total = _sites_ativos(df_base_total)
     deficitarios_base = (
-        ativos[
-            ativos["Clientes Total"] > 0
+        ativos_total[
+            ativos_total["Clientes Total"] > 0
         ]
         .sort_values(
             by=[
@@ -2089,7 +2090,7 @@ def montar_relatorio_gerencial(sites, df_sites):
     clientes_deficitarios = montar_clientes_custos_receita(
         sites,
         nomes_deficitarios,
-        incluir_filhos=False
+        incluir_filhos=True
     )
     colunas_clientes_deficitarios = [
         "Site",
@@ -2266,7 +2267,7 @@ def exportar_relatorio_gerencial_pdf(relatorio):
     )
     elementos.append(
         Paragraph(
-            "Sites Deficitários - 20 piores resultados diretos",
+            "Sites Deficitários - 20 piores resultados com receita indireta",
             estilos["Heading2"]
         )
     )
@@ -2282,7 +2283,7 @@ def exportar_relatorio_gerencial_pdf(relatorio):
             _paragrafo_pdf(
                 (
                     f"{linha.get('Nome SNMPc', '')} - {linha.get('Nome', '')}\n"
-                    f"Receita direta: {_texto_moeda_relatorio(linha.get('Receita Total', 0))} | "
+                    f"Receita total com filhos: {_texto_moeda_relatorio(linha.get('Receita Total', 0))} | "
                     f"Custo: {_texto_moeda_relatorio(linha.get('Custo', 0))} | "
                     f"Resultado: {_texto_moeda_relatorio(_valor_monetario_ranking(linha.get('Receita Total', 0)) - _valor_monetario_ranking(linha.get('Custo', 0)))} | "
                     f"Clientes: {linha.get('Clientes Total', 0)}"
@@ -2350,7 +2351,7 @@ def mostrar_relatorio_gerencial(sites, df_sites):
         height=420,
         key="relatorio_gerencial_ranking_total"
     )
-    st.subheader("Sites Deficitários - 20 piores resultados diretos")
+    st.subheader("Sites Deficitários - 20 piores resultados com receita indireta")
     if relatorio["deficitarios"].empty:
         st.info("Nenhum site deficitário encontrado.")
     else:
@@ -2371,7 +2372,7 @@ def mostrar_relatorio_gerencial(sites, df_sites):
                 (
                     f"<h4>{escape(str(linha.get('Nome SNMPc', '') or ''))} - "
                     f"{escape(str(linha.get('Nome', '') or ''))}</h4>"
-                    f"<p><strong>Receita direta:</strong> "
+                    f"<p><strong>Receita total com filhos:</strong> "
                     f"{escape(_texto_moeda_relatorio(receita))}</p>"
                     f"<p><strong>Custo:</strong> "
                     f"{escape(_texto_moeda_relatorio(custo))}</p>"

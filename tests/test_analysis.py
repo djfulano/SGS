@@ -84,8 +84,12 @@ class AnalysisCostsRevenueTest(unittest.TestCase):
             2000
         )
         self.assertEqual(len(relatorio["deficitarios"]), 20)
-        self.assertEqual(relatorio["deficitarios"].iloc[0]["Nome SNMPc"], "SITE_00")
-        self.assertEqual(relatorio["deficitarios"].iloc[0]["Receita Total"], 1000)
+        self.assertEqual(relatorio["deficitarios"].iloc[0]["Nome SNMPc"], "SITE_01")
+        deficitario_site_00 = relatorio["deficitarios"][
+            relatorio["deficitarios"]["Nome SNMPc"].eq("SITE_00")
+        ].iloc[0]
+        self.assertEqual(deficitario_site_00["Receita Total"], 1990)
+        self.assertEqual(deficitario_site_00["Clientes Total"], 2)
         self.assertNotIn(
             "SITE_22",
             set(relatorio["deficitarios"]["Nome SNMPc"])
@@ -98,6 +102,10 @@ class AnalysisCostsRevenueTest(unittest.TestCase):
             "Cliente 00",
             set(relatorio["clientes_deficitarios"]["Cliente"])
         )
+        self.assertIn(
+            "Cliente 10",
+            set(relatorio["clientes_deficitarios"]["Cliente"])
+        )
         self.assertNotIn(
             "resumo",
             relatorio
@@ -106,7 +114,11 @@ class AnalysisCostsRevenueTest(unittest.TestCase):
             len(relatorio["deficitarios_detalhado"]),
             20
         )
-        primeiro_bloco = relatorio["deficitarios_detalhado"][0]
+        primeiro_bloco = next(
+            bloco
+            for bloco in relatorio["deficitarios_detalhado"]
+            if bloco["site"].iloc[0]["Nome SNMPc"] == "SITE_00"
+        )
         self.assertEqual(
             primeiro_bloco["site"].iloc[0]["Nome SNMPc"],
             "SITE_00"
