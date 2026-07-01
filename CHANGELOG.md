@@ -1,5 +1,9 @@
 # Histórico de versões
 
+## 1.1.4
+
+- Corrigida a formatação do texto dos sites deficitários no Relatório Gerencial.
+
 ## 1.1.3
 
 - Corrigida a geração do PDF do Relatório Gerencial quando há sites deficitários detalhados.

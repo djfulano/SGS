@@ -2371,13 +2371,19 @@ def mostrar_relatorio_gerencial(sites, df_sites):
             )
             resultado = receita - custo
             st.markdown(
-                "\n".join([
-                    f"#### {linha.get('Nome SNMPc', '')} - {linha.get('Nome', '')}",
-                    f"**Receita direta:** {_texto_moeda_relatorio(receita)}  ",
-                    f"**Custo:** {_texto_moeda_relatorio(custo)}  ",
-                    f"**Resultado:** {_texto_moeda_relatorio(resultado)}  ",
-                    f"**Clientes:** {linha.get('Clientes Total', 0)}"
-                ])
+                (
+                    f"<h4>{escape(str(linha.get('Nome SNMPc', '') or ''))} - "
+                    f"{escape(str(linha.get('Nome', '') or ''))}</h4>"
+                    f"<p><strong>Receita direta:</strong> "
+                    f"{escape(_texto_moeda_relatorio(receita))}</p>"
+                    f"<p><strong>Custo:</strong> "
+                    f"{escape(_texto_moeda_relatorio(custo))}</p>"
+                    f"<p><strong>Resultado:</strong> "
+                    f"{escape(_texto_moeda_relatorio(resultado))}</p>"
+                    f"<p><strong>Clientes:</strong> "
+                    f"{escape(str(linha.get('Clientes Total', 0)))}</p>"
+                ),
+                unsafe_allow_html=True
             )
             clientes = bloco["clientes"]
             if clientes.empty:
