@@ -46,15 +46,18 @@ class AnalysisCostsRevenueTest(unittest.TestCase):
                 "Nome": site.nome_cadastro,
                 "Nome Cadastro": site.nome_cadastro,
                 "Site SNMPc": nome,
-                "Receita Total": 1000 - indice,
+                "Receita Total": 999999,
                 "Clientes Total": len(site.clientes),
                 "Custo": 100 + indice,
                 "Status Cadastro": "Ativo"
             })
 
-        registros[0]["Custo"] = 2000
-        registros[1]["Custo"] = 1900
-        registros[2]["Custo"] = 1800
+        sites["SITE_00"].custo = 2000
+        sites["SITE_01"].custo = 1900
+        sites["SITE_02"].custo = 1800
+        registros[0]["Custo"] = 100
+        registros[1]["Custo"] = 100
+        registros[2]["Custo"] = 100
         df_sites = pd.DataFrame(registros)
 
         relatorio = montar_relatorio_gerencial(
@@ -64,8 +67,10 @@ class AnalysisCostsRevenueTest(unittest.TestCase):
 
         self.assertEqual(len(relatorio["ranking"]), 20)
         self.assertEqual(relatorio["ranking"].iloc[0]["Nome SNMPc"], "SITE_00")
+        self.assertEqual(relatorio["ranking"].iloc[0]["Receita Total"], 1000)
         self.assertEqual(len(relatorio["deficitarios"]), 20)
         self.assertEqual(relatorio["deficitarios"].iloc[0]["Nome SNMPc"], "SITE_00")
+        self.assertEqual(relatorio["deficitarios"].iloc[0]["Receita Total"], 1000)
         self.assertNotIn(
             "SITE_22",
             set(relatorio["deficitarios"]["Nome SNMPc"])
@@ -77,6 +82,23 @@ class AnalysisCostsRevenueTest(unittest.TestCase):
         self.assertIn(
             "Cliente 00",
             set(relatorio["clientes_deficitarios"]["Cliente"])
+        )
+        self.assertNotIn(
+            "resumo",
+            relatorio
+        )
+        self.assertEqual(
+            len(relatorio["deficitarios_detalhado"]),
+            20
+        )
+        primeiro_bloco = relatorio["deficitarios_detalhado"][0]
+        self.assertEqual(
+            primeiro_bloco["site"].iloc[0]["Nome SNMPc"],
+            "SITE_00"
+        )
+        self.assertEqual(
+            primeiro_bloco["clientes"]["Receita"].sum(),
+            primeiro_bloco["site"].iloc[0]["Receita Total"]
         )
 
     def test_relatorio_gerencial_pdf_e_valido(self):
@@ -90,18 +112,14 @@ class AnalysisCostsRevenueTest(unittest.TestCase):
             }]),
             "deficitarios": pd.DataFrame(),
             "clientes_deficitarios": pd.DataFrame(),
+            "deficitarios_detalhado": [],
             "sem_clientes": pd.DataFrame(),
-            "resumo": {
-                "ranking": 1,
-                "deficitarios": 0,
-                "clientes_deficitarios": 0,
-                "sem_clientes": 0
-            }
         }
 
         pdf = exportar_relatorio_gerencial_pdf(relatorio)
 
         self.assertTrue(pdf.startswith(b"%PDF"))
+        self.assertNotIn(b"Resumo", pdf)
 
     def test_monta_clientes_associados_aos_sites_filtrados(self):
         site_a = Site("POP_A", "POP")

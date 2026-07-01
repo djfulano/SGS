@@ -1,5 +1,11 @@
 # Histórico de versões
 
+## 1.1.1
+
+- Relatório Gerencial passa a calcular receita pela soma direta dos clientes vinculados ao site.
+- Relatório Gerencial remove o bloco de resumo da tela e do PDF.
+- Sites deficitários passam a ser exibidos em blocos de site com seus respectivos clientes.
+
 ## 1.1.0
 
 - Análises e Conciliação passa a contar com a subaba Relatório Gerencial.

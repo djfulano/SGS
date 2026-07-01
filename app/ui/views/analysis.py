@@ -1922,51 +1922,39 @@ def preparar_ranking_sites(df_sites):
     return df_ranking[colunas]
 
 
-def _df_base_relatorio_gerencial(sites, df_sites):
-    if callable(_detalhes_topos_cacheados) and sites:
-        df_base = _detalhes_topos_cacheados(sites)
-    else:
-        df_base = df_sites
+def _linha_site_relatorio_gerencial(site):
+    clientes = list(getattr(site, "clientes", []) or [])
+    receita = sum(
+        _valor_monetario_ranking(
+            getattr(cliente, "receita", 0)
+        )
+        for cliente in clientes
+    )
+    custo = _valor_monetario_ranking(
+        getattr(site, "custo", 0)
+    )
 
-    if df_base is None or df_base.empty:
+    return {
+        "Nome": getattr(site, "nome_cadastro", "") or "",
+        "Receita Total": receita,
+        "Clientes Total": len(clientes),
+        "Custo": custo,
+        "Nome SNMPc": getattr(site, "nome", "") or "",
+        "Resultado": receita - custo,
+        "Status Cadastro": getattr(site, "status_cadastro", "") or ""
+    }
+
+
+def _df_base_relatorio_gerencial(sites, df_sites=None):
+    if not sites:
         return pd.DataFrame()
 
-    df = df_base.copy()
-
-    if "Nome SNMPc" not in df.columns:
-        df["Nome SNMPc"] = (
-            df["Site SNMPc"]
-            if "Site SNMPc" in df.columns
-            else df["Site"]
-            if "Site" in df.columns
-            else ""
-        )
-
-    if "Nome" not in df.columns:
-        df["Nome"] = (
-            df["Nome Cadastro"]
-            if "Nome Cadastro" in df.columns
-            else ""
-        )
-
-    for coluna in [
-        "Receita Total",
-        "Clientes Total",
-        "Custo"
-    ]:
-        if coluna not in df.columns:
-            df[coluna] = 0
-
-        df[coluna] = df[coluna].apply(
-            _valor_monetario_ranking
-        )
-
-    df["Resultado"] = df["Receita Total"] - df["Custo"]
-
-    if "Status Cadastro" not in df.columns:
-        df["Status Cadastro"] = ""
-
-    return df
+    return pd.DataFrame(
+        [
+            _linha_site_relatorio_gerencial(site)
+            for site in sites.values()
+        ]
+    )
 
 
 def _colunas_relatorio_gerencial(df):
@@ -2018,13 +2006,8 @@ def montar_relatorio_gerencial(sites, df_sites):
             "ranking": vazio,
             "deficitarios": vazio,
             "clientes_deficitarios": pd.DataFrame(),
-            "sem_clientes": vazio,
-            "resumo": {
-                "ranking": 0,
-                "deficitarios": 0,
-                "clientes_deficitarios": 0,
-                "sem_clientes": 0
-            }
+            "deficitarios_detalhado": [],
+            "sem_clientes": vazio
         }
 
     ranking = _colunas_relatorio_gerencial(
@@ -2059,6 +2042,37 @@ def montar_relatorio_gerencial(sites, df_sites):
         nomes_deficitarios,
         incluir_filhos=False
     )
+    colunas_clientes_deficitarios = [
+        "Site",
+        "Cliente",
+        "Assinatura",
+        "Produto",
+        "Receita",
+        "Setorial"
+    ]
+    clientes_deficitarios_exibicao = clientes_deficitarios[
+        [
+            coluna
+            for coluna in colunas_clientes_deficitarios
+            if coluna in clientes_deficitarios.columns
+        ]
+    ].copy()
+    deficitarios_detalhado = []
+
+    for _, linha_site in deficitarios.iterrows():
+        nome_site = str(
+            linha_site.get("Nome SNMPc") or ""
+        )
+        df_clientes_site = clientes_deficitarios_exibicao[
+            clientes_deficitarios.get("Site Analisado", pd.Series(dtype=str))
+            .astype(str)
+            .eq(nome_site)
+        ].copy()
+        deficitarios_detalhado.append({
+            "site": pd.DataFrame([linha_site.to_dict()]),
+            "clientes": df_clientes_site
+        })
+
     sem_clientes = _colunas_relatorio_gerencial(
         ativos[
             ativos["Clientes Total"] == 0
@@ -2077,14 +2091,9 @@ def montar_relatorio_gerencial(sites, df_sites):
     return {
         "ranking": ranking,
         "deficitarios": deficitarios,
-        "clientes_deficitarios": clientes_deficitarios,
-        "sem_clientes": sem_clientes,
-        "resumo": {
-            "ranking": len(ranking),
-            "deficitarios": len(deficitarios),
-            "clientes_deficitarios": len(clientes_deficitarios),
-            "sem_clientes": len(sem_clientes)
-        }
+        "clientes_deficitarios": clientes_deficitarios_exibicao,
+        "deficitarios_detalhado": deficitarios_detalhado,
+        "sem_clientes": sem_clientes
     }
 
 
@@ -2138,7 +2147,8 @@ def exportar_relatorio_gerencial_pdf(relatorio):
         leftMargin=24,
         rightMargin=24,
         topMargin=24,
-        bottomMargin=24
+        bottomMargin=24,
+        pageCompression=0
     )
     elementos = [
         Paragraph(
@@ -2178,50 +2188,36 @@ def exportar_relatorio_gerencial_pdf(relatorio):
         elementos.append(tabela)
         elementos.append(Spacer(1, 12))
 
-    resumo = relatorio.get("resumo", {})
-    adicionar_tabela(
-        "Resumo",
-        pd.DataFrame([
-            {
-                "Indicador": "Ranking",
-                "Quantidade": resumo.get("ranking", 0)
-            },
-            {
-                "Indicador": "Sites deficitários",
-                "Quantidade": resumo.get("deficitarios", 0)
-            },
-            {
-                "Indicador": "Clientes dos deficitários",
-                "Quantidade": resumo.get("clientes_deficitarios", 0)
-            },
-            {
-                "Indicador": "Sites sem clientes",
-                "Quantidade": resumo.get("sem_clientes", 0)
-            }
-        ])
-    )
     adicionar_tabela(
         "Ranking - 20 maiores sites em receita total",
         relatorio.get("ranking")
     )
-    adicionar_tabela(
-        "Sites Deficitários - 20 piores resultados",
-        relatorio.get("deficitarios")
+    elementos.append(
+        Paragraph(
+            "Sites Deficitários - 20 piores resultados",
+            estilos["Heading2"]
+        )
     )
-    adicionar_tabela(
-        "Clientes dos Sites Deficitários",
-        relatorio.get("clientes_deficitarios"),
-        colunas=[
-            "Site Analisado",
+    elementos.append(Spacer(1, 6))
+
+    for bloco in relatorio.get("deficitarios_detalhado", []):
+        adicionar_tabela(
             "Site",
-            "Cliente",
-            "Assinatura",
-            "Produto",
-            "Receita",
-            "Setorial"
-        ],
-        limite_linhas=200
-    )
+            bloco.get("site")
+        )
+        adicionar_tabela(
+            "Clientes",
+            bloco.get("clientes"),
+            colunas=[
+                "Site",
+                "Cliente",
+                "Assinatura",
+                "Produto",
+                "Receita",
+                "Setorial"
+            ]
+        )
+
     adicionar_tabela(
         "Sites Ativos Sem Clientes",
         relatorio.get("sem_clientes")
@@ -2242,12 +2238,6 @@ def mostrar_relatorio_gerencial(sites, df_sites):
         sites,
         df_sites
     )
-    resumo = relatorio["resumo"]
-    col1, col2, col3, col4 = st.columns(4)
-    col1.metric("Ranking", resumo["ranking"])
-    col2.metric("Sites deficitários", resumo["deficitarios"])
-    col3.metric("Clientes listados", resumo["clientes_deficitarios"])
-    col4.metric("Sites sem clientes", resumo["sem_clientes"])
 
     st.download_button(
         "Baixar relatório PDF",
@@ -2264,17 +2254,28 @@ def mostrar_relatorio_gerencial(sites, df_sites):
         key="relatorio_gerencial_ranking"
     )
     st.subheader("Sites Deficitários - 20 piores resultados")
-    _mostrar_grid(
-        relatorio["deficitarios"],
-        height=420,
-        key="relatorio_gerencial_deficitarios"
-    )
-    st.subheader("Clientes dos Sites Deficitários")
-    _mostrar_grid(
-        relatorio["clientes_deficitarios"],
-        height=520,
-        key="relatorio_gerencial_clientes_deficitarios"
-    )
+    if relatorio["deficitarios"].empty:
+        st.info("Nenhum site deficitário encontrado.")
+    else:
+        for indice, bloco in enumerate(relatorio["deficitarios_detalhado"]):
+            site_bloco = bloco["site"]
+            nome_site = (
+                site_bloco.iloc[0].get("Nome SNMPc")
+                if not site_bloco.empty
+                else f"Site {indice + 1}"
+            )
+            st.markdown(f"#### {nome_site}")
+            _mostrar_grid(
+                site_bloco,
+                height=120,
+                key=f"relatorio_gerencial_deficitario_site_{indice}"
+            )
+            _mostrar_grid(
+                bloco["clientes"],
+                height=260,
+                key=f"relatorio_gerencial_deficitario_clientes_{indice}"
+            )
+
     st.subheader("Sites Ativos Sem Clientes")
     _mostrar_grid(
         relatorio["sem_clientes"],
