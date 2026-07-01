@@ -238,6 +238,42 @@ def preparar_dados_grafico_visada(perfil):
     return dados
 
 
+def escala_y_grafico_visada(dados):
+    if dados is None or dados.empty:
+        return 0.0, 1.0, 0.0
+
+    colunas_minimas = [
+        "Terreno Ajustado m",
+        "Fresnel Inferior m"
+    ]
+    colunas_maximas = [
+        "Terreno Ajustado m",
+        "Linha Visada m",
+        "Fresnel Superior m"
+    ]
+    y_min_base = min(
+        float(dados[coluna].min())
+        for coluna in colunas_minimas
+        if coluna in dados
+    )
+    y_max_base = max(
+        float(dados[coluna].max())
+        for coluna in colunas_maximas
+        if coluna in dados
+    )
+    amplitude = max(y_max_base - y_min_base, 20.0)
+    margem = max(amplitude * 0.10, 10.0)
+    y_min = y_min_base - margem
+    y_max = y_max_base + margem
+    if y_max - y_min < 40.0:
+        centro = (y_min + y_max) / 2
+        y_min = centro - 20.0
+        y_max = centro + 20.0
+    base_terreno = y_min
+
+    return y_min, y_max, base_terreno
+
+
 def montar_grafico_perfil_visada(perfil, site="", status=""):
     dados = preparar_dados_grafico_visada(perfil)
     fig = go.Figure()
@@ -255,13 +291,28 @@ def montar_grafico_perfil_visada(perfil, site="", status=""):
         if float(ponto_critico["Margem m"]) < 0
         else "#f59e0b"
     )
+    y_min, y_max, base_terreno = escala_y_grafico_visada(dados)
 
+    fig.add_trace(go.Scatter(
+        x=dados["Distância km"],
+        y=[
+            base_terreno
+        ] * len(dados),
+        mode="lines",
+        name="Base visual",
+        line={
+            "color": "rgba(116, 105, 135, 0)",
+            "width": 0
+        },
+        hoverinfo="skip",
+        showlegend=False
+    ))
     fig.add_trace(go.Scatter(
         x=dados["Distância km"],
         y=dados["Terreno Ajustado m"],
         mode="lines",
         name="Terreno + curvatura",
-        fill="tozeroy",
+        fill="tonexty",
         line={
             "color": "rgba(116, 105, 135, 0.55)",
             "width": 1
@@ -364,6 +415,12 @@ def montar_grafico_perfil_visada(perfil, site="", status=""):
         },
         xaxis_title="Distância (km)",
         yaxis_title="Elevação / altura (m)",
+        yaxis={
+            "range": [
+                y_min,
+                y_max
+            ]
+        },
         legend={
             "orientation": "h",
             "yanchor": "bottom",

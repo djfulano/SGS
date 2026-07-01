@@ -1,5 +1,11 @@
 # Histórico de versões
 
+## 1.0.93
+
+- Gráfico do perfil de visada passa a usar escala vertical focada na altitude do trajeto.
+- Terreno do perfil deixa de preencher a área até altitude zero, melhorando a leitura visual.
+- Testes do gráfico de visada passam a validar escala, base visual e traços principais.
+
 ## 1.0.92
 
 - Perfil de visada passa a ser exibido em gráfico interativo.
