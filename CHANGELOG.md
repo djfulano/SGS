@@ -1,5 +1,9 @@
 # Histórico de versões
 
+## 1.1.7
+
+- Relatório Gerencial passa a exibir tabela-resumo antes dos itens individuais de sites deficitários.
+
 ## 1.1.6
 
 - Sites deficitários do Relatório Gerencial passam a considerar receita e clientes indiretos dos sites filhos.

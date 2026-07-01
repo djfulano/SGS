@@ -2272,6 +2272,10 @@ def exportar_relatorio_gerencial_pdf(relatorio):
         )
     )
     elementos.append(Spacer(1, 6))
+    adicionar_tabela(
+        "Resumo dos Sites Deficitários",
+        relatorio.get("deficitarios")
+    )
 
     for bloco in relatorio.get("deficitarios_detalhado", []):
         df_site = bloco.get("site")
@@ -2355,6 +2359,11 @@ def mostrar_relatorio_gerencial(sites, df_sites):
     if relatorio["deficitarios"].empty:
         st.info("Nenhum site deficitário encontrado.")
     else:
+        _mostrar_grid(
+            relatorio["deficitarios"],
+            height=420,
+            key="relatorio_gerencial_deficitarios_resumo"
+        )
         for indice, bloco in enumerate(relatorio["deficitarios_detalhado"]):
             site_bloco = bloco["site"]
             if site_bloco.empty:

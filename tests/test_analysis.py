@@ -162,7 +162,8 @@ class AnalysisCostsRevenueTest(unittest.TestCase):
         pdf = exportar_relatorio_gerencial_pdf(relatorio)
 
         self.assertTrue(pdf.startswith(b"%PDF"))
-        self.assertNotIn(b"Resumo", pdf)
+        self.assertNotIn(b"Indicador", pdf)
+        self.assertIn(b"Resumo dos Sites", pdf)
 
     def test_monta_clientes_associados_aos_sites_filtrados(self):
         site_a = Site("POP_A", "POP")
