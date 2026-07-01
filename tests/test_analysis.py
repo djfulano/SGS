@@ -7,8 +7,10 @@ from app.models.cliente import Cliente
 from app.models.site import Site
 from app.ui.views.analysis import classificar_site_deficitario
 from app.ui.views.analysis import exportar_relatorio_sites_deficitarios_excel
+from app.ui.views.analysis import exportar_relatorio_gerencial_pdf
 from app.ui.views.analysis import extrair_sites_resumo_selecionados
 from app.ui.views.analysis import montar_clientes_custos_receita
+from app.ui.views.analysis import montar_relatorio_gerencial
 from app.ui.views.analysis import montar_relatorio_executivo_sites_deficitarios
 from app.ui.views.analysis import montar_sites_deficitarios
 from app.ui.views.analysis import preparar_ranking_sites
@@ -17,6 +19,89 @@ from app.ui.views.analysis import sugerir_acao_site_deficitario
 
 
 class AnalysisCostsRevenueTest(unittest.TestCase):
+
+    def test_relatorio_gerencial_monta_blocos_principais(self):
+        sites = {}
+        registros = []
+
+        for indice in range(25):
+            nome = f"SITE_{indice:02d}"
+            site = Site(nome, "BH")
+            site.nome_cadastro = f"Nome {indice:02d}"
+            site.status_cadastro = "Ativo"
+            site.custo = 100 + indice
+            if indice < 22:
+                cliente = Cliente(
+                    f"Cliente {indice:02d}",
+                    1000 - indice,
+                    f"ASS{indice:02d}"
+                )
+                cliente.produto = "Internet"
+                site.adicionar_cliente(
+                    cliente,
+                    setorial="S1"
+                )
+            sites[nome] = site
+            registros.append({
+                "Nome": site.nome_cadastro,
+                "Nome Cadastro": site.nome_cadastro,
+                "Site SNMPc": nome,
+                "Receita Total": 1000 - indice,
+                "Clientes Total": len(site.clientes),
+                "Custo": 100 + indice,
+                "Status Cadastro": "Ativo"
+            })
+
+        registros[0]["Custo"] = 2000
+        registros[1]["Custo"] = 1900
+        registros[2]["Custo"] = 1800
+        df_sites = pd.DataFrame(registros)
+
+        relatorio = montar_relatorio_gerencial(
+            sites,
+            df_sites
+        )
+
+        self.assertEqual(len(relatorio["ranking"]), 20)
+        self.assertEqual(relatorio["ranking"].iloc[0]["Nome SNMPc"], "SITE_00")
+        self.assertEqual(len(relatorio["deficitarios"]), 20)
+        self.assertEqual(relatorio["deficitarios"].iloc[0]["Nome SNMPc"], "SITE_00")
+        self.assertNotIn(
+            "SITE_22",
+            set(relatorio["deficitarios"]["Nome SNMPc"])
+        )
+        self.assertIn(
+            "SITE_22",
+            set(relatorio["sem_clientes"]["Nome SNMPc"])
+        )
+        self.assertIn(
+            "Cliente 00",
+            set(relatorio["clientes_deficitarios"]["Cliente"])
+        )
+
+    def test_relatorio_gerencial_pdf_e_valido(self):
+        relatorio = {
+            "ranking": pd.DataFrame([{
+                "Nome": "Site A",
+                "Receita Total": 1000,
+                "Clientes Total": 2,
+                "Custo": 100,
+                "Nome SNMPc": "SITE_A"
+            }]),
+            "deficitarios": pd.DataFrame(),
+            "clientes_deficitarios": pd.DataFrame(),
+            "sem_clientes": pd.DataFrame(),
+            "resumo": {
+                "ranking": 1,
+                "deficitarios": 0,
+                "clientes_deficitarios": 0,
+                "sem_clientes": 0
+            }
+        }
+
+        pdf = exportar_relatorio_gerencial_pdf(relatorio)
+
+        self.assertTrue(pdf.startswith(b"%PDF"))
 
     def test_monta_clientes_associados_aos_sites_filtrados(self):
         site_a = Site("POP_A", "POP")

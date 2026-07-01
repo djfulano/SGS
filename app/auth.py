@@ -43,6 +43,7 @@ MODULES = [
     ("analises_conciliacao", "Análises e Conciliação"),
     ("conciliacao_sites", "Análises e Conciliação > Conciliação SNMPc x Sites"),
     ("ranking", "Análises e Conciliação > Ranking"),
+    ("relatorio_gerencial", "Análises e Conciliação > Relatório Gerencial"),
     ("custos_receita", "Análises e Conciliação > Custos x Receita"),
     ("sites_deficitarios", "Análises e Conciliação > Sites Deficitários"),
     ("sites_documentos", "Análises e Conciliação > Sites x Documentos"),

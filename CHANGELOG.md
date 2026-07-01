@@ -1,5 +1,11 @@
 # Histórico de versões
 
+## 1.1.0
+
+- Análises e Conciliação passa a contar com a subaba Relatório Gerencial.
+- Relatório Gerencial consolida ranking, sites deficitários, clientes dos deficitários e sites ativos sem clientes.
+- Relatório Gerencial pode ser baixado em PDF.
+
 ## 1.0.99
 
 - Migração passa a recarregar latitude, longitude e altura ao trocar o cliente selecionado.
