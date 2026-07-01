@@ -1,3 +1,4 @@
+import json
 import re
 import unicodedata
 from datetime import datetime
@@ -7,6 +8,7 @@ from xml.sax.saxutils import escape
 
 import pandas as pd
 import streamlit as st
+import streamlit.components.v1 as components
 
 from app.auth import has_permission
 from app.importers.topos_importer import carregar_topos
@@ -41,6 +43,14 @@ COLUNAS_FINANCEIRAS_PDF = {
     "Custo",
     "Receita",
     "Resultado"
+}
+PESOS_COLUNAS_RELATORIO_GERENCIAL_PDF = {
+    "Nome": 2.2,
+    "Receita Total": 0.95,
+    "Clientes Total": 0.75,
+    "Custo": 0.9,
+    "Resultado": 0.9,
+    "Nome SNMPc": 1.8
 }
 
 
@@ -2028,6 +2038,22 @@ def _colunas_relatorio_gerencial(df):
     return df[colunas].copy()
 
 
+def _colunas_deficitarios_relatorio_gerencial(df):
+    colunas = [
+        "Nome",
+        "Receita Total",
+        "Clientes Total",
+        "Custo",
+        "Resultado",
+        "Nome SNMPc"
+    ]
+
+    if df is None or df.empty:
+        return pd.DataFrame(columns=colunas)
+
+    return df[colunas].copy()
+
+
 def _sites_ativos(df):
     if df is None or df.empty:
         return df
@@ -2098,7 +2124,7 @@ def montar_relatorio_gerencial(sites, df_sites):
         )
         .head(20)
     )
-    deficitarios = _colunas_relatorio_gerencial(
+    deficitarios = _colunas_deficitarios_relatorio_gerencial(
         deficitarios_base
     )
     nomes_deficitarios = deficitarios["Nome SNMPc"].dropna().astype(str).tolist()
@@ -2240,17 +2266,315 @@ def _pdf_dataframe(df, colunas=None, limite_linhas=None):
     ]
 
 
+def _larguras_colunas_pdf(colunas, largura_total):
+    if not colunas:
+        return []
+
+    if len(colunas) == 1:
+        return [
+            largura_total
+        ]
+
+    pesos = [
+        PESOS_COLUNAS_RELATORIO_GERENCIAL_PDF.get(
+            coluna,
+            1.0
+        )
+        for coluna in colunas
+    ]
+    peso_total = sum(pesos) or 1
+
+    return [
+        largura_total * peso / peso_total
+        for peso in pesos
+    ]
+
+
+def _linhas_pdf_com_quebra(dados, estilo_cabecalho, estilo_celula):
+    from reportlab.platypus import Paragraph
+
+    linhas = []
+    for indice, linha in enumerate(dados):
+        estilo = estilo_cabecalho if indice == 0 else estilo_celula
+        linhas.append([
+            Paragraph(
+                escape(str(valor)).replace("\n", "<br/>"),
+                estilo
+            )
+            for valor in linha
+        ])
+
+    return linhas
+
+
+def _email_html_texto(valor):
+    return escape(
+        "" if pd.isna(valor) else str(valor)
+    )
+
+
+def _email_valor_tabela(coluna, valor):
+    if coluna in COLUNAS_FINANCEIRAS_PDF:
+        return _texto_moeda_relatorio(valor)
+
+    return "" if pd.isna(valor) else str(valor)
+
+
+def _email_tabela_html(titulo, df, colunas=None):
+    if df is None or df.empty:
+        return (
+            f"<h3 style=\"margin:22px 0 8px;color:#111827;\">"
+            f"{_email_html_texto(titulo)}</h3>"
+            "<p style=\"margin:0 0 12px;color:#6b7280;\">Sem dados.</p>"
+        )
+
+    df_email = df.copy()
+    if colunas:
+        df_email = df_email[
+            [
+                coluna
+                for coluna in colunas
+                if coluna in df_email.columns
+            ]
+        ]
+
+    cabecalho = "".join(
+        (
+            "<th style=\"padding:7px 8px;border:1px solid #d1d5db;"
+            "background:#1f2937;color:#ffffff;text-align:left;font-size:12px;\">"
+            f"{_email_html_texto(coluna)}</th>"
+        )
+        for coluna in df_email.columns
+    )
+    linhas = []
+    for _, linha in df_email.iterrows():
+        celulas = "".join(
+            (
+                "<td style=\"padding:7px 8px;border:1px solid #d1d5db;"
+                "font-size:12px;color:#111827;vertical-align:top;\">"
+                f"{_email_html_texto(_email_valor_tabela(coluna, linha[coluna]))}</td>"
+            )
+            for coluna in df_email.columns
+        )
+        linhas.append(f"<tr>{celulas}</tr>")
+
+    return (
+        f"<h3 style=\"margin:22px 0 8px;color:#111827;\">"
+        f"{_email_html_texto(titulo)}</h3>"
+        "<table style=\"border-collapse:collapse;width:100%;margin:0 0 12px;"
+        "font-family:Arial,sans-serif;\">"
+        f"<thead><tr>{cabecalho}</tr></thead>"
+        f"<tbody>{''.join(linhas)}</tbody>"
+        "</table>"
+    )
+
+
+def _email_deficitarios_detalhado_html(relatorio):
+    blocos = relatorio.get("deficitarios_detalhado", []) or []
+    conteudo = [
+        "<h3 style=\"margin:22px 0 8px;color:#111827;\">"
+        "Detalhamento dos Sites Deficitários</h3>"
+    ]
+
+    if not blocos:
+        conteudo.append(
+            "<p style=\"margin:0 0 12px;color:#6b7280;\">Sem dados.</p>"
+        )
+        return "".join(conteudo)
+
+    for bloco in blocos:
+        site = bloco.get("site")
+        if site is None or site.empty:
+            continue
+
+        linha = site.iloc[0]
+        receita = _valor_monetario_ranking(linha.get("Receita Total", 0))
+        custo = _valor_monetario_ranking(linha.get("Custo", 0))
+        resultado = receita - custo
+        conteudo.append(
+            "<div style=\"margin:14px 0 16px;padding:12px;border:1px solid #d1d5db;"
+            "border-radius:6px;background:#f9fafb;\">"
+            f"<h4 style=\"margin:0 0 8px;color:#111827;\">"
+            f"{_email_html_texto(linha.get('Nome SNMPc', ''))} - "
+            f"{_email_html_texto(linha.get('Nome', ''))}</h4>"
+            f"<p style=\"margin:0 0 4px;\"><strong>Receita total com filhos:</strong> "
+            f"{_email_html_texto(_texto_moeda_relatorio(receita))}</p>"
+            f"<p style=\"margin:0 0 4px;\"><strong>Custo:</strong> "
+            f"{_email_html_texto(_texto_moeda_relatorio(custo))}</p>"
+            f"<p style=\"margin:0 0 4px;\"><strong>Resultado:</strong> "
+            f"{_email_html_texto(_texto_moeda_relatorio(resultado))}</p>"
+            f"<p style=\"margin:0 0 8px;\"><strong>Clientes:</strong> "
+            f"{_email_html_texto(linha.get('Clientes Total', 0))}</p>"
+        )
+        clientes = bloco.get("clientes")
+        if clientes is None or clientes.empty:
+            conteudo.append(
+                "<p style=\"margin:0;color:#6b7280;\">Sem clientes listados.</p>"
+            )
+        else:
+            conteudo.append("<ul style=\"margin:0;padding-left:20px;\">")
+            for _, cliente in clientes.iterrows():
+                conteudo.append(
+                    "<li style=\"margin:0 0 5px;\">"
+                    f"<strong>{_email_html_texto(cliente.get('Cliente', ''))}</strong> "
+                    f"({_email_html_texto(cliente.get('Assinatura', ''))}) - "
+                    f"{_email_html_texto(cliente.get('Produto', ''))} - "
+                    f"{_email_html_texto(_texto_moeda_relatorio(cliente.get('Receita', 0)))} - "
+                    f"Setorial: {_email_html_texto(cliente.get('Setorial', ''))}"
+                    "</li>"
+                )
+            conteudo.append("</ul>")
+        conteudo.append("</div>")
+
+    return "".join(conteudo)
+
+
+def exportar_relatorio_gerencial_email_html(relatorio):
+    gerado_em = datetime.now().strftime("%d/%m/%Y %H:%M")
+    partes = [
+        "<div style=\"font-family:Arial,sans-serif;color:#111827;line-height:1.35;\">",
+        "<h2 style=\"margin:0 0 4px;color:#111827;\">Resumo Gerencial de Real State</h2>",
+        f"<p style=\"margin:0 0 16px;color:#6b7280;\">Gerado em {gerado_em}</p>",
+        _email_tabela_html(
+            "Ranking - 20 maiores sites por receita direta",
+            relatorio.get("ranking")
+        ),
+        _email_tabela_html(
+            "Ranking - 20 maiores sites por receita total com filhos",
+            relatorio.get("ranking_total")
+        ),
+        _email_tabela_html(
+            "Sites Ativos Sem Clientes",
+            relatorio.get("sem_clientes")
+        ),
+        _email_tabela_html(
+            "Resumo dos Sites Deficitários",
+            relatorio.get("deficitarios")
+        ),
+        _email_deficitarios_detalhado_html(relatorio),
+        "</div>"
+    ]
+
+    return "".join(partes)
+
+
+def _texto_tabela_email(titulo, df):
+    linhas = [
+        titulo
+    ]
+
+    if df is None or df.empty:
+        linhas.append("Sem dados.")
+        return "\n".join(linhas)
+
+    colunas = list(df.columns)
+    linhas.append(" | ".join(colunas))
+    for _, linha in df.iterrows():
+        linhas.append(
+            " | ".join(
+                _email_valor_tabela(coluna, linha[coluna])
+                for coluna in colunas
+            )
+        )
+
+    return "\n".join(linhas)
+
+
+def exportar_relatorio_gerencial_email_texto(relatorio):
+    gerado_em = datetime.now().strftime("%d/%m/%Y %H:%M")
+    linhas = [
+        "Resumo Gerencial de Real State",
+        f"Gerado em {gerado_em}",
+        "",
+        _texto_tabela_email(
+            "Ranking - 20 maiores sites por receita direta",
+            relatorio.get("ranking")
+        ),
+        "",
+        _texto_tabela_email(
+            "Ranking - 20 maiores sites por receita total com filhos",
+            relatorio.get("ranking_total")
+        ),
+        "",
+        _texto_tabela_email(
+            "Sites Ativos Sem Clientes",
+            relatorio.get("sem_clientes")
+        ),
+        "",
+        _texto_tabela_email(
+            "Resumo dos Sites Deficitários",
+            relatorio.get("deficitarios")
+        ),
+        "",
+        "Detalhamento dos Sites Deficitários"
+    ]
+
+    blocos = relatorio.get("deficitarios_detalhado", []) or []
+    if not blocos:
+        linhas.append("Sem dados.")
+    for bloco in blocos:
+        site = bloco.get("site")
+        if site is None or site.empty:
+            continue
+
+        linha = site.iloc[0]
+        receita = _valor_monetario_ranking(linha.get("Receita Total", 0))
+        custo = _valor_monetario_ranking(linha.get("Custo", 0))
+        resultado = receita - custo
+        linhas.extend([
+            "",
+            f"{linha.get('Nome SNMPc', '')} - {linha.get('Nome', '')}",
+            f"Receita total com filhos: {_texto_moeda_relatorio(receita)}",
+            f"Custo: {_texto_moeda_relatorio(custo)}",
+            f"Resultado: {_texto_moeda_relatorio(resultado)}",
+            f"Clientes: {linha.get('Clientes Total', 0)}"
+        ])
+        clientes = bloco.get("clientes")
+        if clientes is None or clientes.empty:
+            linhas.append("- Sem clientes listados.")
+        else:
+            for _, cliente in clientes.iterrows():
+                linhas.append(
+                    (
+                        f"- {cliente.get('Cliente', '')} "
+                        f"({cliente.get('Assinatura', '')}) - "
+                        f"{cliente.get('Produto', '')} - "
+                        f"{_texto_moeda_relatorio(cliente.get('Receita', 0))} - "
+                        f"Setorial: {cliente.get('Setorial', '')}"
+                    )
+                )
+
+    return "\n".join(linhas)
+
+
 def exportar_relatorio_gerencial_pdf(relatorio):
     from reportlab.lib import colors
-    from reportlab.lib.pagesizes import A4, landscape
-    from reportlab.lib.styles import getSampleStyleSheet
-    from reportlab.platypus import Image, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+    from reportlab.lib.pagesizes import A4, portrait
+    from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+    from reportlab.platypus import Image, PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
     output = BytesIO()
     estilos = getSampleStyleSheet()
+    estilo_cabecalho_tabela = ParagraphStyle(
+        "CabecalhoTabelaRelatorioGerencial",
+        parent=estilos["BodyText"],
+        fontName="Helvetica-Bold",
+        fontSize=6.2,
+        leading=7,
+        textColor=colors.white,
+        wordWrap="CJK"
+    )
+    estilo_celula_tabela = ParagraphStyle(
+        "CelulaTabelaRelatorioGerencial",
+        parent=estilos["BodyText"],
+        fontName="Helvetica",
+        fontSize=6.2,
+        leading=7,
+        wordWrap="CJK"
+    )
     doc = SimpleDocTemplate(
         output,
-        pagesize=landscape(A4),
+        pagesize=portrait(A4),
         leftMargin=24,
         rightMargin=24,
         topMargin=24,
@@ -2290,20 +2614,31 @@ def exportar_relatorio_gerencial_pdf(relatorio):
                 estilos["Heading2"]
             )
         )
+        dados_tabela = _pdf_dataframe(
+            df,
+            colunas=colunas,
+            limite_linhas=limite_linhas
+        )
         tabela = Table(
-            _pdf_dataframe(
-                df,
-                colunas=colunas,
-                limite_linhas=limite_linhas
+            _linhas_pdf_com_quebra(
+                dados_tabela,
+                estilo_cabecalho_tabela,
+                estilo_celula_tabela
             ),
+            colWidths=_larguras_colunas_pdf(
+                dados_tabela[0],
+                doc.width
+            ),
+            hAlign="LEFT",
             repeatRows=1
         )
         tabela.setStyle(TableStyle([
             ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1f2937")),
-            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
             ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#d1d5db")),
-            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-            ("FONTSIZE", (0, 0), (-1, -1), 7),
+            ("LEFTPADDING", (0, 0), (-1, -1), 3),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 3),
+            ("TOPPADDING", (0, 0), (-1, -1), 3),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
             ("VALIGN", (0, 0), (-1, -1), "TOP")
         ]))
         elementos.append(tabela)
@@ -2313,10 +2648,17 @@ def exportar_relatorio_gerencial_pdf(relatorio):
         "Ranking - 20 maiores sites por receita direta",
         relatorio.get("ranking")
     )
+    elementos.append(PageBreak())
     adicionar_tabela(
         "Ranking - 20 maiores sites por receita total com filhos",
         relatorio.get("ranking_total")
     )
+    elementos.append(PageBreak())
+    adicionar_tabela(
+        "Sites Ativos Sem Clientes",
+        relatorio.get("sem_clientes")
+    )
+    elementos.append(PageBreak())
     elementos.append(
         Paragraph(
             "Sites Deficitários - 20 piores resultados com receita indireta",
@@ -2328,6 +2670,15 @@ def exportar_relatorio_gerencial_pdf(relatorio):
         "Resumo dos Sites Deficitários",
         relatorio.get("deficitarios")
     )
+
+    elementos.append(PageBreak())
+    elementos.append(
+        Paragraph(
+            "Detalhamento dos Sites Deficitários",
+            estilos["Heading2"]
+        )
+    )
+    elementos.append(Spacer(1, 6))
 
     for bloco in relatorio.get("deficitarios_detalhado", []):
         df_site = bloco.get("site")
@@ -2366,14 +2717,114 @@ def exportar_relatorio_gerencial_pdf(relatorio):
                 )
         elementos.append(Spacer(1, 8))
 
-    adicionar_tabela(
-        "Sites Ativos Sem Clientes",
-        relatorio.get("sem_clientes")
-    )
     doc.build(elementos)
     output.seek(0)
 
     return output.getvalue()
+
+
+def _mostrar_botao_copiar_relatorio_email(html_email, texto_email, chave):
+    components.html(
+        f"""
+        <!doctype html>
+        <html>
+        <head>
+            <meta charset="utf-8" />
+            <style>
+                body {{
+                    margin: 0;
+                    font-family: Arial, sans-serif;
+                    background: transparent;
+                }}
+                .acoes {{
+                    display: flex;
+                    gap: 8px;
+                    align-items: center;
+                    flex-wrap: wrap;
+                }}
+                button {{
+                    border: 1px solid #334155;
+                    background: #111827;
+                    color: #f8fafc;
+                    border-radius: 6px;
+                    padding: 7px 11px;
+                    font-size: 13px;
+                    cursor: pointer;
+                }}
+                button:hover {{
+                    background: #1f2937;
+                }}
+                span {{
+                    color: #94a3b8;
+                    font-size: 12px;
+                }}
+            </style>
+        </head>
+        <body>
+            <div class="acoes">
+                <button type="button" id="copiar-html">Copiar corpo do email</button>
+                <button type="button" id="copiar-texto">Copiar texto simples</button>
+                <span id="status"></span>
+            </div>
+            <script>
+                const htmlEmail = {json.dumps(html_email)};
+                const textoEmail = {json.dumps(texto_email)};
+                const status = document.getElementById("status");
+
+                async function copiarHtml() {{
+                    try {{
+                        if (navigator.clipboard && window.ClipboardItem) {{
+                            const item = new ClipboardItem({{
+                                "text/html": new Blob([htmlEmail], {{type: "text/html"}}),
+                                "text/plain": new Blob([textoEmail], {{type: "text/plain"}})
+                            }});
+                            await navigator.clipboard.write([item]);
+                        }} else if (navigator.clipboard) {{
+                            await navigator.clipboard.writeText(textoEmail);
+                        }} else {{
+                            copiarFallback(textoEmail);
+                        }}
+                        status.textContent = "Copiado";
+                    }} catch (erro) {{
+                        copiarFallback(textoEmail);
+                        status.textContent = "Texto simples copiado";
+                    }}
+                }}
+
+                async function copiarTexto() {{
+                    try {{
+                        if (navigator.clipboard) {{
+                            await navigator.clipboard.writeText(textoEmail);
+                        }} else {{
+                            copiarFallback(textoEmail);
+                        }}
+                        status.textContent = "Texto simples copiado";
+                    }} catch (erro) {{
+                        copiarFallback(textoEmail);
+                        status.textContent = "Texto simples copiado";
+                    }}
+                }}
+
+                function copiarFallback(texto) {{
+                    const area = document.createElement("textarea");
+                    area.value = texto;
+                    area.setAttribute("readonly", "");
+                    area.style.position = "fixed";
+                    area.style.left = "-9999px";
+                    document.body.appendChild(area);
+                    area.select();
+                    document.execCommand("copy");
+                    document.body.removeChild(area);
+                }}
+
+                document.getElementById("copiar-html").addEventListener("click", copiarHtml);
+                document.getElementById("copiar-texto").addEventListener("click", copiarTexto);
+            </script>
+        </body>
+        </html>
+        """,
+        height=44
+    )
 
 
 def mostrar_relatorio_gerencial(sites, df_sites):
@@ -2394,6 +2845,30 @@ def mostrar_relatorio_gerencial(sites, df_sites):
         mime="application/pdf",
         key="relatorio_gerencial_pdf"
     )
+
+    html_email = exportar_relatorio_gerencial_email_html(relatorio)
+    texto_email = exportar_relatorio_gerencial_email_texto(relatorio)
+    st.subheader("Versão para email")
+    st.caption(
+        "Conteúdo compacto para colar no corpo do email. O botão tenta copiar em HTML e usa texto simples como fallback."
+    )
+    _mostrar_botao_copiar_relatorio_email(
+        html_email,
+        texto_email,
+        "relatorio_gerencial_email"
+    )
+    st.download_button(
+        "Baixar HTML do email",
+        data=html_email.encode("utf-8"),
+        file_name="resumo_gerencial_real_state_email.html",
+        mime="text/html",
+        key="relatorio_gerencial_email_html"
+    )
+    with st.expander("Pré-visualização do email"):
+        st.markdown(
+            html_email,
+            unsafe_allow_html=True
+        )
 
     st.subheader("Ranking - 20 maiores sites por receita direta")
     _mostrar_grid(

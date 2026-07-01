@@ -1,5 +1,15 @@
 # Histórico de versões
 
+## 1.1.10
+
+- Relatório Gerencial passa a ter versão em HTML e texto simples para colar no corpo de emails.
+- Subaba Relatório Gerencial passa a oferecer pré-visualização, cópia e download do HTML do email.
+
+## 1.1.9
+
+- PDF do Resumo Gerencial passa a ser gerado em modo retrato com seções em páginas separadas.
+- Resumo dos Sites Deficitários passa a exibir a coluna Resultado.
+
 ## 1.1.8
 
 - PDF do Relatório Gerencial passa a usar o título Resumo Gerencial de Real State.

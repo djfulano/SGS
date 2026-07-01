@@ -10,6 +10,8 @@ from PIL import Image
 from app.models.cliente import Cliente
 from app.models.site import Site
 from app.ui.views.analysis import classificar_site_deficitario
+from app.ui.views.analysis import exportar_relatorio_gerencial_email_html
+from app.ui.views.analysis import exportar_relatorio_gerencial_email_texto
 from app.ui.views.analysis import exportar_relatorio_sites_deficitarios_excel
 from app.ui.views.analysis import exportar_relatorio_gerencial_pdf
 from app.ui.views.analysis import extrair_sites_resumo_selecionados
@@ -94,6 +96,7 @@ class AnalysisCostsRevenueTest(unittest.TestCase):
         ].iloc[0]
         self.assertEqual(deficitario_site_00["Receita Total"], 1990)
         self.assertEqual(deficitario_site_00["Clientes Total"], 2)
+        self.assertEqual(deficitario_site_00["Resultado"], -10)
         self.assertNotIn(
             "SITE_22",
             set(relatorio["deficitarios"]["Nome SNMPc"])
@@ -166,11 +169,14 @@ class AnalysisCostsRevenueTest(unittest.TestCase):
         pdf = exportar_relatorio_gerencial_pdf(relatorio)
 
         self.assertTrue(pdf.startswith(b"%PDF"))
+        self.assertIn(b"/Count 5", pdf)
         self.assertIn(b"Resumo Gerencial de Real State", pdf)
         self.assertIn(b"R$ 1.000,00", pdf)
         self.assertIn(b"R$ 100,00", pdf)
+        self.assertIn(b"Resultado", pdf)
         self.assertNotIn(b"Indicador", pdf)
         self.assertIn(b"Resumo dos Sites", pdf)
+        self.assertIn(b"Detalhamento dos Sites", pdf)
 
     def test_relatorio_gerencial_pdf_aceita_imagem_cabecalho(self):
         relatorio = {
@@ -192,6 +198,61 @@ class AnalysisCostsRevenueTest(unittest.TestCase):
 
         self.assertTrue(pdf.startswith(b"%PDF"))
         self.assertIn(b"Resumo Gerencial de Real State", pdf)
+
+    def test_relatorio_gerencial_email_html_e_texto(self):
+        relatorio = {
+            "ranking": pd.DataFrame([{
+                "Nome": "Site <A>",
+                "Receita Total": 1000,
+                "Clientes Total": 2,
+                "Custo": 100,
+                "Nome SNMPc": "SITE_A"
+            }]),
+            "ranking_total": pd.DataFrame(),
+            "deficitarios": pd.DataFrame([{
+                "Nome": "Site Def",
+                "Receita Total": 100,
+                "Clientes Total": 1,
+                "Custo": 300,
+                "Resultado": -200,
+                "Nome SNMPc": "SITE_DEF"
+            }]),
+            "clientes_deficitarios": pd.DataFrame(),
+            "deficitarios_detalhado": [{
+                "site": pd.DataFrame([{
+                    "Nome": "Site Def",
+                    "Receita Total": 100,
+                    "Clientes Total": 1,
+                    "Custo": 300,
+                    "Nome SNMPc": "SITE_DEF"
+                }]),
+                "clientes": pd.DataFrame([{
+                    "Site": "SITE_DEF",
+                    "Cliente": "Cliente & Def",
+                    "Assinatura": "123",
+                    "Produto": "Internet",
+                    "Receita": 100,
+                    "Setorial": "S1"
+                }])
+            }],
+            "sem_clientes": pd.DataFrame(),
+        }
+
+        html = exportar_relatorio_gerencial_email_html(relatorio)
+        texto = exportar_relatorio_gerencial_email_texto(relatorio)
+
+        self.assertIn("Resumo Gerencial de Real State", html)
+        self.assertIn("Ranking - 20 maiores sites por receita direta", html)
+        self.assertIn("Ranking - 20 maiores sites por receita total com filhos", html)
+        self.assertIn("Sites Ativos Sem Clientes", html)
+        self.assertIn("Resumo dos Sites Deficitários", html)
+        self.assertIn("Detalhamento dos Sites Deficitários", html)
+        self.assertIn("R$ 1.000,00", html)
+        self.assertIn("Site &lt;A&gt;", html)
+        self.assertIn("Cliente &amp; Def", html)
+        self.assertIn("Resumo Gerencial de Real State", texto)
+        self.assertIn("Detalhamento dos Sites Deficitários", texto)
+        self.assertIn("R$ 1.000,00", texto)
 
     def test_monta_clientes_associados_aos_sites_filtrados(self):
         site_a = Site("POP_A", "POP")
