@@ -119,7 +119,23 @@ class AnalysisCostsRevenueTest(unittest.TestCase):
             }]),
             "deficitarios": pd.DataFrame(),
             "clientes_deficitarios": pd.DataFrame(),
-            "deficitarios_detalhado": [],
+            "deficitarios_detalhado": [{
+                "site": pd.DataFrame([{
+                    "Nome": "Site Def",
+                    "Receita Total": 100,
+                    "Clientes Total": 1,
+                    "Custo": 300,
+                    "Nome SNMPc": "SITE_DEF"
+                }]),
+                "clientes": pd.DataFrame([{
+                    "Site": "SITE_DEF",
+                    "Cliente": "Cliente Def",
+                    "Assinatura": "123",
+                    "Produto": "Internet",
+                    "Receita": 100,
+                    "Setorial": "S1"
+                }])
+            }],
             "sem_clientes": pd.DataFrame(),
         }
 

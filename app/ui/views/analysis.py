@@ -2165,6 +2165,8 @@ def _texto_moeda_relatorio(valor):
 
 
 def _paragrafo_pdf(texto, estilo):
+    from reportlab.platypus import Paragraph
+
     return Paragraph(
         escape(str(texto)).replace("\n", "<br/>"),
         estilo

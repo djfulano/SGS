@@ -1,5 +1,9 @@
 # Histórico de versões
 
+## 1.1.3
+
+- Corrigida a geração do PDF do Relatório Gerencial quando há sites deficitários detalhados.
+
 ## 1.1.2
 
 - Relatório Gerencial passa a exibir ranking por receita direta e ranking por receita total com filhos.
