@@ -256,8 +256,28 @@ def preparar_dados_grafico_visada(perfil):
         dados["Linha Visada m"].astype(float)
         + dados["Fresnel Exigido m"].astype(float)
     )
+    dados["Terreno Suavizado m"] = suavizar_serie_terreno(
+        dados["Terreno Ajustado m"]
+    )
 
     return dados
+
+
+def suavizar_serie_terreno(serie):
+    serie = pd.Series(serie).astype(float)
+
+    if len(serie) < 3:
+        return serie
+
+    janela = min(15, max(3, int(len(serie) * 0.08)))
+    if janela % 2 == 0:
+        janela += 1
+
+    return serie.rolling(
+        window=janela,
+        min_periods=1,
+        center=True
+    ).mean()
 
 
 def escala_y_grafico_visada(dados):
@@ -266,10 +286,12 @@ def escala_y_grafico_visada(dados):
 
     colunas_minimas = [
         "Terreno Ajustado m",
+        "Terreno Suavizado m",
         "Fresnel Inferior m"
     ]
     colunas_maximas = [
         "Terreno Ajustado m",
+        "Terreno Suavizado m",
         "Linha Visada m",
         "Fresnel Superior m"
     ]
@@ -331,14 +353,21 @@ def montar_grafico_perfil_visada(perfil, site="", status=""):
     ))
     fig.add_trace(go.Scatter(
         x=dados["Distância km"],
-        y=dados["Terreno Ajustado m"],
+        y=dados["Terreno Suavizado m"],
         mode="lines",
         name="Terreno + curvatura",
         fill="tonexty",
         line={
             "color": "rgba(116, 105, 135, 0.55)",
-            "width": 1
+            "width": 1,
+            "shape": "spline"
         },
+        customdata=dados["Terreno Ajustado m"],
+        hovertemplate=(
+            "Distância: %{x:.2f} km<br>"
+            "Terreno real: %{customdata:.1f} m<br>"
+            "Terreno suavizado: %{y:.1f} m<extra></extra>"
+        ),
         fillcolor="rgba(116, 105, 135, 0.35)"
     ))
     fig.add_trace(go.Scatter(
@@ -349,7 +378,8 @@ def montar_grafico_perfil_visada(perfil, site="", status=""):
         line={
             "color": "rgba(96, 165, 250, 0.45)",
             "width": 1,
-            "dash": "dash"
+            "dash": "dash",
+            "shape": "spline"
         }
     ))
     fig.add_trace(go.Scatter(
@@ -361,7 +391,8 @@ def montar_grafico_perfil_visada(perfil, site="", status=""):
         line={
             "color": "rgba(96, 165, 250, 0.70)",
             "width": 1,
-            "dash": "dash"
+            "dash": "dash",
+            "shape": "spline"
         },
         fillcolor="rgba(96, 165, 250, 0.18)"
     ))

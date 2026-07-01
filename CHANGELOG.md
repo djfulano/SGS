@@ -1,5 +1,11 @@
 # Histórico de versões
 
+## 1.0.95
+
+- Gráfico do perfil de visada passa a suavizar visualmente o terreno para reduzir aparência em degraus.
+- Suavização não altera os dados técnicos, ponto crítico, margem ou classificação da visada.
+- Hover do terreno passa a mostrar valor real e valor suavizado.
+
 ## 1.0.94
 
 - Viabilidade passa a manter o último resultado calculado na sessão.

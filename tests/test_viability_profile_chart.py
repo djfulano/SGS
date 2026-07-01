@@ -5,6 +5,7 @@ import pandas as pd
 from app.ui.views.viability import montar_grafico_perfil_visada
 from app.ui.views.viability import preparar_dados_grafico_visada
 from app.ui.views.viability import escala_y_grafico_visada
+from app.ui.views.viability import suavizar_serie_terreno
 
 
 def perfil_exemplo():
@@ -24,11 +25,26 @@ class ViabilityProfileChartTest(unittest.TestCase):
         dados = preparar_dados_grafico_visada(perfil_exemplo())
 
         self.assertIn("Terreno Ajustado m", dados.columns)
+        self.assertIn("Terreno Suavizado m", dados.columns)
         self.assertIn("Fresnel Inferior m", dados.columns)
         self.assertIn("Fresnel Superior m", dados.columns)
         self.assertEqual(dados.loc[1, "Terreno Ajustado m"], 815.02)
         self.assertEqual(dados.loc[1, "Fresnel Inferior m"], 831.0)
         self.assertEqual(dados.loc[1, "Fresnel Superior m"], 839.0)
+
+    def test_suavizacao_reduz_degrau_sem_alterar_serie_real(self):
+        serie = pd.Series([
+            800,
+            800,
+            850,
+            800,
+            800
+        ])
+        suavizada = suavizar_serie_terreno(serie)
+
+        self.assertEqual(list(serie), [800, 800, 850, 800, 800])
+        self.assertLess(suavizada.iloc[2], 850)
+        self.assertGreater(suavizada.iloc[2], 800)
 
     def test_grafico_contem_tracos_principais(self):
         fig = montar_grafico_perfil_visada(
@@ -58,6 +74,10 @@ class ViabilityProfileChartTest(unittest.TestCase):
 
         self.assertEqual(terreno.fill, "tonexty")
         self.assertGreater(min(base.y), 0)
+        self.assertEqual(terreno.line.shape, "spline")
+        self.assertEqual(list(terreno.y), list(preparar_dados_grafico_visada(
+            perfil_exemplo()
+        )["Terreno Suavizado m"]))
 
     def test_escala_y_foca_intervalo_util_do_perfil(self):
         dados = preparar_dados_grafico_visada(perfil_exemplo())
