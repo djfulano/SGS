@@ -2,6 +2,7 @@ import re
 import unicodedata
 from datetime import datetime
 from io import BytesIO
+from pathlib import Path
 from xml.sax.saxutils import escape
 
 import pandas as pd
@@ -27,6 +28,20 @@ _usuario_logado = None
 _mostrar_grid = None
 _formatar_moeda = None
 _detalhes_topos_cacheados = None
+
+REPORTS_DIR = Path("config/reports")
+RELATORIO_GERENCIAL_IMAGEM_BASE = "resumo-gerencial-real-estate"
+RELATORIO_GERENCIAL_IMAGEM_EXTENSOES = [
+    ".png",
+    ".jpg",
+    ".jpeg"
+]
+COLUNAS_FINANCEIRAS_PDF = {
+    "Receita Total",
+    "Custo",
+    "Receita",
+    "Resultado"
+}
 
 
 def configurar_analises(
@@ -2159,7 +2174,20 @@ def _texto_moeda_relatorio(valor):
             _valor_monetario_ranking(valor)
         )
 
-    return f"R$ {_valor_monetario_ranking(valor):,.2f}"
+    texto = f"{_valor_monetario_ranking(valor):,.2f}"
+    texto = texto.replace(",", "X").replace(".", ",").replace("X", ".")
+
+    return f"R$ {texto}"
+
+
+def _imagem_relatorio_gerencial_file():
+    for extensao in RELATORIO_GERENCIAL_IMAGEM_EXTENSOES:
+        caminho = REPORTS_DIR / f"{RELATORIO_GERENCIAL_IMAGEM_BASE}{extensao}"
+
+        if caminho.exists() and caminho.is_file():
+            return caminho
+
+    return None
 
 
 def _paragrafo_pdf(texto, estilo):
@@ -2169,6 +2197,13 @@ def _paragrafo_pdf(texto, estilo):
         escape(str(texto)).replace("\n", "<br/>"),
         estilo
     )
+
+
+def _pdf_valor_tabela(coluna, valor):
+    if coluna in COLUNAS_FINANCEIRAS_PDF:
+        return _texto_moeda_relatorio(valor)
+
+    return _pdf_texto(valor)
 
 
 def _pdf_dataframe(df, colunas=None, limite_linhas=None):
@@ -2191,14 +2226,17 @@ def _pdf_dataframe(df, colunas=None, limite_linhas=None):
     if limite_linhas:
         df_pdf = df_pdf.head(limite_linhas)
 
-    return [
-        list(df_pdf.columns)
-    ] + [
+    colunas_df = list(df_pdf.columns)
+
+    return [colunas_df] + [
         [
-            _pdf_texto(valor)
-            for valor in linha
+            _pdf_valor_tabela(
+                coluna,
+                linha[coluna]
+            )
+            for coluna in colunas_df
         ]
-        for linha in df_pdf.to_numpy()
+        for _, linha in df_pdf.iterrows()
     ]
 
 
@@ -2206,7 +2244,7 @@ def exportar_relatorio_gerencial_pdf(relatorio):
     from reportlab.lib import colors
     from reportlab.lib.pagesizes import A4, landscape
     from reportlab.lib.styles import getSampleStyleSheet
-    from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+    from reportlab.platypus import Image, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
     output = BytesIO()
     estilos = getSampleStyleSheet()
@@ -2219,9 +2257,23 @@ def exportar_relatorio_gerencial_pdf(relatorio):
         bottomMargin=24,
         pageCompression=0
     )
-    elementos = [
+    elementos = []
+    imagem_relatorio = _imagem_relatorio_gerencial_file()
+
+    if imagem_relatorio:
+        elementos.extend([
+            Image(
+                str(imagem_relatorio),
+                width=180,
+                height=60,
+                kind="proportional"
+            ),
+            Spacer(1, 8)
+        ])
+
+    elementos.extend([
         Paragraph(
-            "Relatório Gerencial - SGS",
+            "Resumo Gerencial de Real State",
             estilos["Title"]
         ),
         Paragraph(
@@ -2229,7 +2281,7 @@ def exportar_relatorio_gerencial_pdf(relatorio):
             estilos["Normal"]
         ),
         Spacer(1, 12)
-    ]
+    ])
 
     def adicionar_tabela(titulo, df, colunas=None, limite_linhas=None):
         elementos.append(

@@ -38,6 +38,11 @@ config/img/
 !config/.gitkeep
 !config/branding/
 !config/branding/**
+!config/reports/
+!config/reports/README.md
+config/reports/*.png
+config/reports/*.jpg
+config/reports/*.jpeg
 
 # Arquivos de sistema e temporarios
 Thumbs.db

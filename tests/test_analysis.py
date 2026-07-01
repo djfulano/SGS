@@ -1,7 +1,11 @@
 import unittest
+import tempfile
 from io import BytesIO
+from pathlib import Path
+from unittest.mock import patch
 
 import pandas as pd
+from PIL import Image
 
 from app.models.cliente import Cliente
 from app.models.site import Site
@@ -162,8 +166,32 @@ class AnalysisCostsRevenueTest(unittest.TestCase):
         pdf = exportar_relatorio_gerencial_pdf(relatorio)
 
         self.assertTrue(pdf.startswith(b"%PDF"))
+        self.assertIn(b"Resumo Gerencial de Real State", pdf)
+        self.assertIn(b"R$ 1.000,00", pdf)
+        self.assertIn(b"R$ 100,00", pdf)
         self.assertNotIn(b"Indicador", pdf)
         self.assertIn(b"Resumo dos Sites", pdf)
+
+    def test_relatorio_gerencial_pdf_aceita_imagem_cabecalho(self):
+        relatorio = {
+            "ranking": pd.DataFrame(),
+            "ranking_total": pd.DataFrame(),
+            "deficitarios": pd.DataFrame(),
+            "clientes_deficitarios": pd.DataFrame(),
+            "deficitarios_detalhado": [],
+            "sem_clientes": pd.DataFrame(),
+        }
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            pasta = Path(temp_dir)
+            imagem = pasta / "resumo-gerencial-real-estate.png"
+            Image.new("RGB", (20, 20), color="white").save(imagem)
+
+            with patch("app.ui.views.analysis.REPORTS_DIR", pasta):
+                pdf = exportar_relatorio_gerencial_pdf(relatorio)
+
+        self.assertTrue(pdf.startswith(b"%PDF"))
+        self.assertIn(b"Resumo Gerencial de Real State", pdf)
 
     def test_monta_clientes_associados_aos_sites_filtrados(self):
         site_a = Site("POP_A", "POP")

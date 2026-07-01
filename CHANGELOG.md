@@ -1,5 +1,11 @@
 # Histórico de versões
 
+## 1.1.8
+
+- PDF do Relatório Gerencial passa a usar o título Resumo Gerencial de Real State.
+- PDF do Relatório Gerencial passa a aceitar imagem de cabeçalho em config/reports.
+- Valores financeiros do PDF passam a ser formatados em Reais.
+
 ## 1.1.7
 
 - Relatório Gerencial passa a exibir tabela-resumo antes dos itens individuais de sites deficitários.
