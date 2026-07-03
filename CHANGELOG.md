@@ -1,5 +1,10 @@
 # Histórico de versões
 
+## 1.1.11
+
+- Insights passa a aplicar os filtros gerenciais nas métricas da Visão Geral.
+- Filtros de sites em Insights deixam de incluir clientes sem vínculo nas métricas filtradas.
+
 ## 1.1.10
 
 - Relatório Gerencial passa a ter versão em HTML e texto simples para colar no corpo de emails.

@@ -102,6 +102,18 @@ def resumo_geral(sites, equipamentos, apenas_ativos=True):
         equipamentos,
         apenas_ativos=apenas_ativos
     )
+    resumo = resumo_geral_filtrado(
+        df_sites,
+        df_clientes,
+        equipamentos
+    )
+    nao_plotados = mapa_nao_plotados_dataframe()
+    resumo["Itens Não Plotados"] = len(nao_plotados)
+
+    return resumo
+
+
+def resumo_geral_filtrado(df_sites, df_clientes, equipamentos):
     receita = (
         valor_float(df_sites["Receita Total"]).sum()
         if "Receita Total" in df_sites.columns
@@ -113,7 +125,6 @@ def resumo_geral(sites, equipamentos, apenas_ativos=True):
         else 0
     )
     resultado = receita - custo
-    nao_plotados = mapa_nao_plotados_dataframe()
 
     return {
         "Receita": receita,
@@ -128,7 +139,7 @@ def resumo_geral(sites, equipamentos, apenas_ativos=True):
         "Sites Sem Clientes": len(sites_sem_clientes(df_sites)),
         "Clientes Sem Vínculo": len(clientes_sem_vinculo(df_clientes)),
         "Clientes Sem Equipamento": len(clientes_sem_equipamento(df_clientes)),
-        "Itens Não Plotados": len(nao_plotados)
+        "Itens Não Plotados": 0
     }
 
 

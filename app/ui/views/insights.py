@@ -16,7 +16,7 @@ from app.services.insights import preparar_bases_insights
 from app.services.insights import produtos_sem_catalogo
 from app.services.insights import ranking_clientes
 from app.services.insights import ranking_sites
-from app.services.insights import resumo_geral
+from app.services.insights import resumo_geral_filtrado
 from app.services.insights import sites_cadastro_incompleto
 from app.services.insights import sites_deficitarios
 from app.services.insights import sites_relacionamento_critico
@@ -76,16 +76,16 @@ def filtrar_por_multiselect(df, coluna, valores):
     return df[df[coluna].astype(str).isin(valores)].copy()
 
 
-def aplicar_filtros_clientes_por_sites(df_clientes, df_sites):
+def aplicar_filtros_clientes_por_sites(df_clientes, df_sites, incluir_sem_vinculo=True):
     if df_clientes.empty or df_sites.empty or "Site" not in df_clientes.columns:
         return df_clientes
 
     sites_validos = set(df_sites["Site SNMPc"].dropna().astype(str))
+    filtro = df_clientes["Site"].astype(str).isin(sites_validos)
+    if incluir_sem_vinculo:
+        filtro = filtro | df_clientes["Vínculo"].astype(str).eq("Sem vínculo")
 
-    return df_clientes[
-        df_clientes["Site"].astype(str).isin(sites_validos)
-        | df_clientes["Vínculo"].astype(str).eq("Sem vínculo")
-    ].copy()
+    return df_clientes[filtro].copy()
 
 
 def bases_filtradas(sites, equipamentos):
@@ -139,6 +139,13 @@ def bases_filtradas(sites, equipamentos):
                 key="insights_filtro_vinculo"
             )
 
+    filtros_site_ativos = any([
+        cidades,
+        contratos,
+        categorias,
+        perfis
+    ])
+
     for coluna, valores in [
         ("Cidade", cidades),
         ("Contrato", contratos),
@@ -153,7 +160,8 @@ def bases_filtradas(sites, equipamentos):
 
     df_clientes = aplicar_filtros_clientes_por_sites(
         df_clientes,
-        df_sites
+        df_sites,
+        incluir_sem_vinculo=not filtros_site_ativos
     )
     df_clientes = filtrar_por_multiselect(
         df_clientes,
@@ -203,18 +211,11 @@ def mostrar_tabela(df, height, key, vazio="Nenhum dado encontrado para este indi
 
 def mostrar_visao_geral(sites, equipamentos, df_sites, df_clientes, apenas_ativos):
     st.header("Insights")
-    resumo = resumo_geral(
-        sites,
-        equipamentos,
-        apenas_ativos=apenas_ativos
+    resumo = resumo_geral_filtrado(
+        df_sites,
+        df_clientes,
+        equipamentos
     )
-    resumo["Sites"] = len(df_sites)
-    resumo["Clientes"] = df_clientes["Assinatura"].nunique() if "Assinatura" in df_clientes.columns else 0
-    resumo["Produtos"] = df_clientes["Produto"].replace("", pd.NA).dropna().nunique() if "Produto" in df_clientes.columns else 0
-    resumo["Sites Deficitários"] = len(sites_deficitarios(df_sites))
-    resumo["Sites Sem Clientes"] = len(sites_sem_clientes(df_sites))
-    resumo["Clientes Sem Vínculo"] = len(clientes_sem_vinculo(df_clientes))
-    resumo["Clientes Sem Equipamento"] = len(clientes_sem_equipamento(df_clientes))
 
     mostrar_metricas_resumo(resumo)
 
