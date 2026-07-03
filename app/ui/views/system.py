@@ -1444,6 +1444,30 @@ def mostrar_backup(
             height=260,
             key="backups_disponiveis"
         )
+        opcoes_download = {
+            backup["Arquivo"]: backup["Caminho"]
+            for backup in backups
+        }
+        arquivo_download = st.selectbox(
+            "Backup para baixar",
+            list(opcoes_download.keys()),
+            key="backup_download_arquivo"
+        )
+        caminho_download = opcoes_download.get(
+            arquivo_download
+        )
+        try:
+            st.download_button(
+                "Baixar backup selecionado",
+                data=read_backup_file(caminho_download),
+                file_name=arquivo_download,
+                mime="application/zip",
+                key="backup_download_selecionado"
+            )
+        except Exception as erro:
+            st.warning(
+                f"Não foi possível preparar o download deste backup: {erro}"
+            )
     else:
         st.info("Nenhum backup encontrado em /app/backups.")
 
@@ -1481,18 +1505,6 @@ def mostrar_backup(
             caminho_restore = opcoes_backups.get(
                 arquivo_selecionado
             )
-            try:
-                st.download_button(
-                    "Baixar backup selecionado",
-                    data=read_backup_file(caminho_restore),
-                    file_name=arquivo_selecionado,
-                    mime="application/zip",
-                    key="backup_download_selecionado"
-                )
-            except Exception as erro:
-                st.warning(
-                    f"Não foi possível preparar o download deste backup: {erro}"
-                )
         else:
             st.info("Nenhum backup disponível para restauração.")
     else:

@@ -1,5 +1,9 @@
 # Histórico de versões
 
+## 1.1.15
+
+- Sistema > Backup passa a exibir o download diretamente na lista de backups disponíveis.
+
 ## 1.1.14
 
 - Sistema > Backup passa a permitir baixar o arquivo de backup selecionado na lista.
