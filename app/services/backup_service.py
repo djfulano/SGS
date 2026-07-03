@@ -359,6 +359,34 @@ def listar_backups(backup_dir=None):
     )
 
 
+def caminho_backup_download(arquivo):
+    base_backup = _backup_dir_oficial().resolve()
+    caminho = Path(arquivo)
+
+    if not caminho.is_absolute():
+        caminho = base_backup / caminho
+
+    caminho = caminho.resolve()
+
+    try:
+        caminho.relative_to(base_backup)
+    except ValueError as erro:
+        raise ValueError("Backup fora da pasta oficial de backups.") from erro
+
+    if not caminho.exists() or not caminho.is_file():
+        raise FileNotFoundError("Arquivo de backup não encontrado.")
+
+    if caminho.suffix.lower() != ".zip":
+        raise ValueError("Somente arquivos ZIP de backup podem ser baixados.")
+
+    return caminho
+
+
+def read_backup_file(arquivo):
+    caminho = caminho_backup_download(arquivo)
+    return caminho.read_bytes()
+
+
 def _entrada_zip_segura(nome):
     nome_normalizado = str(nome).replace("\\", "/")
     caminho = Path(nome_normalizado)

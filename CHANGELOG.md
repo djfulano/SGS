@@ -1,5 +1,17 @@
 # Histórico de versões
 
+## 1.1.14
+
+- Sistema > Backup passa a permitir baixar o arquivo de backup selecionado na lista.
+
+## 1.1.13
+
+- Adicionado documento com as principais funções recomendadas para o perfil NOC.
+
+## 1.1.12
+
+- Insights passa a recalcular a métrica Equipamentos conforme os filtros gerenciais aplicados.
+
 ## 1.1.11
 
 - Insights passa a aplicar os filtros gerenciais nas métricas da Visão Geral.

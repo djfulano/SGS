@@ -37,6 +37,7 @@ from app.services.backup_service import criar_backup
 from app.services.backup_service import inspecionar_backup
 from app.services.backup_service import listar_backups
 from app.services.backup_service import load_backup_config
+from app.services.backup_service import read_backup_file
 from app.services.backup_service import restaurar_backup
 from app.services.backup_service import save_backup_config
 from app.services.database_service import sincronizar_banco
@@ -1480,6 +1481,18 @@ def mostrar_backup(
             caminho_restore = opcoes_backups.get(
                 arquivo_selecionado
             )
+            try:
+                st.download_button(
+                    "Baixar backup selecionado",
+                    data=read_backup_file(caminho_restore),
+                    file_name=arquivo_selecionado,
+                    mime="application/zip",
+                    key="backup_download_selecionado"
+                )
+            except Exception as erro:
+                st.warning(
+                    f"Não foi possível preparar o download deste backup: {erro}"
+                )
         else:
             st.info("Nenhum backup disponível para restauração.")
     else:

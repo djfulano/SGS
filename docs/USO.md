@@ -31,6 +31,11 @@ Permissões de visualização e acesso a módulos são configuradas na aba
 **Usuários**. Valores financeiros podem ser ocultados para usuários sem permissão
 de visualizar valores.
 
+Documento complementar:
+
+- `docs/PERFIL_NOC.md`: resumo das principais funções recomendadas para o
+  perfil NOC.
+
 ## Navegação geral
 
 As abas disponíveis dependem das permissões do usuário. As principais são:

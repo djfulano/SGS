@@ -12,6 +12,7 @@ from app.services.backup_service import deve_executar_backup_automatico
 from app.services.backup_service import inspecionar_backup
 from app.services.backup_service import listar_backups
 from app.services.backup_service import load_backup_config
+from app.services.backup_service import read_backup_file
 from app.services.backup_service import restaurar_backup
 
 
@@ -373,6 +374,43 @@ class BackupServiceTest(unittest.TestCase):
                 len(backups_listados),
                 1
             )
+
+    def test_read_backup_file_le_arquivo_da_pasta_oficial(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            backups = Path(temp_dir) / "backups"
+            backups.mkdir()
+            arquivo = backups / "sgs_backup_teste.zip"
+            arquivo.write_bytes(b"backup")
+
+            with patch(
+                "app.services.backup_service.BACKUP_DIR",
+                backups
+            ):
+                conteudo = read_backup_file(
+                    "sgs_backup_teste.zip"
+                )
+
+            self.assertEqual(
+                conteudo,
+                b"backup"
+            )
+
+    def test_read_backup_file_bloqueia_arquivo_fora_da_pasta_oficial(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            base = Path(temp_dir)
+            backups = base / "backups"
+            externo = base / "fora.zip"
+            backups.mkdir()
+            externo.write_bytes(b"fora")
+
+            with patch(
+                "app.services.backup_service.BACKUP_DIR",
+                backups
+            ):
+                with self.assertRaises(ValueError):
+                    read_backup_file(
+                        externo
+                    )
 
     def test_deve_executar_backup_automatico_quando_ativo_sem_registro(self):
         self.assertTrue(

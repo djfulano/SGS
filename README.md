@@ -48,6 +48,7 @@ O manual de uso e o FAQ para usuários do dashboard estão em:
 ```text
 docs/USO.md
 docs/FAQ.md
+docs/PERFIL_NOC.md
 ```
 
 ## Testes

@@ -125,6 +125,11 @@ def resumo_geral_filtrado(df_sites, df_clientes, equipamentos):
         else 0
     )
     resultado = receita - custo
+    equipamentos_total = (
+        int(valor_float(df_clientes["Qtd Equipamentos"]).sum())
+        if "Qtd Equipamentos" in df_clientes.columns
+        else len(equipamentos or [])
+    )
 
     return {
         "Receita": receita,
@@ -134,7 +139,7 @@ def resumo_geral_filtrado(df_sites, df_clientes, equipamentos):
         "Sites": len(df_sites),
         "Clientes": df_clientes["Assinatura"].nunique() if "Assinatura" in df_clientes.columns else 0,
         "Produtos": df_clientes["Produto"].replace("", pd.NA).dropna().nunique() if "Produto" in df_clientes.columns else 0,
-        "Equipamentos": len(equipamentos or []),
+        "Equipamentos": equipamentos_total,
         "Sites Deficitários": len(sites_deficitarios(df_sites)),
         "Sites Sem Clientes": len(sites_sem_clientes(df_sites)),
         "Clientes Sem Vínculo": len(clientes_sem_vinculo(df_clientes)),

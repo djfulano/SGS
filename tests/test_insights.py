@@ -178,7 +178,7 @@ class InsightsServiceTest(unittest.TestCase):
                 "Produto": "Internet",
                 "Receita": 100,
                 "Vínculo": "Vinculado",
-                "Qtd Equipamentos": 1
+                "Qtd Equipamentos": 2
             },
             {
                 "Assinatura": "2",
@@ -220,8 +220,49 @@ class InsightsServiceTest(unittest.TestCase):
             2
         )
         self.assertEqual(
+            resumo["Equipamentos"],
+            2
+        )
+        self.assertEqual(
             resumo["Clientes Sem Equipamento"],
             1
+        )
+
+    def test_resumo_geral_filtrado_recalcula_equipamentos_por_clientes_filtrados(self):
+        df_sites = pd.DataFrame([
+            {
+                "Site SNMPc": "S1",
+                "Receita Total": 300,
+                "Custo": 100,
+                "Resultado": 200,
+                "Clientes Total": 2
+            }
+        ])
+        df_clientes_filtrado = pd.DataFrame([
+            {
+                "Assinatura": "1",
+                "Produto": "Internet",
+                "Receita": 100,
+                "Vínculo": "Vinculado",
+                "Qtd Equipamentos": 3
+            }
+        ])
+
+        resumo = resumo_geral_filtrado(
+            df_sites,
+            df_clientes_filtrado,
+            equipamentos=[
+                {},
+                {},
+                {},
+                {},
+                {}
+            ]
+        )
+
+        self.assertEqual(
+            resumo["Equipamentos"],
+            3
         )
 
     def test_filtro_sites_mantem_sem_vinculo_quando_permitido(self):
