@@ -364,7 +364,7 @@ def caminho_backup_download(arquivo):
     caminho = Path(arquivo)
 
     if not caminho.is_absolute():
-        caminho = base_backup / caminho
+        caminho = base_backup / caminho.name
 
     caminho = caminho.resolve()
 

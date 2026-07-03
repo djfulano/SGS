@@ -1,5 +1,10 @@
 # Histórico de versões
 
+## 1.1.16
+
+- Sistema > Backup passa a baixar o arquivo a partir da linha selecionada na tabela de backups.
+- Corrigida a resolução do caminho de backups listados como `backups/<arquivo>.zip`.
+
 ## 1.1.15
 
 - Sistema > Backup passa a exibir o download diretamente na lista de backups disponíveis.

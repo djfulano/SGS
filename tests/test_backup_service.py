@@ -395,6 +395,26 @@ class BackupServiceTest(unittest.TestCase):
                 b"backup"
             )
 
+    def test_read_backup_file_aceita_caminho_relativo_da_lista(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            backups = Path(temp_dir) / "backups"
+            backups.mkdir()
+            arquivo = backups / "sgs_backup_teste.zip"
+            arquivo.write_bytes(b"backup")
+
+            with patch(
+                "app.services.backup_service.BACKUP_DIR",
+                backups
+            ):
+                conteudo = read_backup_file(
+                    "backups/sgs_backup_teste.zip"
+                )
+
+            self.assertEqual(
+                conteudo,
+                b"backup"
+            )
+
     def test_read_backup_file_bloqueia_arquivo_fora_da_pasta_oficial(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             base = Path(temp_dir)

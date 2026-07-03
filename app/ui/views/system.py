@@ -58,6 +58,7 @@ from app.services.map_settings import PROVEDORES_SATELITE
 from app.services.map_settings import load_map_config
 from app.services.map_settings import save_map_config
 from app.ui.navigation import mostrar_subnavegacao
+from app.ui.components.tables import primeira_linha_selecionada
 
 
 def mostrar_usuarios(
@@ -1439,34 +1440,46 @@ def mostrar_backup(
 
     if backups:
         st.subheader("Backups disponíveis")
-        mostrar_grid(
+        resposta_backups = mostrar_grid(
             pd.DataFrame(backups),
             height=260,
-            key="backups_disponiveis"
+            key="backups_disponiveis",
+            habilitar_selecao=True,
+            mostrar_abrir_site=False
         )
-        opcoes_download = {
-            backup["Arquivo"]: backup["Caminho"]
-            for backup in backups
-        }
-        arquivo_download = st.selectbox(
-            "Backup para baixar",
-            list(opcoes_download.keys()),
-            key="backup_download_arquivo"
+        backup_selecionado = primeira_linha_selecionada(
+            resposta_backups
         )
-        caminho_download = opcoes_download.get(
-            arquivo_download
-        )
-        try:
+        arquivo_download = str(
+            (backup_selecionado or {}).get("Arquivo") or ""
+        ).strip()
+
+        if arquivo_download:
+
+            try:
+                st.download_button(
+                    "Baixar backup selecionado",
+                    data=read_backup_file(arquivo_download),
+                    file_name=arquivo_download,
+                    mime="application/zip",
+                    key="backup_download_selecionado"
+                )
+            except Exception as erro:
+                st.warning(
+                    f"Não foi possível preparar o download deste backup: {erro}"
+                )
+
+        else:
             st.download_button(
                 "Baixar backup selecionado",
-                data=read_backup_file(caminho_download),
-                file_name=arquivo_download,
+                data=b"",
+                file_name="backup.zip",
                 mime="application/zip",
-                key="backup_download_selecionado"
+                key="backup_download_selecionado_desabilitado",
+                disabled=True
             )
-        except Exception as erro:
-            st.warning(
-                f"Não foi possível preparar o download deste backup: {erro}"
+            st.caption(
+                "Selecione um backup na tabela para habilitar o download."
             )
     else:
         st.info("Nenhum backup encontrado em /app/backups.")
