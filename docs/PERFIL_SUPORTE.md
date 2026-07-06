@@ -1,58 +1,27 @@
-# Manual NOC - Utilidades disponiveis no SGS
+# Manual Suporte - Utilidades disponiveis no SGS
 
 Este documento apresenta as utilidades, dados e possibilidades que o SGS
-disponibiliza para o perfil **NOC**.
+disponibiliza para o perfil **Suporte**.
 
 O conteudo abaixo nao define procedimento operacional. Ele serve como referencia
-para entender quais informacoes o sistema oferece ao NOC e em quais telas essas
-informacoes podem ser consultadas.
+para entender quais informacoes o sistema oferece ao Suporte e em quais telas
+essas informacoes podem ser consultadas.
 
 ## Visao geral
 
-O perfil NOC possui acesso a recursos voltados para consulta operacional,
-diagnostico, atendimento tecnico e apoio a campo.
+O perfil Suporte possui acesso a recursos voltados para atendimento, consulta de
+clientes, contatos de sites, equipamentos e apoio a visitas ou retiradas.
 
 Principais possibilidades:
 
-- consulta de topologia de sites;
-- consulta de clientes e seus dados operacionais;
-- consulta de detalhes e contatos de sites;
-- consulta de equipamentos, enlaces e IPs;
-- visualizacao geografica em mapa;
+- consulta de clientes;
+- consulta de detalhes e contatos dos sites;
+- atualizacao de contatos dos sites;
+- consulta de equipamentos;
 - apoio a agendamento tecnico;
 - apoio a retirada de equipamentos;
-- consulta de predios.
-
-## Topologia
-
-A Topologia apresenta a estrutura operacional dos sites e seus relacionamentos.
-
-Utilidades disponiveis:
-
-- consulta de sites por nome SNMPc;
-- visualizacao de sites relacionados;
-- visualizacao de clientes vinculados aos sites selecionados;
-- resumo operacional dos sites selecionados;
-- consulta de impacto por site;
-- acesso a dados de clientes relacionados ao site.
-
-Dados que podem ser exibidos:
-
-- site SNMPc;
-- tipo do site;
-- clientes vinculados;
-- sites relacionados;
-- produtos associados aos clientes;
-- setoriais;
-- equipamentos relacionados, quando disponiveis na base.
-
-Possibilidades de uso:
-
-- entendimento da estrutura de atendimento;
-- identificacao de clientes associados a um site;
-- apoio a analise de impacto operacional;
-- comparacao entre sites selecionados;
-- apoio a investigacoes por localidade ou ponto da rede.
+- consulta de predios;
+- copia de tabelas.
 
 ## Clientes > Consulta
 
@@ -74,7 +43,6 @@ Dados que podem ser exibidos:
 - nome do cliente;
 - produto contratado;
 - gerente de contas, quando disponivel;
-- receita, quando o perfil tiver permissao;
 - site SNMPc;
 - setorial;
 - GoTo SNMPc;
@@ -85,11 +53,11 @@ Dados que podem ser exibidos:
 
 Possibilidades de uso:
 
-- consulta rapida por assinatura;
-- conferencia do vinculo cliente x site;
-- conferencia de equipamentos associados ao cliente;
-- apoio a diagnostico com dados do SNMPc;
-- abertura direta de consultas externas no Aquiles e Zabbix.
+- consulta de dados operacionais por assinatura;
+- conferencia de vinculo cliente x site;
+- conferencia de equipamento e IP;
+- apoio a atendimento tecnico;
+- apoio a consulta em sistemas externos.
 
 ## Gerenciamento de Sites > Detalhes
 
@@ -133,8 +101,9 @@ A area de contatos apresenta e permite manter contatos associados aos sites.
 Utilidades disponiveis:
 
 - consulta de contatos cadastrados;
-- inclusao ou atualizacao de contatos, conforme permissao do perfil;
-- organizacao de informacoes de acionamento.
+- inclusao ou atualizacao de contatos;
+- organizacao de informacoes de acionamento;
+- manutencao de referencias operacionais.
 
 Dados que podem ser exibidos:
 
@@ -147,36 +116,10 @@ Dados que podem ser exibidos:
 
 Possibilidades de uso:
 
-- apoio a acionamentos;
 - consulta de responsaveis locais;
-- manutencao de contatos operacionais;
-- centralizacao de referencias para visitas ou incidentes.
-
-## Gerenciamento de Sites > Editar
-
-A area de edicao permite visualizar os campos cadastrais do site.
-
-Utilidades disponiveis:
-
-- visualizacao ampla dos campos do cadastro;
-- conferencia de informacoes preenchidas;
-- apoio a revisao operacional dos dados.
-
-Dados que podem ser exibidos:
-
-- campos cadastrais do site;
-- codigos externos;
-- classificacoes;
-- endereco;
-- coordenadas;
-- dados de relacionamento;
-- restricoes e observacoes.
-
-Possibilidades de uso:
-
-- consulta detalhada do cadastro;
-- apoio a identificacao de campos incompletos;
-- conferencia de informacoes antes de atualizacoes por equipes responsaveis.
+- apoio a acionamentos;
+- apoio a visitas tecnicas;
+- manutencao de contatos operacionais.
 
 ## Equipamentos > Buscar Equipamentos
 
@@ -214,106 +157,8 @@ Possibilidades de uso:
 - localizacao de equipamentos por caracteristica;
 - consulta de inventario operacional;
 - identificacao de equipamentos associados a assinaturas;
-- apoio a diagnostico por IP ou equipamento;
+- apoio a atendimento por equipamento ou IP;
 - verificacao de equipamentos ainda presentes no SNMPc.
-
-## Equipamentos > Equipamentos por Site
-
-Esta tela concentra equipamentos associados a um site especifico.
-
-Utilidades disponiveis:
-
-- consulta de equipamentos por site;
-- visualizacao de equipamentos de infraestrutura;
-- visualizacao de equipamentos de clientes;
-- apoio a analise operacional por local.
-
-Dados que podem ser exibidos:
-
-- site;
-- equipamento;
-- icone;
-- IP;
-- assinatura;
-- cliente;
-- setorial;
-- tipo;
-- modelo;
-- fabricante.
-
-Possibilidades de uso:
-
-- consulta de inventario por site;
-- verificacao de equipamentos presentes em um ponto da rede;
-- apoio a analise de impacto tecnico;
-- conferencia de relacao entre site, equipamentos e clientes.
-
-## Equipamentos > Enlaces
-
-A tela de enlaces apresenta relacionamentos entre sites, clientes e
-equipamentos.
-
-Utilidades disponiveis:
-
-- consulta de enlaces de clientes;
-- consulta de enlaces de infraestrutura;
-- filtros por tipo de enlace;
-- filtros por equipamento ou icone;
-- identificacao de enlaces relacionados a clientes cancelados.
-
-Dados que podem ser exibidos:
-
-- tipo de enlace;
-- site origem;
-- site destino ou cliente;
-- assinatura;
-- equipamento;
-- icone;
-- IP;
-- setorial;
-- status do cliente;
-- classificacao do enlace.
-
-Possibilidades de uso:
-
-- entendimento de relacoes entre equipamentos;
-- consulta de vinculos site x cliente;
-- verificacao de enlaces relacionados a assinaturas;
-- apoio a investigacao de conectividade.
-
-## Mapa
-
-O Mapa apresenta uma visao geografica de sites, clientes e vinculos.
-
-Utilidades disponiveis:
-
-- visualizacao de sites no mapa;
-- visualizacao de clientes no mapa;
-- visualizacao de vinculos;
-- busca por site;
-- busca por cliente;
-- busca por endereco;
-- visualizacao de itens nao plotados, quando disponivel.
-
-Dados que podem ser exibidos:
-
-- nome do site;
-- endereco;
-- coordenadas;
-- setorial;
-- clientes vinculados;
-- produto;
-- equipamento;
-- distancia entre pontos;
-- motivo de nao plotagem, quando aplicavel.
-
-Possibilidades de uso:
-
-- entendimento geografico da rede;
-- consulta de proximidade entre cliente e site;
-- apoio a incidentes regionais;
-- verificacao visual de distribuicao de clientes;
-- apoio a conferencia de endereco e coordenadas.
 
 ## Suporte > Agendamento
 
@@ -404,9 +249,29 @@ Possibilidades de uso:
 - consulta de localidade por codigo;
 - suporte a validacao de endereco.
 
+## Tabelas
+
+O perfil Suporte possui permissao para copiar tabelas.
+
+Utilidades disponiveis:
+
+- copia de resultados exibidos em tabelas;
+- uso dos dados em chamados, mensagens internas e planilhas de apoio.
+
+Dados que podem ser copiados:
+
+- depende da tabela aberta;
+- respeita as permissoes de visualizacao do perfil.
+
+Possibilidades de uso:
+
+- compartilhamento de dados operacionais;
+- apoio a registro de chamados;
+- conferencia externa de informacoes consultadas no SGS.
+
 ## Informacoes externas integradas
 
-O perfil NOC pode visualizar links externos quando relacionados ao cliente.
+O perfil Suporte pode visualizar links externos quando relacionados ao cliente.
 
 Links disponiveis na consulta de cliente:
 
@@ -415,11 +280,11 @@ Links disponiveis na consulta de cliente:
 
 Possibilidades de uso:
 
-- abrir a assinatura no Aquiles;
-- pesquisar a assinatura no Zabbix;
-- cruzar informacoes do SGS com sistemas externos de operacao.
+- abertura da assinatura no Aquiles;
+- pesquisa da assinatura no Zabbix;
+- cruzamento de informacoes do SGS com sistemas externos de apoio.
 
-## Dados mais uteis para o NOC
+## Dados mais uteis para o Suporte
 
 Dados de cliente:
 
@@ -455,10 +320,29 @@ Dados de equipamento:
 - assinatura associada;
 - site relacionado.
 
-Dados de mapa:
+Dados de suporte:
 
-- localizacao de sites;
-- localizacao de clientes;
-- vinculos;
-- distancias;
-- itens nao plotados.
+- codigo de predio;
+- endereco;
+- caminho ate o POP;
+- equipamento base;
+- equipamento cliente;
+- lista de equipamentos e IPs.
+
+## Lista tecnica do perfil Suporte
+
+Permissoes cadastradas no perfil `Suporte`:
+
+```text
+buscar_equipamentos
+clientes
+clientes_consulta
+copiar_tabelas
+editar_contatos_sites
+gerenciar_sites_contatos
+gerenciar_sites_detalhes
+predios
+retirada
+suporte
+suporte_agendamento
+```

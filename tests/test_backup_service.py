@@ -375,6 +375,53 @@ class BackupServiceTest(unittest.TestCase):
                 1
             )
 
+    def test_criar_backup_sem_persistir_nao_altera_configuracao(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            base = Path(temp_dir)
+            backups = base / "backups"
+            config = base / "config"
+            backups.mkdir()
+            config.mkdir()
+            config_file = config / "backup_config.json"
+            config_file.write_text(
+                json.dumps({
+                    "backup_dir": str(backups),
+                    "retention": 3
+                }),
+                encoding="utf-8"
+            )
+
+            backup_config = {
+                "backup_dir": str(backups),
+                "retention": 9999,
+                "include_imports": False,
+                "include_config": False,
+                "include_cache": False,
+                "include_contracts": False,
+                "include_database": False,
+                "include_system_files": False
+            }
+
+            with patch(
+                "app.services.backup_service.BACKUP_DIR",
+                backups
+            ), patch(
+                "app.services.backup_service.BACKUP_CONFIG_FILE",
+                config_file
+            ):
+                criar_backup(
+                    backup_config,
+                    usuario="teste",
+                    base_dir=base,
+                    persistir_config=False
+                )
+                config_carregada = load_backup_config()
+
+            self.assertEqual(
+                config_carregada["retention"],
+                3
+            )
+
     def test_read_backup_file_le_arquivo_da_pasta_oficial(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             backups = Path(temp_dir) / "backups"
@@ -608,6 +655,169 @@ class BackupServiceTest(unittest.TestCase):
             )
             self.assertFalse(
                 (contracts / "SITE_NOVO" / "doc.pdf").exists()
+            )
+
+    def test_restaurar_backup_ignora_cache_ocupado(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            base = Path(temp_dir)
+            imports = base / "imports"
+            config = base / "config"
+            cache = base / "cache"
+            backups = base / "backups"
+
+            for pasta in [
+                imports,
+                config,
+                cache,
+                backups
+            ]:
+                pasta.mkdir()
+
+            (imports / "atual.xlsx").write_text(
+                "atual",
+                encoding="utf-8"
+            )
+            (cache / "mapa.json").write_text(
+                "cache-atual",
+                encoding="utf-8"
+            )
+
+            backup = backups / "sgs_backup_cache_ocupado.zip"
+
+            with ZipFile(backup, "w") as zip_file:
+                zip_file.writestr(
+                    "imports/restaurado.xlsx",
+                    "novo"
+                )
+                zip_file.writestr(
+                    "cache/mapa.json",
+                    "cache-novo"
+                )
+
+            from app.services import backup_service
+
+            copiar_original = backup_service._copiar_fonte_extraida
+
+            def copiar_com_cache_ocupado(origem, destino, tipo):
+                if Path(destino) == cache:
+                    raise OSError(
+                        16,
+                        "Device or resource busy",
+                        str(destino)
+                    )
+
+                return copiar_original(
+                    origem,
+                    destino,
+                    tipo
+                )
+
+            with patch(
+                "app.services.backup_service.IMPORTS_DIR",
+                imports
+            ), patch(
+                "app.services.backup_service.CONFIG_DIR",
+                config
+            ), patch(
+                "app.services.backup_service.CACHE_DIR",
+                cache
+            ), patch(
+                "app.services.backup_service.BACKUP_DIR",
+                backups
+            ), patch(
+                "app.services.backup_service.BACKUP_CONFIG_FILE",
+                config / "backup_config.json"
+            ), patch(
+                "app.services.backup_service._copiar_fonte_extraida",
+                side_effect=copiar_com_cache_ocupado
+            ):
+                resultado = restaurar_backup(
+                    backup,
+                    usuario="teste",
+                    incluir_cache=True,
+                    criar_backup_previo=False,
+                    base_dir=base
+                )
+
+            self.assertEqual(
+                (imports / "restaurado.xlsx").read_text(encoding="utf-8"),
+                "novo"
+            )
+            self.assertEqual(
+                (cache / "mapa.json").read_text(encoding="utf-8"),
+                "cache-atual"
+            )
+            self.assertTrue(
+                resultado["avisos"]
+            )
+
+    def test_restaurar_backup_nao_move_banco_sqlite_em_uso(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            base = Path(temp_dir)
+            backups = base / "backups"
+            config = base / "config"
+            imports = base / "imports"
+            cache = base / "cache"
+
+            for pasta in [
+                backups,
+                config,
+                imports,
+                cache
+            ]:
+                pasta.mkdir()
+
+            banco = base / "rede.db"
+            banco.write_text(
+                "db-atual",
+                encoding="utf-8"
+            )
+
+            backup = backups / "sgs_backup_database.zip"
+
+            with ZipFile(backup, "w") as zip_file:
+                zip_file.writestr(
+                    "rede.db",
+                    "db-restaurado"
+                )
+
+            def move_bloqueado(origem, destino):
+                raise OSError(
+                    16,
+                    "Device or resource busy",
+                    str(origem)
+                )
+
+            with patch(
+                "app.services.backup_service.CONFIG_DIR",
+                config
+            ), patch(
+                "app.services.backup_service.IMPORTS_DIR",
+                imports
+            ), patch(
+                "app.services.backup_service.CACHE_DIR",
+                cache
+            ), patch(
+                "app.services.backup_service.BACKUP_DIR",
+                backups
+            ), patch(
+                "app.services.backup_service.BACKUP_CONFIG_FILE",
+                config / "backup_config.json"
+            ), patch(
+                "app.services.backup_service.shutil.move",
+                side_effect=move_bloqueado
+            ):
+                restaurar_backup(
+                    backup,
+                    usuario="teste",
+                    incluir_cache=False,
+                    criar_backup_previo=False,
+                    base_dir=base
+                )
+
+            self.assertEqual(
+                banco.read_text(encoding="utf-8"),
+                "db-restaurado"
             )
 
     def test_restaurar_backup_restaurando_contracts_quando_marcado(self):

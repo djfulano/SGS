@@ -43,6 +43,7 @@ from app.services.backup_service import save_backup_config
 from app.services.database_service import sincronizar_banco
 from app.services.contract_service import CONTRACTS_DIR
 from app.services.contract_service import index_contract_folders
+from app.services.contract_service import migrar_pastas_documentos_para_codigo_aquiles
 from app.services.data_export_service import arquivo_para_download
 from app.services.data_export_service import caminho_exportacao_clientes
 from app.services.data_export_service import caminho_exportacao_sites
@@ -943,6 +944,75 @@ def mostrar_importacao(
     st.rerun()
 
 
+def mostrar_resumo_migracao_documentos(
+    resumo,
+    mostrar_grid,
+    *,
+    key_prefix
+):
+    col1, col2, col3, col4, col5, col6 = st.columns(6)
+    col1.metric(
+        "Pastas",
+        resumo.get("pastas_migradas", 0)
+    )
+    col2.metric(
+        "Arquivos",
+        resumo.get("arquivos_movidos", 0)
+    )
+    col3.metric(
+        "Índice",
+        resumo.get("registros_atualizados", 0)
+    )
+    col4.metric(
+        "Conflitos",
+        len(resumo.get("conflitos", []))
+    )
+    col5.metric(
+        "Não localizadas",
+        len(resumo.get("pastas_nao_localizadas", []))
+    )
+    col6.metric(
+        "Erros",
+        len(resumo.get("erros", []))
+    )
+
+    if resumo.get("conflitos"):
+        st.markdown("**Conflitos de nome**")
+        mostrar_grid(
+            pd.DataFrame(resumo.get("conflitos", [])),
+            height=240,
+            key=f"{key_prefix}_conflitos"
+        )
+
+    if resumo.get("sites_sem_codigo"):
+        st.markdown("**Sites sem Código Aquiles**")
+        mostrar_grid(
+            pd.DataFrame({
+                "Site SNMPc": resumo.get("sites_sem_codigo", [])
+            }),
+            height=240,
+            key=f"{key_prefix}_sites_sem_codigo"
+        )
+
+    if resumo.get("pastas_nao_localizadas"):
+        st.markdown("**Pastas sem correspondência**")
+        mostrar_grid(
+            pd.DataFrame({
+                "Pasta": resumo.get("pastas_nao_localizadas", [])
+            }),
+            height=240,
+            key=f"{key_prefix}_pastas_nao_localizadas"
+        )
+
+    if resumo.get("erros"):
+        st.markdown("**Erros**")
+        mostrar_grid(
+            pd.DataFrame(resumo.get("erros", [])),
+            height=240,
+            key=f"{key_prefix}_erros"
+        )
+
+
 def mostrar_configuracoes(
     usuario_atual,
     mostrar_grid,
@@ -1137,13 +1207,102 @@ def mostrar_configuracoes(
 
     st.subheader("Documentos dos sites")
     st.caption(
-        "Indexa documentos já existentes na pasta contracts, usando o Nome SNMPc como nome da subpasta."
+        "Novos documentos usam o Código Aquiles como nome da subpasta. "
+        "Pastas legadas com Nome SNMPc continuam reconhecidas para indexação e podem ser migradas."
     )
     st.text_input(
         "Pasta de documentos",
         value=str(CONTRACTS_DIR),
         disabled=True
     )
+
+    st.markdown("**Migração para Código Aquiles**")
+    st.caption(
+        "Use a simulação antes de executar em produção. A migração move arquivos de "
+        "`contracts/<Nome SNMPc>/` para `contracts/<Código Aquiles>/`, preservando Arquivados."
+    )
+    col_migrar_1, col_migrar_2 = st.columns(2)
+
+    if col_migrar_1.button(
+        "Simular migração para Código Aquiles",
+        key="simular_migracao_contracts_codigo_aquiles"
+    ):
+        try:
+            resumo = migrar_pastas_documentos_para_codigo_aquiles(
+                sites or {},
+                dry_run=True,
+                usuario=usuario_atual["username"]
+            )
+            registrar_log_sistema(
+                "documentos_migracao_codigo_aquiles",
+                usuario=usuario_atual["username"],
+                status="sucesso",
+                detalhes={
+                    **resumo,
+                    "simulacao": True
+                }
+            )
+            st.info(
+                "Simulação concluída. Nenhum arquivo foi movido."
+            )
+            mostrar_resumo_migracao_documentos(
+                resumo,
+                mostrar_grid,
+                key_prefix="documentos_migracao_simulacao"
+            )
+        except Exception as erro:
+            registrar_log_sistema(
+                "documentos_migracao_codigo_aquiles",
+                usuario=usuario_atual["username"],
+                status="erro",
+                detalhes={
+                    "simulacao": True,
+                    "erro": str(erro)
+                }
+            )
+            st.error(f"Falha ao simular migração de documentos: {erro}")
+
+    if col_migrar_2.button(
+        "Executar migração para Código Aquiles",
+        key="executar_migracao_contracts_codigo_aquiles",
+        type="secondary"
+    ):
+        try:
+            resumo = migrar_pastas_documentos_para_codigo_aquiles(
+                sites or {},
+                dry_run=False,
+                usuario=usuario_atual["username"]
+            )
+            registrar_log_sistema(
+                "documentos_migracao_codigo_aquiles",
+                usuario=usuario_atual["username"],
+                status="sucesso",
+                detalhes={
+                    **resumo,
+                    "simulacao": False
+                }
+            )
+            st.success(
+                "Migração concluída. Execute a indexação da pasta contracts para conferir o índice."
+            )
+            mostrar_resumo_migracao_documentos(
+                resumo,
+                mostrar_grid,
+                key_prefix="documentos_migracao_execucao"
+            )
+        except Exception as erro:
+            registrar_log_sistema(
+                "documentos_migracao_codigo_aquiles",
+                usuario=usuario_atual["username"],
+                status="erro",
+                detalhes={
+                    "simulacao": False,
+                    "erro": str(erro)
+                }
+            )
+            st.error(f"Falha ao executar migração de documentos: {erro}")
+
+    st.markdown("**Indexação**")
 
     if st.button(
         "Indexar pasta contracts",
@@ -1228,6 +1387,13 @@ def mostrar_backup(
         return
 
     config = load_backup_config()
+    retention_config = min(
+        365,
+        max(
+            1,
+            int(config.get("retention") or 10)
+        )
+    )
 
     st.subheader("Backup do sistema")
     st.caption(
@@ -1266,7 +1432,7 @@ def mostrar_backup(
             "Quantidade de backups para manter",
             min_value=1,
             max_value=365,
-            value=int(config.get("retention") or 10),
+            value=retention_config,
             step=1
         )
 
@@ -1336,7 +1502,7 @@ def mostrar_backup(
     )
     col2.metric(
         "Retenção",
-        f"{int(config.get('retention') or 10)} arquivos"
+        f"{retention_config} arquivos"
     )
 
     if config.get("last_backup_file"):
@@ -1596,8 +1762,9 @@ def mostrar_backup(
         )
         incluir_cache_restore = st.checkbox(
             "Restaurar cache",
-            value=True,
-            disabled="cache" not in fontes_restore
+            value=False,
+            disabled="cache" not in fontes_restore,
+            help="Normalmente não é necessário. O cache pode estar em uso e é recriado automaticamente."
         )
         confirmacao_restore = st.text_input(
             "Digite RESTAURAR para confirmar",
@@ -1625,6 +1792,8 @@ def mostrar_backup(
                     detalhes=resultado_restore
                 )
                 st.success("Backup restaurado com sucesso.")
+                for aviso in resultado_restore.get("avisos", []):
+                    st.warning(aviso)
                 st.warning(
                     "Reinicie o container para recarregar banco, configurações e sessão: "
                     "sudo docker compose restart snmpc-dashboard"

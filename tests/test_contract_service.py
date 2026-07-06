@@ -41,9 +41,9 @@ class ContractServiceTest(unittest.TestCase):
                     contract_service.read_contract_file(second),
                     b"versao 2"
                 )
-                self.assertIn(
-                    "Site_A",
-                    second["path"]
+                self.assertEqual(
+                    Path(second["path"]).parent.name,
+                    "123"
                 )
 
             finally:
@@ -149,6 +149,42 @@ class ContractServiceTest(unittest.TestCase):
                 self.assertEqual(
                     contract_service.read_contract_file(versions[0]),
                     b"pdf"
+                )
+
+            finally:
+                contract_service.CONTRACTS_DIR = original_dir
+                contract_service.CONTRACTS_INDEX_FILE = original_index
+
+    def test_index_contract_folders_usa_codigo_aquiles(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            original_dir = contract_service.CONTRACTS_DIR
+            original_index = contract_service.CONTRACTS_INDEX_FILE
+
+            try:
+                contract_service.CONTRACTS_DIR = Path(temp_dir) / "contracts"
+                contract_service.CONTRACTS_INDEX_FILE = Path(temp_dir) / "contracts.json"
+                pasta_site = contract_service.CONTRACTS_DIR / "456"
+                pasta_site.mkdir(parents=True)
+                (pasta_site / "documento.pdf").write_bytes(b"pdf")
+                site = Site("ABC_BH_123_IP")
+                site.codigo_topos = "456"
+
+                resumo = contract_service.index_contract_folders({
+                    "ABC_BH_123_IP": site
+                })
+                documentos = contract_service.list_site_contracts("456")
+
+                self.assertEqual(
+                    resumo["arquivos_indexados"],
+                    1
+                )
+                self.assertEqual(
+                    len(documentos),
+                    1
+                )
+                self.assertEqual(
+                    documentos[0]["site_name"],
+                    "ABC_BH_123_IP"
                 )
 
             finally:
@@ -414,6 +450,7 @@ class ContractServiceTest(unittest.TestCase):
                         {
                             "Site SNMPc": "SEM_PASTA_IP",
                             "Código Aquiles": "2",
+                            "Pasta Esperada": "2",
                             "Nome Cadastro": "Sem Pasta",
                             "Status Cadastro": "Ativo",
                             "Cidade": "Sao Paulo",
@@ -440,6 +477,213 @@ class ContractServiceTest(unittest.TestCase):
 
             finally:
                 contract_service.CONTRACTS_DIR = original_dir
+
+    def test_migrar_pastas_documentos_para_codigo_aquiles_simula_sem_alterar(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            original_dir = contract_service.CONTRACTS_DIR
+            original_index = contract_service.CONTRACTS_INDEX_FILE
+
+            try:
+                contract_service.CONTRACTS_DIR = Path(temp_dir) / "contracts"
+                contract_service.CONTRACTS_INDEX_FILE = Path(temp_dir) / "contracts.json"
+                pasta_origem = contract_service.CONTRACTS_DIR / "ABC_BH_123_IP"
+                pasta_origem.mkdir(parents=True)
+                arquivo = pasta_origem / "documento.pdf"
+                arquivo.write_bytes(b"pdf")
+                contract_service.save_contract_index({
+                    "sites": {
+                        "456": [
+                            {
+                                "id": "doc-1",
+                                "site_code": "456",
+                                "site_name": "ABC_BH_123_IP",
+                                "original_filename": "documento.pdf",
+                                "path": str(arquivo)
+                            }
+                        ]
+                    }
+                })
+                site = Site("ABC_BH_123_IP")
+                site.codigo_topos = "456"
+
+                resumo = contract_service.migrar_pastas_documentos_para_codigo_aquiles(
+                    {
+                        "ABC_BH_123_IP": site
+                    },
+                    dry_run=True,
+                    usuario="tester"
+                )
+                indice = contract_service.load_contract_index()
+
+                self.assertEqual(
+                    resumo["pastas_migradas"],
+                    1
+                )
+                self.assertEqual(
+                    resumo["arquivos_movidos"],
+                    1
+                )
+                self.assertEqual(
+                    resumo["registros_atualizados"],
+                    1
+                )
+                self.assertTrue(
+                    arquivo.exists()
+                )
+                self.assertFalse(
+                    (contract_service.CONTRACTS_DIR / "456" / "documento.pdf").exists()
+                )
+                self.assertEqual(
+                    indice["sites"]["456"][0]["path"],
+                    str(arquivo)
+                )
+
+            finally:
+                contract_service.CONTRACTS_DIR = original_dir
+                contract_service.CONTRACTS_INDEX_FILE = original_index
+
+    def test_migrar_pastas_documentos_para_codigo_aquiles_move_ativos_e_arquivados(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            original_dir = contract_service.CONTRACTS_DIR
+            original_index = contract_service.CONTRACTS_INDEX_FILE
+
+            try:
+                contract_service.CONTRACTS_DIR = Path(temp_dir) / "contracts"
+                contract_service.CONTRACTS_INDEX_FILE = Path(temp_dir) / "contracts.json"
+                pasta_origem = contract_service.CONTRACTS_DIR / "ABC_BH_123_IP"
+                pasta_arquivado = pasta_origem / "Arquivado"
+                pasta_arquivado.mkdir(parents=True)
+                arquivo_ativo = pasta_origem / "documento.pdf"
+                arquivo_arquivado = pasta_arquivado / "antigo.pdf"
+                arquivo_ativo.write_bytes(b"ativo")
+                arquivo_arquivado.write_bytes(b"arquivado")
+                contract_service.save_contract_index({
+                    "sites": {
+                        "456": [
+                            {
+                                "id": "doc-1",
+                                "site_code": "456",
+                                "site_name": "ABC_BH_123_IP",
+                                "original_filename": "documento.pdf",
+                                "path": str(arquivo_ativo)
+                            },
+                            {
+                                "id": "doc-2",
+                                "site_code": "456",
+                                "site_name": "ABC_BH_123_IP",
+                                "original_filename": "antigo.pdf",
+                                "archived": True,
+                                "path": str(arquivo_arquivado)
+                            }
+                        ]
+                    }
+                })
+                site = Site("ABC_BH_123_IP")
+                site.codigo_topos = "456"
+
+                resumo = contract_service.migrar_pastas_documentos_para_codigo_aquiles(
+                    {
+                        "ABC_BH_123_IP": site
+                    },
+                    dry_run=False,
+                    usuario="tester"
+                )
+                indice = contract_service.load_contract_index()
+                novo_ativo = contract_service.CONTRACTS_DIR / "456" / "documento.pdf"
+                novo_arquivado = contract_service.CONTRACTS_DIR / "456" / "Arquivado" / "antigo.pdf"
+
+                self.assertEqual(
+                    resumo["arquivos_movidos"],
+                    2
+                )
+                self.assertEqual(
+                    resumo["registros_atualizados"],
+                    2
+                )
+                self.assertTrue(
+                    novo_ativo.exists()
+                )
+                self.assertTrue(
+                    novo_arquivado.exists()
+                )
+                self.assertFalse(
+                    pasta_origem.exists()
+                )
+                self.assertEqual(
+                    indice["sites"]["456"][0]["path"],
+                    str(novo_ativo)
+                )
+                self.assertEqual(
+                    indice["sites"]["456"][1]["path"],
+                    str(novo_arquivado)
+                )
+
+            finally:
+                contract_service.CONTRACTS_DIR = original_dir
+                contract_service.CONTRACTS_INDEX_FILE = original_index
+
+    def test_migrar_pastas_documentos_para_codigo_aquiles_resolve_conflito_de_nome(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            original_dir = contract_service.CONTRACTS_DIR
+            original_index = contract_service.CONTRACTS_INDEX_FILE
+
+            try:
+                contract_service.CONTRACTS_DIR = Path(temp_dir) / "contracts"
+                contract_service.CONTRACTS_INDEX_FILE = Path(temp_dir) / "contracts.json"
+                pasta_origem = contract_service.CONTRACTS_DIR / "ABC_BH_123_IP"
+                pasta_destino = contract_service.CONTRACTS_DIR / "456"
+                pasta_origem.mkdir(parents=True)
+                pasta_destino.mkdir(parents=True)
+                arquivo_origem = pasta_origem / "documento.pdf"
+                arquivo_origem.write_bytes(b"novo")
+                (pasta_destino / "documento.pdf").write_bytes(b"existente")
+                contract_service.save_contract_index({
+                    "sites": {
+                        "456": [
+                            {
+                                "id": "doc-1",
+                                "site_code": "456",
+                                "site_name": "ABC_BH_123_IP",
+                                "original_filename": "documento.pdf",
+                                "path": str(arquivo_origem)
+                            }
+                        ]
+                    }
+                })
+                site = Site("ABC_BH_123_IP")
+                site.codigo_topos = "456"
+
+                resumo = contract_service.migrar_pastas_documentos_para_codigo_aquiles(
+                    {
+                        "ABC_BH_123_IP": site
+                    },
+                    dry_run=False,
+                    usuario="tester"
+                )
+
+                self.assertEqual(
+                    len(resumo["conflitos"]),
+                    1
+                )
+                self.assertTrue(
+                    (pasta_destino / "documento.pdf").exists()
+                )
+                self.assertEqual(
+                    len(list(pasta_destino.glob("documento*.pdf"))),
+                    2
+                )
+                indice = contract_service.load_contract_index()
+                self.assertNotEqual(
+                    indice["sites"]["456"][0]["path"],
+                    str(pasta_destino / "documento.pdf")
+                )
+                self.assertTrue(
+                    Path(indice["sites"]["456"][0]["path"]).exists()
+                )
+
+            finally:
+                contract_service.CONTRACTS_DIR = original_dir
+                contract_service.CONTRACTS_INDEX_FILE = original_index
 
     def test_registros_antigos_fora_da_pasta_atual_sao_ignorados(self):
         with tempfile.TemporaryDirectory() as temp_dir:

@@ -1,5 +1,51 @@
 # Histórico de versões
 
+## 1.1.26
+
+- Documentos dos sites passam a usar o Código Aquiles como pasta física.
+- Adicionada simulação e execução de migração de pastas legadas por Nome SNMPc para Código Aquiles.
+- Sites x Documentos passa a considerar pastas por Código Aquiles e legado por Nome SNMPc.
+
+## 1.1.25
+
+- Adicionado manual do perfil Suporte com utilidades, dados e possibilidades disponiveis.
+
+## 1.1.24
+
+- Manual NOC passa a descrever utilidades, dados e possibilidades do sistema sem ditar procedimentos.
+
+## 1.1.23
+
+- Manual do perfil NOC passa a focar somente nas funcoes disponiveis e usos operacionais.
+
+## 1.1.22
+
+- Documento do perfil NOC passa a refletir exatamente as permissoes cadastradas no perfil.
+
+## 1.1.21
+
+- Restauração de backup passa a sobrescrever arquivos restauráveis sem mover o arquivo original.
+- Corrigida falha `Device or resource busy` ao restaurar `rede.db`.
+
+## 1.1.20
+
+- Restauração de backup passa a substituir o conteúdo de diretórios montados sem mover a pasta raiz.
+- Corrigida falha `Device or resource busy` ao restaurar pastas como `config`.
+
+## 1.1.19
+
+- Documento do perfil NOC passa a trazer matriz clara de permissoes por modulo.
+
+## 1.1.18
+
+- Corrigida a tela de Backup quando uma configuração antiga possui retenção acima do limite permitido.
+- Backup temporário criado antes da restauração deixa de sobrescrever a configuração de retenção do usuário.
+
+## 1.1.17
+
+- Restauração de backup passa a deixar o cache desmarcado por padrão.
+- Restauração ignora o cache quando ele estiver em uso, mantendo a restauração dos dados principais.
+
 ## 1.1.16
 
 - Sistema > Backup passa a baixar o arquivo a partir da linha selecionada na tabela de backups.

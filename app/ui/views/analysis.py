@@ -3271,7 +3271,7 @@ def pode_ver_relatorio_unificado(chave):
 def mostrar_sites_x_documentos(sites):
     st.header("Sites x Documentos")
     st.caption(
-        "Compara os sites da base com as pastas existentes no armazenamento de documentos."
+        "Compara os sites da base com as pastas de documentos por Código Aquiles, aceitando pastas legadas por Nome SNMPc."
     )
     sites_sem_pasta, pastas_sem_site = compare_sites_and_document_folders(
         sites

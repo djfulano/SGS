@@ -47,15 +47,51 @@ def safe_filename(value):
     return text or "documento"
 
 
-def site_contract_dir(site_code, site_name):
-    name = safe_filename(
-        site_name
+def unique_destination_path(path):
+    path = Path(path)
+
+    if not path.exists():
+        return path
+
+    return path.with_name(
+        f"{path.stem}_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}{path.suffix}"
     )
 
-    if name and name != "documento":
 
-        return CONTRACTS_DIR / name
+def site_contract_dir(site_code, site_name):
+    return CONTRACTS_DIR / safe_filename(
+        site_code
+    )
 
+
+def site_nome_snmpc(site):
+    return str(getattr(site, "nome", "") or "").strip()
+
+
+def site_codigo_aquiles(site):
+    return normalize_site_code(
+        getattr(site, "codigo_topos", "")
+    )
+
+
+def sites_documentos_index(sites):
+    por_codigo = {}
+    por_nome = {}
+
+    for site in (sites or {}).values():
+        codigo = site_codigo_aquiles(site)
+        nome = site_nome_snmpc(site)
+
+        if codigo:
+            por_codigo[safe_filename(codigo)] = site
+
+        if nome:
+            por_nome[safe_filename(nome)] = site
+
+    return por_codigo, por_nome
+
+
+def site_folder_for_code(site_code):
     return CONTRACTS_DIR / safe_filename(
         site_code
     )
@@ -355,11 +391,7 @@ def index_contract_folders(sites, *, uploaded_by="importacao"):
             for record in versions
             if contract_record_in_current_storage(record)
         ]
-    sites_por_snmpc = {
-        str(getattr(site, "nome", "") or "").strip(): site
-        for site in (sites or {}).values()
-        if str(getattr(site, "nome", "") or "").strip()
-    }
+    sites_por_codigo, sites_por_snmpc = sites_documentos_index(sites)
     resumo = {
         "sites_encontrados": 0,
         "sites_nao_localizados": [],
@@ -379,19 +411,23 @@ def index_contract_folders(sites, *, uploaded_by="importacao"):
         ):
             continue
 
-        nome_snmpc = pasta_site.name.strip()
-        site = sites_por_snmpc.get(nome_snmpc)
-
-        if not site:
-            resumo["sites_nao_localizados"].append(nome_snmpc)
-            continue
-
-        site_code = normalize_site_code(
-            getattr(site, "codigo_topos", "")
+        nome_pasta = safe_filename(
+            pasta_site.name.strip()
+        )
+        site = (
+            sites_por_codigo.get(nome_pasta)
+            or sites_por_snmpc.get(nome_pasta)
         )
 
+        if not site:
+            resumo["sites_nao_localizados"].append(pasta_site.name.strip())
+            continue
+
+        site_code = site_codigo_aquiles(site)
+        nome_snmpc = site_nome_snmpc(site)
+
         if not site_code:
-            resumo["sites_nao_localizados"].append(nome_snmpc)
+            resumo["sites_nao_localizados"].append(pasta_site.name.strip())
             continue
 
         resumo["sites_encontrados"] += 1
@@ -466,20 +502,22 @@ def compare_sites_and_document_folders(sites):
             and pasta.name.strip().casefold() != "arquivado"
         )
     }
-    sites_por_snmpc = {
-        str(getattr(site, "nome", "") or "").strip(): site
-        for site in (sites or {}).values()
-        if str(getattr(site, "nome", "") or "").strip()
-    }
+    sites_por_codigo, sites_por_snmpc = sites_documentos_index(sites)
     sites_sem_pasta = []
 
-    for nome_site, site in sorted(sites_por_snmpc.items()):
-        if nome_site in pastas:
+    for _chave_codigo, site in sorted(sites_por_codigo.items()):
+        codigo = site_codigo_aquiles(site)
+        nome_site = site_nome_snmpc(site)
+        pasta_codigo = safe_filename(codigo)
+        pasta_nome = safe_filename(nome_site)
+
+        if pasta_codigo in pastas or pasta_nome in pastas:
             continue
 
         sites_sem_pasta.append({
             "Site SNMPc": nome_site,
-            "Código Aquiles": getattr(site, "codigo_topos", ""),
+            "Código Aquiles": codigo,
+            "Pasta Esperada": pasta_codigo,
             "Nome Cadastro": getattr(site, "nome_cadastro", ""),
             "Status Cadastro": getattr(site, "status_cadastro", ""),
             "Cidade": getattr(site, "cidade", ""),
@@ -489,17 +527,221 @@ def compare_sites_and_document_folders(sites):
     pastas_sem_site = []
 
     for nome_pasta, pasta in sorted(pastas.items()):
-        if nome_pasta in sites_por_snmpc:
+        chave_pasta = safe_filename(nome_pasta)
+        site = (
+            sites_por_codigo.get(chave_pasta)
+            or sites_por_snmpc.get(chave_pasta)
+        )
+
+        if site:
             continue
 
         contagem = _contar_arquivos_pasta_documentos(pasta)
         pastas_sem_site.append({
             "Pasta": nome_pasta,
+            "Código Aquiles": "",
+            "Site SNMPc": "",
             **contagem,
             "Caminho": str(pasta)
         })
 
     return sites_sem_pasta, pastas_sem_site
+
+
+def _migrar_item_documento(origem, destino_base, dry_run):
+    origem = Path(origem)
+    destino_base = Path(destino_base)
+    destino = destino_base / origem.name
+    conflito = False
+
+    if destino.exists() and not (origem.is_dir() and destino.is_dir()):
+        destino = unique_destination_path(destino)
+        conflito = True
+
+    if origem.is_dir():
+        if not dry_run:
+            destino.mkdir(
+                parents=True,
+                exist_ok=True
+            )
+        mapeamentos = []
+
+        for item in sorted(origem.iterdir()):
+            _destino_item, _conflito_item, mapeamentos_item = _migrar_item_documento(
+                item,
+                destino,
+                dry_run=dry_run
+            )
+            mapeamentos.extend(mapeamentos_item)
+
+        if not dry_run:
+            try:
+                origem.rmdir()
+            except OSError:
+                pass
+
+        return destino, conflito, mapeamentos
+
+    if not dry_run:
+        destino.parent.mkdir(
+            parents=True,
+            exist_ok=True
+        )
+        shutil.move(
+            str(origem),
+            str(destino)
+        )
+
+    return destino, conflito, [
+        {
+            "origem": str(origem),
+            "destino": str(destino),
+            "conflito": conflito
+        }
+    ]
+
+
+def _novo_caminho_migrado(caminho, origem_pasta, destino_pasta):
+    caminho = Path(caminho)
+    origem_pasta = Path(origem_pasta)
+    destino_pasta = Path(destino_pasta)
+
+    try:
+        relativo = caminho.resolve().relative_to(
+            origem_pasta.resolve()
+        )
+    except ValueError:
+        return None
+
+    return destino_pasta / relativo
+
+
+def migrar_pastas_documentos_para_codigo_aquiles(
+    sites,
+    dry_run=True,
+    usuario=""
+):
+    CONTRACTS_DIR.mkdir(
+        parents=True,
+        exist_ok=True
+    )
+    data = load_contract_index()
+    sites_index = data.setdefault("sites", {})
+    resumo = {
+        "dry_run": bool(dry_run),
+        "pastas_migradas": 0,
+        "arquivos_movidos": 0,
+        "registros_atualizados": 0,
+        "conflitos": [],
+        "sites_sem_codigo": [],
+        "pastas_nao_localizadas": [],
+        "erros": []
+    }
+
+    for site in (sites or {}).values():
+        codigo = site_codigo_aquiles(site)
+        nome_snmpc = site_nome_snmpc(site)
+
+        if not codigo:
+            if nome_snmpc:
+                resumo["sites_sem_codigo"].append(nome_snmpc)
+            continue
+
+        if not nome_snmpc:
+            continue
+
+        pasta_origem = CONTRACTS_DIR / safe_filename(nome_snmpc)
+        pasta_destino = site_folder_for_code(codigo)
+
+        if pasta_origem == pasta_destino:
+            continue
+
+        if not pasta_origem.exists() or not pasta_origem.is_dir():
+            continue
+
+        try:
+            resumo["pastas_migradas"] += 1
+            pasta_destino.mkdir(
+                parents=True,
+                exist_ok=True
+            ) if not dry_run else None
+            mapeamentos = []
+
+            for item in sorted(pasta_origem.iterdir()):
+                _destino_item, _conflito, mapeamentos_item = _migrar_item_documento(
+                    item,
+                    pasta_destino,
+                    dry_run=dry_run
+                )
+                mapeamentos.extend(mapeamentos_item)
+                resumo["arquivos_movidos"] += len(mapeamentos_item)
+
+                for mapeamento in mapeamentos_item:
+                    if mapeamento.get("conflito"):
+                        resumo["conflitos"].append({
+                            "origem": mapeamento.get("origem"),
+                            "destino": mapeamento.get("destino")
+                        })
+
+            if not dry_run:
+                try:
+                    pasta_origem.rmdir()
+                except OSError:
+                    pass
+
+            mapeamentos_por_origem = {
+                mapeamento["origem"]: mapeamento["destino"]
+                for mapeamento in mapeamentos
+            }
+            site_code = normalize_site_code(codigo)
+            for record in sites_index.get(site_code, []):
+                caminho_atual = record.get("path") or ""
+                novo_caminho = mapeamentos_por_origem.get(caminho_atual)
+
+                if not novo_caminho:
+                    novo_caminho = _novo_caminho_migrado(
+                        caminho_atual,
+                        pasta_origem,
+                        pasta_destino
+                    )
+
+                if not novo_caminho:
+                    continue
+
+                resumo["registros_atualizados"] += 1
+                if not dry_run:
+                    record["path"] = str(novo_caminho)
+                    record["site_name"] = nome_snmpc
+
+        except Exception as erro:
+            resumo["erros"].append({
+                "site": nome_snmpc,
+                "codigo": codigo,
+                "erro": str(erro)
+            })
+
+    pastas_por_site = {
+        safe_filename(site_codigo_aquiles(site))
+        for site in (sites or {}).values()
+        if site_codigo_aquiles(site)
+    } | {
+        safe_filename(site_nome_snmpc(site))
+        for site in (sites or {}).values()
+        if site_nome_snmpc(site)
+    }
+
+    for pasta in sorted(CONTRACTS_DIR.iterdir()):
+        if (
+            pasta.is_dir()
+            and pasta.name.strip().casefold() != "arquivado"
+            and safe_filename(pasta.name) not in pastas_por_site
+        ):
+            resumo["pastas_nao_localizadas"].append(pasta.name)
+
+    if not dry_run:
+        save_contract_index(data)
+
+    return resumo
 
 
 def add_site_contract(

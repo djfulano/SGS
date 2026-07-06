@@ -531,11 +531,11 @@ def _copiar_fonte_extraida(origem, destino, tipo):
         if not origem.exists():
             return 0
 
-        destino.parent.mkdir(
+        destino.mkdir(
             parents=True,
             exist_ok=True
         )
-        shutil.copytree(
+        _copiar_conteudo_diretorio(
             origem,
             destino
         )
@@ -559,6 +559,107 @@ def _copiar_fonte_extraida(origem, destino, tipo):
     )
 
     return 1
+
+
+def _limpar_conteudo_diretorio(pasta):
+    pasta = Path(pasta)
+
+    if not pasta.exists():
+        pasta.mkdir(
+            parents=True,
+            exist_ok=True
+        )
+        return
+
+    for item in pasta.iterdir():
+        if item.is_dir():
+            shutil.rmtree(item)
+        else:
+            item.unlink(
+                missing_ok=True
+            )
+
+
+def _copiar_conteudo_diretorio(origem, destino):
+    origem = Path(origem)
+    destino = Path(destino)
+    destino.mkdir(
+        parents=True,
+        exist_ok=True
+    )
+
+    if not origem.exists():
+        return
+
+    for item in origem.iterdir():
+        destino_item = destino / item.name
+
+        if item.is_dir():
+            shutil.copytree(
+                item,
+                destino_item,
+                dirs_exist_ok=True
+            )
+        else:
+            destino_item.parent.mkdir(
+                parents=True,
+                exist_ok=True
+            )
+            shutil.copy2(
+                item,
+                destino_item
+            )
+
+
+def _preparar_destino_restauracao(destino, destino_backup, tipo):
+    destino = Path(destino)
+    destino_backup = Path(destino_backup)
+
+    if not destino.exists():
+        return False
+
+    destino_backup.parent.mkdir(
+        parents=True,
+        exist_ok=True
+    )
+
+    if tipo == "directory":
+        shutil.copytree(
+            destino,
+            destino_backup,
+            dirs_exist_ok=True
+        )
+        _limpar_conteudo_diretorio(destino)
+    else:
+        shutil.copy2(
+            destino,
+            destino_backup
+        )
+
+    return True
+
+
+def _restaurar_destino_anterior(origem_antiga, destino_original, tipo):
+    origem_antiga = Path(origem_antiga)
+    destino_original = Path(destino_original)
+
+    if tipo == "directory":
+        _limpar_conteudo_diretorio(destino_original)
+        _copiar_conteudo_diretorio(
+            origem_antiga,
+            destino_original
+        )
+        return
+
+    if origem_antiga.exists():
+        destino_original.parent.mkdir(
+            parents=True,
+            exist_ok=True
+        )
+        shutil.copy2(
+            origem_antiga,
+            destino_original
+        )
 
 
 def restaurar_backup(
@@ -618,11 +719,13 @@ def restaurar_backup(
             config_pre_restore,
             usuario=usuario,
             motivo="pre_restore",
-            base_dir=base
+            base_dir=base,
+            persistir_config=False
         )
 
     fontes = _fontes_restauraveis(base)
     restaurados = []
+    avisos = []
     rollback = []
 
     with tempfile.TemporaryDirectory() as temp_dir:
@@ -642,29 +745,48 @@ def restaurar_backup(
                 destino = Path(fonte["path"])
                 destino_backup = antigos / chave
 
-                if destino.exists():
-                    destino_backup.parent.mkdir(
-                        parents=True,
-                        exist_ok=True
-                    )
-                    shutil.move(
-                        str(destino),
-                        str(destino_backup)
-                    )
-                    rollback.append(
-                        (destino_backup, destino)
-                    )
-
                 origem = (
                     extraido / "rede.db"
                     if chave == "database"
                     else extraido / chave
                 )
-                arquivos = _copiar_fonte_extraida(
-                    origem,
-                    destino,
-                    fonte["type"]
-                )
+                try:
+                    if _preparar_destino_restauracao(
+                        destino,
+                        destino_backup,
+                        fonte["type"]
+                    ):
+                        rollback.append(
+                            (destino_backup, destino, fonte["type"])
+                        )
+
+                    arquivos = _copiar_fonte_extraida(
+                        origem,
+                        destino,
+                        fonte["type"]
+                    )
+                except OSError as erro:
+                    if chave != "cache":
+                        raise
+
+                    avisos.append(
+                        "Cache não restaurado porque está em uso pelo sistema."
+                    )
+
+                    if destino_backup.exists():
+                        _restaurar_destino_anterior(
+                            destino_backup,
+                            destino,
+                            fonte["type"]
+                        )
+
+                    rollback = [
+                        item
+                        for item in rollback
+                        if item != (destino_backup, destino, fonte["type"])
+                    ]
+                    continue
+
                 restaurados.append({
                     "key": chave,
                     "label": fonte["label"],
@@ -672,23 +794,12 @@ def restaurar_backup(
                     "files": arquivos
                 })
         except Exception:
-            for origem_antiga, destino_original in reversed(rollback):
-                if destino_original.exists():
-                    if destino_original.is_dir():
-                        shutil.rmtree(
-                            destino_original,
-                            ignore_errors=True
-                        )
-                    else:
-                        destino_original.unlink(
-                            missing_ok=True
-                        )
-
-                if origem_antiga.exists():
-                    shutil.move(
-                        str(origem_antiga),
-                        str(destino_original)
-                    )
+            for origem_antiga, destino_original, tipo in reversed(rollback):
+                _restaurar_destino_anterior(
+                    origem_antiga,
+                    destino_original,
+                    tipo
+                )
 
             raise
 
@@ -696,6 +807,7 @@ def restaurar_backup(
         "backup": str(caminho_backup),
         "backup_previo": backup_previo,
         "fontes_restauradas": restaurados,
+        "avisos": avisos,
         "restaurar_contracts": bool(restaurar_contracts),
         "incluir_cache": bool(incluir_cache)
     }
@@ -718,7 +830,13 @@ def limpar_backups_antigos(backup_dir=None, retention=10):
     return removidos
 
 
-def criar_backup(config=None, usuario="", motivo="manual", base_dir=None):
+def criar_backup(
+    config=None,
+    usuario="",
+    motivo="manual",
+    base_dir=None,
+    persistir_config=True
+):
     config = _normalizar_backup_config(config or load_backup_config())
     base = Path(base_dir or ".").resolve()
     destino_backup = _backup_dir_oficial()
@@ -787,13 +905,16 @@ def criar_backup(config=None, usuario="", motivo="manual", base_dir=None):
             ) + "\n"
         )
 
-    config["last_backup_at"] = agora.strftime("%Y-%m-%d %H:%M:%S")
-    config["last_backup_file"] = str(caminho_backup)
-    save_backup_config(config)
-    removidos = limpar_backups_antigos(
-        destino_backup,
-        config.get("retention") or DEFAULT_BACKUP_CONFIG["retention"]
-    )
+    removidos = []
+
+    if persistir_config:
+        config["last_backup_at"] = agora.strftime("%Y-%m-%d %H:%M:%S")
+        config["last_backup_file"] = str(caminho_backup)
+        save_backup_config(config)
+        removidos = limpar_backups_antigos(
+            destino_backup,
+            config.get("retention") or DEFAULT_BACKUP_CONFIG["retention"]
+        )
 
     return {
         "path": str(caminho_backup),

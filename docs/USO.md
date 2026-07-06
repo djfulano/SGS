@@ -35,6 +35,8 @@ Documento complementar:
 
 - `docs/PERFIL_NOC.md`: resumo das principais funções recomendadas para o
   perfil NOC.
+- `docs/PERFIL_SUPORTE.md`: utilidades, dados e possibilidades disponíveis para
+  o perfil Suporte.
 
 ## Navegação geral
 
