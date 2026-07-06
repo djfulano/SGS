@@ -1,5 +1,10 @@
 # Histórico de versões
 
+## 1.1.27
+
+- Migração de documentos para Código Aquiles passa a validar permissões de arquivos antes de mover.
+- Tela de migração exibe orientação para corrigir permissões da pasta `contracts` quando necessário.
+
 ## 1.1.26
 
 - Documentos dos sites passam a usar o Código Aquiles como pasta física.

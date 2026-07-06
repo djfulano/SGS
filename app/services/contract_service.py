@@ -1,6 +1,7 @@
 from datetime import datetime
 from pathlib import Path
 import mimetypes
+import os
 import re
 import shutil
 import uuid
@@ -616,6 +617,58 @@ def _novo_caminho_migrado(caminho, origem_pasta, destino_pasta):
     return destino_pasta / relativo
 
 
+def _erro_permissao_documentos(caminho, acao):
+    return {
+        "caminho": str(caminho),
+        "erro": (
+            f"Sem permissão para {acao}. Ajuste o dono/permissões da pasta contracts "
+            "para o usuário que executa o SGS."
+        )
+    }
+
+
+def _erros_permissao_migracao(pasta_origem, pasta_destino):
+    pasta_origem = Path(pasta_origem)
+    pasta_destino = Path(pasta_destino)
+    erros = []
+
+    if not os.access(pasta_origem, os.R_OK | os.W_OK | os.X_OK):
+        erros.append(
+            _erro_permissao_documentos(
+                pasta_origem,
+                "ler e mover a pasta de origem"
+            )
+        )
+
+    destino_base = pasta_destino if pasta_destino.exists() else CONTRACTS_DIR
+    if not os.access(destino_base, os.W_OK | os.X_OK):
+        erros.append(
+            _erro_permissao_documentos(
+                destino_base,
+                "criar ou alterar a pasta de destino"
+            )
+        )
+
+    for item in pasta_origem.rglob("*"):
+        if item.is_dir():
+            if not os.access(item, os.R_OK | os.W_OK | os.X_OK):
+                erros.append(
+                    _erro_permissao_documentos(
+                        item,
+                        "ler e mover esta subpasta"
+                    )
+                )
+        elif item.is_file() and not os.access(item, os.R_OK):
+            erros.append(
+                _erro_permissao_documentos(
+                    item,
+                    "ler este arquivo"
+                )
+            )
+
+    return erros
+
+
 def migrar_pastas_documentos_para_codigo_aquiles(
     sites,
     dry_run=True,
@@ -660,6 +713,20 @@ def migrar_pastas_documentos_para_codigo_aquiles(
             continue
 
         try:
+            erros_permissao = _erros_permissao_migracao(
+                pasta_origem,
+                pasta_destino
+            )
+
+            if erros_permissao:
+                for erro_permissao in erros_permissao:
+                    resumo["erros"].append({
+                        "site": nome_snmpc,
+                        "codigo": codigo,
+                        **erro_permissao
+                    })
+                continue
+
             resumo["pastas_migradas"] += 1
             pasta_destino.mkdir(
                 parents=True,
@@ -668,11 +735,24 @@ def migrar_pastas_documentos_para_codigo_aquiles(
             mapeamentos = []
 
             for item in sorted(pasta_origem.iterdir()):
-                _destino_item, _conflito, mapeamentos_item = _migrar_item_documento(
-                    item,
-                    pasta_destino,
-                    dry_run=dry_run
-                )
+                try:
+                    _destino_item, _conflito, mapeamentos_item = _migrar_item_documento(
+                        item,
+                        pasta_destino,
+                        dry_run=dry_run
+                    )
+                except PermissionError as erro:
+                    resumo["erros"].append({
+                        "site": nome_snmpc,
+                        "codigo": codigo,
+                        "caminho": str(item),
+                        "erro": (
+                            f"Sem permissão para mover este item: {erro}. "
+                            "Ajuste o dono/permissões da pasta contracts."
+                        )
+                    })
+                    continue
+
                 mapeamentos.extend(mapeamentos_item)
                 resumo["arquivos_movidos"] += len(mapeamentos_item)
 

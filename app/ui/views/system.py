@@ -1012,6 +1012,23 @@ def mostrar_resumo_migracao_documentos(
             key=f"{key_prefix}_erros"
         )
 
+        erros_texto = " ".join(
+            str(erro.get("erro", ""))
+            for erro in resumo.get("erros", [])
+        ).casefold()
+        if "permiss" in erros_texto or "permission denied" in erros_texto:
+            st.warning(
+                "Foram encontrados arquivos sem permissão para leitura/movimentação. "
+                "No servidor de produção, ajuste a pasta `contracts` para o usuário que executa o SGS e rode a simulação novamente."
+            )
+            st.code(
+                "APP_USER=$(ps -eo user,args | awk '/streamlit run/ && !/awk/ {print $1; exit}')\n"
+                "sudo chown -R \"$APP_USER\":\"$APP_USER\" contracts config/site_contracts.json\n"
+                "sudo find contracts -type d -exec chmod u+rwx {} \\;\n"
+                "sudo find contracts -type f -exec chmod u+rw {} \\;",
+                language="bash"
+            )
+
 
 def mostrar_configuracoes(
     usuario_atual,
