@@ -1337,10 +1337,12 @@ def mostrar_configuracoes(
                 detalhes=resumo
             )
             st.success(
-                f"Indexação concluída. Arquivos indexados: {resumo.get('arquivos_indexados', 0)}."
+                "Indexação concluída. "
+                f"Novos arquivos indexados: {resumo.get('arquivos_indexados', 0)}. "
+                f"Já estavam no índice: {len(resumo.get('arquivos_ja_indexados', []))}."
             )
 
-            col1, col2, col3, col4 = st.columns(4)
+            col1, col2, col3, col4, col5 = st.columns(5)
             col1.metric(
                 "Sites encontrados",
                 resumo.get("sites_encontrados", 0)
@@ -1350,10 +1352,14 @@ def mostrar_configuracoes(
                 len(resumo.get("sites_nao_localizados", []))
             )
             col3.metric(
-                "Arquivos indexados",
+                "Novos indexados",
                 resumo.get("arquivos_indexados", 0)
             )
             col4.metric(
+                "Já indexados",
+                len(resumo.get("arquivos_ja_indexados", []))
+            )
+            col5.metric(
                 "Ignorados",
                 len(resumo.get("arquivos_ignorados", []))
             )

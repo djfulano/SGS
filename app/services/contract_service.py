@@ -383,6 +383,20 @@ def _create_contract_record(
     }
 
 
+def _contract_file_is_archived(path, site_folder):
+    try:
+        relative_parts = Path(path).resolve().relative_to(
+            Path(site_folder).resolve()
+        ).parts
+    except ValueError:
+        return False
+
+    return any(
+        str(part).strip().casefold() == "arquivado"
+        for part in relative_parts[:-1]
+    )
+
+
 def index_contract_folders(sites, *, uploaded_by="importacao"):
     data = load_contract_index()
     sites_index = data.setdefault("sites", {})
@@ -397,6 +411,7 @@ def index_contract_folders(sites, *, uploaded_by="importacao"):
         "sites_encontrados": 0,
         "sites_nao_localizados": [],
         "arquivos_indexados": 0,
+        "arquivos_ja_indexados": [],
         "arquivos_ignorados": [],
         "erros": []
     }
@@ -435,7 +450,7 @@ def index_contract_folders(sites, *, uploaded_by="importacao"):
         site_versions = sites_index.setdefault(site_code, [])
         existentes = _existing_contract_keys(site_versions)
 
-        for arquivo in sorted(pasta_site.iterdir()):
+        for arquivo in sorted(pasta_site.rglob("*")):
             if not arquivo.is_file():
                 continue
 
@@ -449,7 +464,7 @@ def index_contract_folders(sites, *, uploaded_by="importacao"):
                 chave_path = ("path", str(arquivo))
 
                 if chave_nome in existentes or chave_path in existentes:
-                    resumo["arquivos_ignorados"].append(str(arquivo))
+                    resumo["arquivos_ja_indexados"].append(str(arquivo))
                     continue
 
                 record = _create_contract_record(
@@ -460,6 +475,14 @@ def index_contract_folders(sites, *, uploaded_by="importacao"):
                     uploaded_by=uploaded_by,
                     notes=f"Indexado da pasta {pasta_site}"
                 )
+                if _contract_file_is_archived(
+                    arquivo,
+                    pasta_site
+                ):
+                    record["archived"] = True
+                    record["archived_at"] = ""
+                    record["archived_by"] = "indexacao"
+
                 site_versions.append(record)
                 existentes.add(chave_nome)
                 existentes.add(chave_path)

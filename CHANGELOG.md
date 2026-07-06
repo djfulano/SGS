@@ -1,5 +1,10 @@
 # Histórico de versões
 
+## 1.1.28
+
+- Indexação de documentos separa arquivos já indexados de arquivos ignorados.
+- Indexação passa a percorrer subpastas e reconhecer documentos dentro de `Arquivado`.
+
 ## 1.1.27
 
 - Migração de documentos para Código Aquiles passa a validar permissões de arquivos antes de mover.

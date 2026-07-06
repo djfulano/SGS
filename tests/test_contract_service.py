@@ -127,6 +127,10 @@ class ContractServiceTest(unittest.TestCase):
                     0
                 )
                 self.assertEqual(
+                    len(resumo_repetido["arquivos_ja_indexados"]),
+                    2
+                )
+                self.assertEqual(
                     len(versions),
                     2
                 )
@@ -149,6 +153,52 @@ class ContractServiceTest(unittest.TestCase):
                 self.assertEqual(
                     contract_service.read_contract_file(versions[0]),
                     b"pdf"
+                )
+
+            finally:
+                contract_service.CONTRACTS_DIR = original_dir
+                contract_service.CONTRACTS_INDEX_FILE = original_index
+
+    def test_index_contract_folders_indexa_arquivados_recursivamente(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            original_dir = contract_service.CONTRACTS_DIR
+            original_index = contract_service.CONTRACTS_INDEX_FILE
+
+            try:
+                contract_service.CONTRACTS_DIR = Path(temp_dir) / "contracts"
+                contract_service.CONTRACTS_INDEX_FILE = Path(temp_dir) / "contracts.json"
+                pasta_site = contract_service.CONTRACTS_DIR / "456"
+                pasta_arquivado = pasta_site / "Arquivado"
+                pasta_arquivado.mkdir(parents=True)
+                (pasta_site / "documento.pdf").write_bytes(b"ativo")
+                (pasta_arquivado / "antigo.pdf").write_bytes(b"arquivado")
+                site = Site("ABC_BH_123_IP")
+                site.codigo_topos = "456"
+
+                resumo = contract_service.index_contract_folders({
+                    "ABC_BH_123_IP": site
+                })
+                ativos = contract_service.list_site_documents("456")
+                arquivados = contract_service.list_site_documents(
+                    "456",
+                    archived=True
+                )
+
+                self.assertEqual(
+                    resumo["arquivos_indexados"],
+                    2
+                )
+                self.assertEqual(
+                    len(ativos),
+                    1
+                )
+                self.assertEqual(
+                    len(arquivados),
+                    1
+                )
+                self.assertEqual(
+                    arquivados[0]["original_filename"],
+                    "antigo.pdf"
                 )
 
             finally:
