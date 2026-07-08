@@ -1,5 +1,10 @@
 # Histórico de versões
 
+## 1.1.31
+
+- Contatos arquivados passam a ser exibidos em lista com ações por linha.
+- Botão de contato ativo passa a aparecer como Remover contato, mantendo o arquivamento lógico.
+
 ## 1.1.30
 
 - Exclusão de contatos passa a arquivar o contato em vez de remover imediatamente.

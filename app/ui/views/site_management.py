@@ -164,6 +164,29 @@ def rotulo_contato(linha):
     return texto or "Contato sem identificação"
 
 
+def detalhes_contato_arquivado(linha):
+    detalhes = []
+
+    observacoes = str(linha.get("Observações") or "").strip()
+    if observacoes:
+        detalhes.append(f"Observações: {observacoes}")
+
+    arquivado_em = str(linha.get("Arquivado em") or "").strip()
+    arquivado_por = str(linha.get("Arquivado por") or "").strip()
+    arquivamento = " por ".join([
+        valor
+        for valor in [
+            arquivado_em,
+            arquivado_por
+        ]
+        if valor
+    ])
+    if arquivamento:
+        detalhes.append(f"Arquivado: {arquivamento}")
+
+    return detalhes
+
+
 def opcoes_contatos_com_indices(df_site):
     opcoes = []
     indices = {}
@@ -2045,7 +2068,7 @@ def mostrar_contatos_site(
     if pode_editar and not df_site_ativos.empty:
         opcoes_remocao, indices_por_opcao = opcoes_contatos_com_indices(df_site_ativos)
         remover = st.multiselect(
-            "Arquivar contatos selecionados",
+            "Remover contatos selecionados",
             opcoes_remocao,
             key=chave_campo_site(
                 sufixo,
@@ -2054,7 +2077,7 @@ def mostrar_contatos_site(
         )
 
         if st.button(
-            "Arquivar contatos",
+            "Remover contatos",
             key=chave_campo_site(
                 sufixo,
                 "remover_contatos_botao"
@@ -2089,7 +2112,7 @@ def mostrar_contatos_site(
                         "backup": str(backup or "")
                     }
                 )
-                st.success("Contatos arquivados.")
+                st.success("Contatos removidos para arquivados.")
                 st.rerun()
 
     if pode_gerenciar_arquivados:
@@ -2114,118 +2137,95 @@ def mostrar_contatos_arquivados_site(
             st.info("Nenhum contato arquivado para este site.")
             return
 
-        _mostrar_grid(
-            contatos_para_exibicao(
-                df_site_arquivados,
-                incluir_arquivamento=True
-            ),
-            height=220,
-            key=chave_campo_site(
-                sufixo,
-                "contatos_arquivados_lista"
-            )
+        st.caption(
+            "Contatos removidos ficam arquivados. "
+            "Eles podem ser restaurados ou removidos definitivamente."
         )
 
-        opcoes_arquivados, indices_por_opcao = opcoes_contatos_com_indices(
-            df_site_arquivados
-        )
-        contato_escolhido = st.selectbox(
-            "Contato arquivado",
-            opcoes_arquivados,
-            index=None,
-            placeholder="Selecione um contato arquivado",
-            key=chave_campo_site(
-                sufixo,
-                "contato_arquivado"
-            )
-        )
-        indice_contato = (
-            indices_por_opcao.get(contato_escolhido)
-            if contato_escolhido
-            else None
-        )
+        for indice_contato, linha in df_site_arquivados.iterrows():
+            col_info, col_restaurar, col_remover = st.columns([6, 1.4, 2.2])
 
-        col1, col2 = st.columns(2)
+            with col_info:
+                st.markdown(f"**{rotulo_contato(linha)}**")
+                detalhes = detalhes_contato_arquivado(linha)
+                if detalhes:
+                    st.caption(" · ".join(detalhes))
 
-        with col1:
-            restaurar = st.button(
-                "Restaurar contato",
-                key=chave_campo_site(
-                    sufixo,
-                    "restaurar_contato_arquivado"
+            with col_restaurar:
+                restaurar = st.button(
+                    "Restaurar",
+                    key=chave_campo_site(
+                        sufixo,
+                        f"restaurar_contato_arquivado_{indice_contato}"
+                    )
                 )
-            )
 
-        with col2:
-            confirmacao = st.text_input(
-                "Digite EXCLUIR para remover definitivamente",
-                key=chave_campo_site(
-                    sufixo,
-                    "confirmar_exclusao_contato_arquivado"
+            with col_remover:
+                confirmacao = st.text_input(
+                    "Confirmar remoção definitiva",
+                    placeholder="EXCLUIR",
+                    label_visibility="collapsed",
+                    key=chave_campo_site(
+                        sufixo,
+                        f"confirmar_exclusao_contato_arquivado_{indice_contato}"
+                    )
                 )
-            )
-            excluir_definitivo = st.button(
-                "Remover definitivamente",
-                key=chave_campo_site(
-                    sufixo,
-                    "excluir_contato_arquivado"
+                excluir_definitivo = st.button(
+                    "Remover definitivamente",
+                    key=chave_campo_site(
+                        sufixo,
+                        f"excluir_contato_arquivado_{indice_contato}"
+                    )
                 )
-            )
 
-        if restaurar:
-            if indice_contato is None:
-                st.warning("Selecione um contato arquivado para restaurar.")
-                return
+            if restaurar:
+                df_atualizado = df_contatos.copy()
+                df_atualizado.at[indice_contato, "Arquivado"] = ""
+                df_atualizado.at[indice_contato, "Arquivado em"] = ""
+                df_atualizado.at[indice_contato, "Arquivado por"] = ""
+                backup = save_site_contacts(
+                    df_atualizado
+                )
+                usuario_atual = _usuario_logado()
+                registrar_log_sistema(
+                    "site_contato_restaurado",
+                    usuario=usuario_atual["username"],
+                    status="sucesso",
+                    detalhes={
+                        "codigo": codigo_site,
+                        "site": nome_site,
+                        "backup": str(backup or "")
+                    }
+                )
+                st.success("Contato restaurado.")
+                st.rerun()
 
-            df_atualizado = df_contatos.copy()
-            df_atualizado.at[indice_contato, "Arquivado"] = ""
-            df_atualizado.at[indice_contato, "Arquivado em"] = ""
-            df_atualizado.at[indice_contato, "Arquivado por"] = ""
-            backup = save_site_contacts(
-                df_atualizado
-            )
-            usuario_atual = _usuario_logado()
-            registrar_log_sistema(
-                "site_contato_restaurado",
-                usuario=usuario_atual["username"],
-                status="sucesso",
-                detalhes={
-                    "codigo": codigo_site,
-                    "site": nome_site,
-                    "backup": str(backup or "")
-                }
-            )
-            st.success("Contato restaurado.")
-            st.rerun()
+            if excluir_definitivo:
+                if confirmacao.strip() != "EXCLUIR":
+                    st.warning("Digite EXCLUIR na linha do contato para confirmar a remoção definitiva.")
+                    return
 
-        if excluir_definitivo:
-            if indice_contato is None:
-                st.warning("Selecione um contato arquivado para remover definitivamente.")
-                return
+                df_atualizado = df_contatos.drop(
+                    index=indice_contato
+                ).reset_index(drop=True)
+                backup = save_site_contacts(
+                    df_atualizado
+                )
+                usuario_atual = _usuario_logado()
+                registrar_log_sistema(
+                    "site_contato_removido_definitivo",
+                    usuario=usuario_atual["username"],
+                    status="sucesso",
+                    detalhes={
+                        "codigo": codigo_site,
+                        "site": nome_site,
+                        "backup": str(backup or "")
+                    }
+                )
+                st.success("Contato removido definitivamente.")
+                st.rerun()
 
-            if confirmacao.strip() != "EXCLUIR":
-                st.warning("Digite EXCLUIR para confirmar a remoção definitiva.")
-                return
-
-            df_atualizado = df_contatos.drop(
-                index=indice_contato
-            ).reset_index(drop=True)
-            backup = save_site_contacts(
-                df_atualizado
-            )
-            usuario_atual = _usuario_logado()
-            registrar_log_sistema(
-                "site_contato_removido_definitivo",
-                usuario=usuario_atual["username"],
-                status="sucesso",
-                detalhes={
-                    "codigo": codigo_site,
-                    "site": nome_site,
-                    "backup": str(backup or "")
-                }
-            )
-            st.success("Contato removido definitivamente.")
-            st.rerun()
+            st.divider()
 
 
 def mostrar_importacao_contatos(df_contatos, pode_editar):
@@ -2482,7 +2482,7 @@ def mostrar_editor_contatos_site(
     with col2:
         excluir = (
             st.button(
-                "Arquivar contato",
+                "Remover contato",
                 key=chave_campo_site(sufixo, "aba_excluir_contato")
             )
             if pode_editar and indice_contato is not None
@@ -2562,7 +2562,7 @@ def mostrar_editor_contatos_site(
                 "backup": str(backup or "")
             }
         )
-        st.success("Contato arquivado.")
+        st.success("Contato removido para arquivados.")
         st.rerun()
 
     if pode_gerenciar_arquivados:
