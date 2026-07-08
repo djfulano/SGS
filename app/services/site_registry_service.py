@@ -49,7 +49,21 @@ SITE_CONTACT_COLUMNS = [
     "Tipo de contato",
     "Nome",
     "Telefones",
-    "Emails"
+    "Emails",
+    "Observações",
+    "Arquivado",
+    "Arquivado em",
+    "Arquivado por"
+]
+
+SITE_CONTACT_TYPES = [
+    "Sindico",
+    "Zelador",
+    "Administradora",
+    "Portaria",
+    "Morador",
+    "Proprietário",
+    "Outro"
 ]
 
 NUMERIC_COLUMNS = {
@@ -95,7 +109,21 @@ CONTACT_COLUMN_ALIASES = {
     "EMAIL": "Emails",
     "EMAILS": "Emails",
     "E-MAIL": "Emails",
-    "E-MAILS": "Emails"
+    "E-MAILS": "Emails",
+    "OBS": "Observações",
+    "OBSERVACAO": "Observações",
+    "OBSERVAÇÃO": "Observações",
+    "OBSERVACOES": "Observações",
+    "OBSERVAÇÕES": "Observações",
+    "OBSERVATION": "Observações",
+    "NOTAS": "Observações",
+    "ARQUIVADO": "Arquivado",
+    "ARQUIVADA": "Arquivado",
+    "ARQUIVADO EM": "Arquivado em",
+    "ARQUIVADA EM": "Arquivado em",
+    "DATA ARQUIVAMENTO": "Arquivado em",
+    "ARQUIVADO POR": "Arquivado por",
+    "ARQUIVADA POR": "Arquivado por"
 }
 
 
@@ -458,7 +486,11 @@ def legacy_contacts_from_sites(df):
                 "Tipo de contato": "Principal",
                 "Nome": contact,
                 "Telefones": phone,
-                "Emails": email
+                "Emails": email,
+                "Observações": "",
+                "Arquivado": "",
+                "Arquivado em": "",
+                "Arquivado por": ""
             })
 
         if others:
@@ -467,7 +499,11 @@ def legacy_contacts_from_sites(df):
                 "Tipo de contato": "Outros",
                 "Nome": "",
                 "Telefones": "",
-                "Emails": others
+                "Emails": others,
+                "Observações": "",
+                "Arquivado": "",
+                "Arquivado em": "",
+                "Arquivado por": ""
             })
 
     return pd.DataFrame(
@@ -495,6 +531,7 @@ def normalize_site_contacts(df):
         | df["Nome"].astype(str).str.strip().ne("")
         | df["Telefones"].astype(str).str.strip().ne("")
         | df["Emails"].astype(str).str.strip().ne("")
+        | df["Observações"].astype(str).str.strip().ne("")
     )
 
     return df[has_site & has_contact].reset_index(drop=True)

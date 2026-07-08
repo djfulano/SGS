@@ -1,5 +1,16 @@
 # Histórico de versões
 
+## 1.1.30
+
+- Exclusão de contatos passa a arquivar o contato em vez de remover imediatamente.
+- Adicionada seção de contatos arquivados com restauração e remoção definitiva por permissão específica.
+
+## 1.1.29
+
+- Contatos dos sites passam a ter tipos padronizados e campo Observações.
+- Adicionada permissão específica para incluir contatos sem permitir edição/exclusão.
+- Tabelas e listas de contatos deixam de exibir código/índice técnico para o usuário.
+
 ## 1.1.28
 
 - Indexação de documentos separa arquivos já indexados de arquivos ignorados.

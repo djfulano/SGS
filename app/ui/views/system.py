@@ -297,7 +297,9 @@ def grupo_permissao_perfil(
     grupos_especiais = {
         "resumo_superior": "Resumo",
         "editar_sites": "Gerenciamento de Sites",
+        "incluir_contatos_sites": "Gerenciamento de Sites",
         "editar_contatos_sites": "Gerenciamento de Sites",
+        "gerenciar_contatos_arquivados_sites": "Gerenciamento de Sites",
         "editar_contratos_sites": "Gerenciamento de Sites",
     }
 

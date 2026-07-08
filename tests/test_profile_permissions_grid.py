@@ -53,6 +53,20 @@ class ProfilePermissionsGridTest(unittest.TestCase):
             ),
             "Suporte"
         )
+        self.assertEqual(
+            grupo_permissao_perfil(
+                "incluir_contatos_sites",
+                "Ação > Incluir contatos dos sites"
+            ),
+            "Gerenciamento de Sites"
+        )
+        self.assertEqual(
+            grupo_permissao_perfil(
+                "gerenciar_contatos_arquivados_sites",
+                "Ação > Gerenciar contatos arquivados dos sites"
+            ),
+            "Gerenciamento de Sites"
+        )
 
     def test_grade_marca_permissoes_atuais(self):
         df_grade = montar_grade_permissoes_perfil(
@@ -129,6 +143,14 @@ class ProfilePermissionsGridTest(unittest.TestCase):
         self.assertEqual(
             grupos_por_chave["base_equipamentos"],
             "Equipamentos"
+        )
+        self.assertEqual(
+            grupos_por_chave["incluir_contatos_sites"],
+            "Gerenciamento de Sites"
+        )
+        self.assertEqual(
+            grupos_por_chave["gerenciar_contatos_arquivados_sites"],
+            "Gerenciamento de Sites"
         )
         self.assertEqual(
             grupos_por_chave["importacao"],

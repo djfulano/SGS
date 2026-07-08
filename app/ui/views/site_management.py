@@ -1,5 +1,6 @@
 import io
 import zipfile
+from datetime import datetime
 
 import pandas as pd
 import requests
@@ -27,6 +28,7 @@ from app.services.contract_service import list_site_documents
 from app.services.contract_service import read_contract_file
 from app.services.contract_service import restore_archived_contract_file
 from app.services.site_registry_service import SITE_CODE_COLUMN
+from app.services.site_registry_service import SITE_CONTACT_TYPES
 from app.services.site_registry_service import load_site_contacts
 from app.services.site_registry_service import load_site_registry
 from app.services.site_registry_service import normalize_code
@@ -40,6 +42,19 @@ _mostrar_grid = None
 _formatar_moeda = None
 _usuario_logado = None
 _carregar_dados = None
+
+CONTACT_DISPLAY_COLUMNS = {
+    "Tipo de contato": "Tipo",
+    "Nome": "Nome",
+    "Telefones": "Telefones",
+    "Emails": "E-mails",
+    "Observações": "Observações"
+}
+ARCHIVED_CONTACT_DISPLAY_COLUMNS = {
+    **CONTACT_DISPLAY_COLUMNS,
+    "Arquivado em": "Arquivado em",
+    "Arquivado por": "Arquivado por"
+}
 
 
 def configurar_gerenciamento_sites(
@@ -57,6 +72,115 @@ def configurar_gerenciamento_sites(
     _formatar_moeda = formatar_moeda
     _usuario_logado = usuario_logado
     _carregar_dados = carregar_dados
+
+
+def contato_arquivado(valor):
+    return str(valor or "").strip().casefold() in {
+        "sim",
+        "s",
+        "true",
+        "1",
+        "yes"
+    }
+
+
+def contatos_ativos(df_contatos):
+    if df_contatos.empty or "Arquivado" not in df_contatos.columns:
+        return df_contatos.copy()
+
+    return df_contatos[
+        ~df_contatos["Arquivado"].apply(contato_arquivado)
+    ].copy()
+
+
+def contatos_arquivados(df_contatos):
+    if df_contatos.empty or "Arquivado" not in df_contatos.columns:
+        return df_contatos.iloc[0:0].copy()
+
+    return df_contatos[
+        df_contatos["Arquivado"].apply(contato_arquivado)
+    ].copy()
+
+
+def contatos_para_exibicao(df_contatos, incluir_arquivamento=False):
+    colunas = (
+        ARCHIVED_CONTACT_DISPLAY_COLUMNS
+        if incluir_arquivamento
+        else CONTACT_DISPLAY_COLUMNS
+    )
+
+    if df_contatos.empty:
+        return pd.DataFrame(
+            columns=list(colunas.values())
+        )
+
+    df = df_contatos.copy()
+
+    for coluna in colunas:
+        if coluna not in df.columns:
+            df[coluna] = ""
+
+    return df[list(colunas)].rename(
+        columns=colunas
+    )
+
+
+def opcoes_tipo_contato(valor_atual=""):
+    return list(SITE_CONTACT_TYPES)
+
+
+def normalizar_tipo_contato_exibicao(valor):
+    valor = str(valor or "").strip()
+
+    if valor.casefold() == "síndico".casefold():
+        return "Sindico"
+
+    return valor
+
+
+def indice_tipo_contato(valor_atual=""):
+    valor_atual = normalizar_tipo_contato_exibicao(valor_atual)
+    opcoes = opcoes_tipo_contato()
+
+    if valor_atual in opcoes:
+        return opcoes.index(valor_atual)
+
+    return opcoes.index("Outro")
+
+
+def rotulo_contato(linha):
+    partes = [
+        str(linha.get("Tipo de contato") or "").strip(),
+        str(linha.get("Nome") or "").strip(),
+        str(linha.get("Telefones") or "").strip(),
+        str(linha.get("Emails") or "").strip()
+    ]
+    texto = " - ".join([
+        parte
+        for parte in partes
+        if parte
+    ])
+
+    return texto or "Contato sem identificação"
+
+
+def opcoes_contatos_com_indices(df_site):
+    opcoes = []
+    indices = {}
+
+    for indice, linha in df_site.iterrows():
+        rotulo_base = rotulo_contato(linha)
+        rotulo = rotulo_base
+        contador = 2
+
+        while rotulo in indices:
+            rotulo = f"{rotulo_base} ({contador})"
+            contador += 1
+
+        opcoes.append(rotulo)
+        indices[rotulo] = indice
+
+    return opcoes, indices
 
 
 def valor_exibicao_site(valor):
@@ -1771,7 +1895,9 @@ def mostrar_contatos_site(
     df_contatos,
     codigo,
     snmpc,
+    pode_incluir,
     pode_editar,
+    pode_gerenciar_arquivados,
     sufixo
 ):
     st.subheader("Contatos do site")
@@ -1782,12 +1908,14 @@ def mostrar_contatos_site(
         codigo,
         snmpc
     )
+    df_site_ativos = contatos_ativos(df_site)
+    df_site_arquivados = contatos_arquivados(df_site)
 
-    if df_site.empty:
+    if df_site_ativos.empty:
         st.info("Nenhum contato cadastrado para este site.")
     else:
         _mostrar_grid(
-            df_site,
+            contatos_para_exibicao(df_site_ativos),
             height=220,
             key=chave_campo_site(
                 sufixo,
@@ -1795,14 +1923,24 @@ def mostrar_contatos_site(
             )
         )
 
-    if not pode_editar:
+    if not pode_incluir:
+        if pode_gerenciar_arquivados:
+            mostrar_contatos_arquivados_site(
+                df_contatos,
+                df_site_arquivados,
+                codigo,
+                snmpc,
+                sufixo
+            )
         return
 
-    col1, col2, col3, col4, col5 = st.columns([1.1, 1.2, 1, 1, 0.8])
+    col1, col2, col3 = st.columns([1.1, 1.2, 1])
 
     with col1:
-        tipo_contato = st.text_input(
+        tipo_contato = st.selectbox(
             "Tipo de contato",
+            opcoes_tipo_contato(),
+            index=0,
             key=chave_campo_site(
                 sufixo,
                 "tipo_contato"
@@ -1819,6 +1957,17 @@ def mostrar_contatos_site(
         )
 
     with col3:
+        adicionar = st.button(
+            "Adicionar contato",
+            key=chave_campo_site(
+                sufixo,
+                "adicionar_contato"
+            )
+        )
+
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
         telefones = st.text_area(
             "Telefones",
             height=80,
@@ -1828,7 +1977,7 @@ def mostrar_contatos_site(
             )
         )
 
-    with col4:
+    with col2:
         emails = st.text_area(
             "Emails",
             height=80,
@@ -1838,12 +1987,13 @@ def mostrar_contatos_site(
             )
         )
 
-    with col5:
-        adicionar = st.button(
-            "Adicionar contato",
+    with col3:
+        observacoes = st.text_area(
+            "Observações",
+            height=80,
             key=chave_campo_site(
                 sufixo,
-                "adicionar_contato"
+                "observacoes_contato_site"
             )
         )
 
@@ -1854,17 +2004,19 @@ def mostrar_contatos_site(
             tipo_contato.strip(),
             nome_contato.strip(),
             telefones.strip(),
-            emails.strip()
+            emails.strip(),
+            observacoes.strip()
         ]):
             st.error("Informe pelo menos um dado do contato.")
         else:
             novo_contato = pd.DataFrame([
                 {
                     "CÓDIGO AQUILES": codigo,
-                    "Tipo de contato": tipo_contato.strip(),
+                    "Tipo de contato": normalizar_tipo_contato_exibicao(tipo_contato),
                     "Nome": nome_contato.strip(),
                     "Telefones": telefones.strip(),
-                    "Emails": emails.strip()
+                    "Emails": emails.strip(),
+                    "Observações": observacoes.strip()
                 }
             ])
             df_atualizado = pd.concat(
@@ -1890,13 +2042,10 @@ def mostrar_contatos_site(
             st.success("Contato adicionado.")
             st.rerun()
 
-    if not df_site.empty:
-        opcoes_remocao = [
-            f"{indice} - {linha['Tipo de contato']} - {linha.get('Nome', '')} - {linha.get('Telefones', '')} - {linha.get('Emails', '')}"
-            for indice, linha in df_site.iterrows()
-        ]
+    if pode_editar and not df_site_ativos.empty:
+        opcoes_remocao, indices_por_opcao = opcoes_contatos_com_indices(df_site_ativos)
         remover = st.multiselect(
-            "Remover contatos selecionados",
+            "Arquivar contatos selecionados",
             opcoes_remocao,
             key=chave_campo_site(
                 sufixo,
@@ -1905,29 +2054,33 @@ def mostrar_contatos_site(
         )
 
         if st.button(
-            "Remover contatos",
+            "Arquivar contatos",
             key=chave_campo_site(
                 sufixo,
                 "remover_contatos_botao"
             )
         ):
             indices = [
-                int(opcao.split(" - ", 1)[0])
+                indices_por_opcao[opcao]
                 for opcao in remover
             ]
 
             if not indices:
                 st.warning("Selecione ao menos um contato para remover.")
             else:
-                df_atualizado = df_contatos.drop(
-                    index=indices
-                ).reset_index(drop=True)
+                df_atualizado = df_contatos.copy()
+                usuario_atual = _usuario_logado()
+
+                for indice in indices:
+                    df_atualizado.at[indice, "Arquivado"] = "Sim"
+                    df_atualizado.at[indice, "Arquivado em"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    df_atualizado.at[indice, "Arquivado por"] = usuario_atual["username"]
+
                 backup = save_site_contacts(
                     df_atualizado
                 )
-                usuario_atual = _usuario_logado()
                 registrar_log_sistema(
-                    "site_contato_removido",
+                    "site_contato_arquivado",
                     usuario=usuario_atual["username"],
                     status="sucesso",
                     detalhes={
@@ -1936,8 +2089,143 @@ def mostrar_contatos_site(
                         "backup": str(backup or "")
                     }
                 )
-                st.success("Contatos removidos.")
+                st.success("Contatos arquivados.")
                 st.rerun()
+
+    if pode_gerenciar_arquivados:
+        mostrar_contatos_arquivados_site(
+            df_contatos,
+            df_site_arquivados,
+            codigo,
+            snmpc,
+            sufixo
+        )
+
+
+def mostrar_contatos_arquivados_site(
+    df_contatos,
+    df_site_arquivados,
+    codigo_site,
+    nome_site,
+    sufixo
+):
+    with st.expander("Contatos arquivados", expanded=False):
+        if df_site_arquivados.empty:
+            st.info("Nenhum contato arquivado para este site.")
+            return
+
+        _mostrar_grid(
+            contatos_para_exibicao(
+                df_site_arquivados,
+                incluir_arquivamento=True
+            ),
+            height=220,
+            key=chave_campo_site(
+                sufixo,
+                "contatos_arquivados_lista"
+            )
+        )
+
+        opcoes_arquivados, indices_por_opcao = opcoes_contatos_com_indices(
+            df_site_arquivados
+        )
+        contato_escolhido = st.selectbox(
+            "Contato arquivado",
+            opcoes_arquivados,
+            index=None,
+            placeholder="Selecione um contato arquivado",
+            key=chave_campo_site(
+                sufixo,
+                "contato_arquivado"
+            )
+        )
+        indice_contato = (
+            indices_por_opcao.get(contato_escolhido)
+            if contato_escolhido
+            else None
+        )
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            restaurar = st.button(
+                "Restaurar contato",
+                key=chave_campo_site(
+                    sufixo,
+                    "restaurar_contato_arquivado"
+                )
+            )
+
+        with col2:
+            confirmacao = st.text_input(
+                "Digite EXCLUIR para remover definitivamente",
+                key=chave_campo_site(
+                    sufixo,
+                    "confirmar_exclusao_contato_arquivado"
+                )
+            )
+            excluir_definitivo = st.button(
+                "Remover definitivamente",
+                key=chave_campo_site(
+                    sufixo,
+                    "excluir_contato_arquivado"
+                )
+            )
+
+        if restaurar:
+            if indice_contato is None:
+                st.warning("Selecione um contato arquivado para restaurar.")
+                return
+
+            df_atualizado = df_contatos.copy()
+            df_atualizado.at[indice_contato, "Arquivado"] = ""
+            df_atualizado.at[indice_contato, "Arquivado em"] = ""
+            df_atualizado.at[indice_contato, "Arquivado por"] = ""
+            backup = save_site_contacts(
+                df_atualizado
+            )
+            usuario_atual = _usuario_logado()
+            registrar_log_sistema(
+                "site_contato_restaurado",
+                usuario=usuario_atual["username"],
+                status="sucesso",
+                detalhes={
+                    "codigo": codigo_site,
+                    "site": nome_site,
+                    "backup": str(backup or "")
+                }
+            )
+            st.success("Contato restaurado.")
+            st.rerun()
+
+        if excluir_definitivo:
+            if indice_contato is None:
+                st.warning("Selecione um contato arquivado para remover definitivamente.")
+                return
+
+            if confirmacao.strip() != "EXCLUIR":
+                st.warning("Digite EXCLUIR para confirmar a remoção definitiva.")
+                return
+
+            df_atualizado = df_contatos.drop(
+                index=indice_contato
+            ).reset_index(drop=True)
+            backup = save_site_contacts(
+                df_atualizado
+            )
+            usuario_atual = _usuario_logado()
+            registrar_log_sistema(
+                "site_contato_removido_definitivo",
+                usuario=usuario_atual["username"],
+                status="sucesso",
+                detalhes={
+                    "codigo": codigo_site,
+                    "site": nome_site,
+                    "backup": str(backup or "")
+                }
+            )
+            st.success("Contato removido definitivamente.")
+            st.rerun()
 
 
 def mostrar_importacao_contatos(df_contatos, pode_editar):
@@ -1968,7 +2256,7 @@ def mostrar_importacao_contatos(df_contatos, pode_editar):
 
     st.caption(
         "O arquivo deve conter as colunas: Código Aquiles, "
-        "Tipo de contato, Nome, Telefones e E-mails. Em Excel, a aba CONTATOS será usada quando existir."
+        "Tipo de contato, Nome, Telefones, E-mails e Observações. Em Excel, a aba CONTATOS será usada quando existir."
     )
 
     if not arquivo:
@@ -2047,7 +2335,14 @@ def opcao_site_contato(linha):
     )
 
 
-def mostrar_editor_contatos_site(codigo_site, nome_site, pode_editar, prefixo):
+def mostrar_editor_contatos_site(
+    codigo_site,
+    nome_site,
+    pode_incluir,
+    pode_editar,
+    pode_gerenciar_arquivados,
+    prefixo
+):
     df_contatos = load_site_contacts()
     codigo_site = normalize_code(
         codigo_site
@@ -2057,41 +2352,65 @@ def mostrar_editor_contatos_site(codigo_site, nome_site, pode_editar, prefixo):
         codigo_site,
         ""
     )
+    df_site_ativos = contatos_ativos(df_site)
+    df_site_arquivados = contatos_arquivados(df_site)
 
-    col1, col2 = st.columns(2)
+    col1, col2, col3 = st.columns(3)
 
     col1.metric(
         "Código Aquiles",
         codigo_site or "-"
     )
     col2.metric(
-        "Contatos",
-        len(df_site)
+        "Contatos ativos",
+        len(df_site_ativos)
+    )
+    col3.metric(
+        "Arquivados",
+        len(df_site_arquivados)
     )
 
     st.subheader("Lista de contatos")
 
-    if df_site.empty:
+    if df_site_ativos.empty:
         st.info("Nenhum contato cadastrado para este site.")
     else:
         _mostrar_grid(
-            df_site,
+            contatos_para_exibicao(df_site_ativos),
             height=260,
             key=f"{prefixo}_contatos_sites_lista"
         )
 
-    if not pode_editar:
+    if not pode_incluir and not pode_editar:
+        if pode_gerenciar_arquivados:
+            mostrar_contatos_arquivados_site(
+                df_contatos,
+                df_site_arquivados,
+                codigo_site,
+                nome_site,
+                prefixo
+            )
+            return
+
         st.info("Seu perfil pode consultar contatos, mas não alterar o cadastro.")
         return
 
-    st.subheader("Incluir ou editar contato")
+    st.subheader(
+        "Incluir ou editar contato"
+        if pode_editar
+        else "Incluir contato"
+    )
 
     opcoes_contato = [
         "Novo contato"
-    ] + [
-        f"{indice} - {linha.get('Tipo de contato', '')} - {linha.get('Nome', '')} - {linha.get('Telefones', '')} - {linha.get('Emails', '')}"
-        for indice, linha in df_site.iterrows()
     ]
+    indices_por_opcao = {}
+
+    if pode_editar:
+        opcoes_existentes, indices_por_opcao = opcoes_contatos_com_indices(
+            df_site_ativos
+        )
+        opcoes_contato += opcoes_existentes
 
     escolha_contato = st.selectbox(
         "Contato",
@@ -2103,21 +2422,19 @@ def mostrar_editor_contatos_site(codigo_site, nome_site, pode_editar, prefixo):
     contato_atual = {}
 
     if escolha_contato != "Novo contato":
-        indice_contato = int(
-            escolha_contato.split(
-                " - ",
-                1
-            )[0]
-        )
+        indice_contato = indices_por_opcao.get(escolha_contato)
         contato_atual = df_contatos.loc[indice_contato].to_dict()
 
     sufixo = f"{prefixo}_{codigo_site}_{indice_contato if indice_contato is not None else 'novo'}"
     col1, col2 = st.columns(2)
 
     with col1:
-        tipo_contato = st.text_input(
+        tipo_atual = str(contato_atual.get("Tipo de contato") or "")
+        opcoes_tipo = opcoes_tipo_contato(tipo_atual)
+        tipo_contato = st.selectbox(
             "Tipo de contato",
-            value=str(contato_atual.get("Tipo de contato") or ""),
+            opcoes_tipo,
+            index=indice_tipo_contato(tipo_atual),
             key=chave_campo_site(sufixo, "aba_tipo_contato")
         )
 
@@ -2146,6 +2463,13 @@ def mostrar_editor_contatos_site(codigo_site, nome_site, pode_editar, prefixo):
             key=chave_campo_site(sufixo, "aba_emails_contato")
         )
 
+    observacoes = st.text_area(
+        "Observações",
+        value=str(contato_atual.get("Observações") or ""),
+        height=90,
+        key=chave_campo_site(sufixo, "aba_observacoes_contato")
+    )
+
     col1, col2 = st.columns([1, 4])
 
     with col1:
@@ -2158,10 +2482,10 @@ def mostrar_editor_contatos_site(codigo_site, nome_site, pode_editar, prefixo):
     with col2:
         excluir = (
             st.button(
-                "Excluir contato",
+                "Arquivar contato",
                 key=chave_campo_site(sufixo, "aba_excluir_contato")
             )
-            if indice_contato is not None
+            if pode_editar and indice_contato is not None
             else False
         )
 
@@ -2170,17 +2494,19 @@ def mostrar_editor_contatos_site(codigo_site, nome_site, pode_editar, prefixo):
             tipo_contato.strip(),
             nome_contato.strip(),
             telefones.strip(),
-            emails.strip()
+            emails.strip(),
+            observacoes.strip()
         ]):
             st.error("Informe pelo menos um dado do contato.")
             return
 
         registro = {
             "CÓDIGO AQUILES": codigo_site,
-            "Tipo de contato": tipo_contato.strip(),
+            "Tipo de contato": normalizar_tipo_contato_exibicao(tipo_contato),
             "Nome": nome_contato.strip(),
             "Telefones": telefones.strip(),
-            "Emails": emails.strip()
+            "Emails": emails.strip(),
+            "Observações": observacoes.strip()
         }
 
         if indice_contato is None:
@@ -2218,15 +2544,16 @@ def mostrar_editor_contatos_site(codigo_site, nome_site, pode_editar, prefixo):
         st.rerun()
 
     if excluir:
-        df_atualizado = df_contatos.drop(
-            index=indice_contato
-        ).reset_index(drop=True)
+        df_atualizado = df_contatos.copy()
+        usuario_atual = _usuario_logado()
+        df_atualizado.at[indice_contato, "Arquivado"] = "Sim"
+        df_atualizado.at[indice_contato, "Arquivado em"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        df_atualizado.at[indice_contato, "Arquivado por"] = usuario_atual["username"]
         backup = save_site_contacts(
             df_atualizado
         )
-        usuario_atual = _usuario_logado()
         registrar_log_sistema(
-            "site_contato_excluido",
+            "site_contato_arquivado",
             usuario=usuario_atual["username"],
             status="sucesso",
             detalhes={
@@ -2235,8 +2562,17 @@ def mostrar_editor_contatos_site(codigo_site, nome_site, pode_editar, prefixo):
                 "backup": str(backup or "")
             }
         )
-        st.success("Contato excluído.")
+        st.success("Contato arquivado.")
         st.rerun()
+
+    if pode_gerenciar_arquivados:
+        mostrar_contatos_arquivados_site(
+            df_contatos,
+            df_site_arquivados,
+            codigo_site,
+            nome_site,
+            prefixo
+        )
 
 
 def mostrar_gerenciar_contatos_sites():
@@ -2247,6 +2583,14 @@ def mostrar_gerenciar_contatos_sites():
         usuario_atual,
         "editar_contatos_sites"
     )
+    pode_incluir = pode_editar or has_permission(
+        usuario_atual,
+        "incluir_contatos_sites"
+    )
+    pode_gerenciar_arquivados = has_permission(
+        usuario_atual,
+        "gerenciar_contatos_arquivados_sites"
+    )
 
     df_cadastro = load_site_registry()
 
@@ -2254,15 +2598,21 @@ def mostrar_gerenciar_contatos_sites():
         st.info("Nenhum site cadastrado na planilha Sites.")
         return
 
-    opcoes_sites = [
-        opcao_site_contato(linha)
-        for _, linha in df_cadastro.sort_values(
-            by=[
-                "NOME",
-                "SMNPC"
-            ]
-        ).iterrows()
-    ]
+    opcoes_sites = []
+    codigos_por_opcao = {}
+
+    for _, linha in df_cadastro.sort_values(
+        by=[
+            "NOME",
+            "SMNPC"
+        ]
+    ).iterrows():
+        opcao = opcao_site_contato(linha)
+        codigo = normalize_code(
+            linha.get(SITE_CODE_COLUMN)
+        )
+        opcoes_sites.append(opcao)
+        codigos_por_opcao[opcao] = codigo
 
     site_escolhido = st.selectbox(
         "Site",
@@ -2276,12 +2626,7 @@ def mostrar_gerenciar_contatos_sites():
         st.info("Pesquise e selecione um site para gerenciar os contatos.")
         return
 
-    codigo_site = normalize_code(
-        site_escolhido.split(
-            " - ",
-            1
-        )[0]
-    )
+    codigo_site = codigos_por_opcao.get(site_escolhido, "")
     registro_site = df_cadastro[
         df_cadastro[SITE_CODE_COLUMN].apply(normalize_code) == codigo_site
     ]
@@ -2294,7 +2639,9 @@ def mostrar_gerenciar_contatos_sites():
     mostrar_editor_contatos_site(
         codigo_site,
         nome_site,
+        pode_incluir,
         pode_editar,
+        pode_gerenciar_arquivados,
         "contatos_sites"
     )
 
@@ -2638,7 +2985,12 @@ def mostrar_gerenciamento_sites_unificado(
             lambda: mostrar_editor_contatos_site(
                 site.get("Codigo"),
                 site.get("Nome Cadastro") or site.get("Site SNMPc"),
+                (
+                    has_permission(usuario_atual, "editar_contatos_sites")
+                    or has_permission(usuario_atual, "incluir_contatos_sites")
+                ),
                 has_permission(usuario_atual, "editar_contatos_sites"),
+                has_permission(usuario_atual, "gerenciar_contatos_arquivados_sites"),
                 "gerenciamento_sites"
             )
         ),
