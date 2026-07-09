@@ -33,6 +33,7 @@ cache/*
 # Configuracoes geradas em producao
 config/*.json
 config/logs/
+config/finance/
 config/contracts/
 config/img/
 !config/.gitkeep

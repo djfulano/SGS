@@ -5,6 +5,7 @@ import pandas as pd
 from app.models.cliente import Cliente
 from app.models.site import Site
 from app.ui.views.topology import formatar_banda_mbps
+from app.ui.views.topology import contar_sites_ativos_resumo
 from app.ui.views.topology import montar_metricas_banda_telecom_site
 from app.ui.views.topology import montar_metricas_banda_telecom_sites
 from app.ui.views.topology import montar_resumo_sites
@@ -39,6 +40,7 @@ class TopologyBandwidthTest(unittest.TestCase):
         site = Site("POP_A", "POP")
         site.custo = 1234.56
         site.nome_cadastro = "POP A Cadastro"
+        site.status_cadastro = "Ativo"
 
         df_resumo = montar_resumo_sites({
             "POP_A": site
@@ -51,6 +53,68 @@ class TopologyBandwidthTest(unittest.TestCase):
         self.assertEqual(
             df_resumo.loc[0, "Nome"],
             "POP A Cadastro"
+        )
+        self.assertEqual(
+            df_resumo.loc[0, "Status Cadastro"],
+            "Ativo"
+        )
+
+    def test_conta_apenas_sites_ativos_no_resumo_principal(self):
+        df_resumo = pd.DataFrame([
+            {"Site": "POP_A", "Status Cadastro": "Ativo"},
+            {"Site": "POP_B", "Status Cadastro": " ativo "},
+            {"Site": "POP_C", "Status Cadastro": "ATIVO"},
+            {"Site": "POP_D", "Status Cadastro": "Cancelado"},
+            {"Site": "POP_E", "Status Cadastro": ""},
+            {"Site": "POP_F", "Status Cadastro": None}
+        ])
+
+        self.assertEqual(
+            contar_sites_ativos_resumo(df_resumo),
+            3
+        )
+
+    def test_conta_sites_ativos_sem_alterar_demais_metricas(self):
+        ativo = Site("POP_ATIVO", "POP")
+        ativo.status_cadastro = "Ativo"
+        ativo.custo = 50
+        ativo.adicionar_cliente(
+            self.cliente_com_produto(
+                "1001",
+                "NeoSoft 100 Mbps"
+            )
+        )
+
+        cancelado = Site("POP_CANCELADO", "POP")
+        cancelado.status_cadastro = "Cancelado"
+        cancelado.custo = 70
+        cancelado.adicionar_cliente(
+            self.cliente_com_produto(
+                "1002",
+                "NeoTotal 1 Gbps"
+            )
+        )
+
+        df_resumo = montar_resumo_sites({
+            "POP_ATIVO": ativo,
+            "POP_CANCELADO": cancelado
+        })
+
+        self.assertEqual(
+            contar_sites_ativos_resumo(df_resumo),
+            1
+        )
+        self.assertEqual(
+            df_resumo["Clientes Total"].sum(),
+            2
+        )
+        self.assertEqual(
+            df_resumo["Receita Total"].sum(),
+            200
+        )
+        self.assertEqual(
+            df_resumo["Custo"].sum(),
+            120
         )
 
     def test_normaliza_velocidades_em_mbps(self):

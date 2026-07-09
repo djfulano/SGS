@@ -1,5 +1,29 @@
 # Histórico de versões
 
+## 1.2.4
+
+- Resumo principal da Topologia passa a contar apenas sites com Status Cadastro Ativo no card Sites.
+- Reimportação financeira deixa de tratar campos de auditoria como alteração de registro.
+
+## 1.2.3
+
+- Importação financeira passa a exibir quantidade de registros vinculados, sem vínculo e sem Microsiga.
+- Prévia da importação financeira mostra amostra dos pagamentos sem vínculo para conferência.
+
+## 1.2.2
+
+- Módulo Financeiro passa a importar e exibir apenas o ano corrente e anos futuros para manter a operação leve.
+
+## 1.2.1
+
+- Importação financeira passa a normalizar Código Microsiga com zeros à esquerda para localizar sites corretamente.
+
+## 1.2.0
+
+- Adicionado módulo Financeiro com Dashboard, Pagamentos, Acordos, Importação e Exportações.
+- Importação do Novo Fechamento passa a carregar histórico de pagamentos e acordos sem executar macros.
+- Pagamentos e acordos passam a ser persistidos em base interna do SGS e vinculados aos sites por Código Microsiga.
+
 ## 1.1.31
 
 - Contatos arquivados passam a ser exibidos em lista com ações por linha.

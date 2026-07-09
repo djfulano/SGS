@@ -257,6 +257,7 @@ def montar_resumo_sites(sites):
             "Site": site.nome,
             "Nome": getattr(site, "nome_cadastro", ""),
             "Tipo": site.tipo,
+            "Status Cadastro": getattr(site, "status_cadastro", ""),
             "Clientes Diretos": clientes_diretos,
             "Clientes Indiretos": clientes_indiretos,
             "Clientes Total": clientes_diretos + clientes_indiretos,
@@ -267,6 +268,20 @@ def montar_resumo_sites(sites):
         })
 
     return pd.DataFrame(dados)
+
+
+def contar_sites_ativos_resumo(df_sites):
+    if df_sites.empty or "Status Cadastro" not in df_sites.columns:
+        return 0
+
+    return int(
+        df_sites["Status Cadastro"]
+        .astype(str)
+        .str.strip()
+        .str.casefold()
+        .eq("ativo")
+        .sum()
+    )
 
 
 def montar_tabela_sites_usados(sites_usados, incluir_filhos):
@@ -481,7 +496,7 @@ def mostrar_metricas(df_sites):
 
     col4.metric(
         "Sites",
-        len(df_sites)
+        contar_sites_ativos_resumo(df_sites)
     )
 
 

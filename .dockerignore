@@ -9,8 +9,10 @@ __pycache__
 .streamlit
 app/config/
 cache
+contracts
+backups
+imports
 config
-imports/archive
 rede.db
 *.db
 *.sqlite

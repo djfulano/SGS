@@ -87,6 +87,8 @@ from app.ui.views.support import configurar_suporte
 from app.ui.views.support import mostrar_suporte
 from app.ui.views.viability import configurar_viabilidade
 from app.ui.views.viability import mostrar_viabilidade
+from app.ui.views.finance import configurar_financeiro
+from app.ui.views.finance import mostrar_financeiro
 from app.ui.views.topology import configurar_topologia
 from app.ui.views.topology import montar_resumo_sites
 from app.ui.views.topology import mostrar_metricas
@@ -961,6 +963,11 @@ configurar_viabilidade(
     usuario_logado,
     mostrar_grid
 )
+configurar_financeiro(
+    usuario_logado,
+    mostrar_grid,
+    formatar_moeda
+)
 
 
 def seletor_site_gerenciamento(df_detalhes):
@@ -1509,6 +1516,13 @@ abas_disponiveis = [
         )
     ),
     (
+        "financeiro",
+        "Financeiro",
+        lambda: mostrar_financeiro(
+            sites
+        )
+    ),
+    (
         "mapa",
         "Mapa",
         lambda: mostrar_mapa_clientes(
@@ -1612,6 +1626,24 @@ def permissao_aba(aba):
                 "viabilidade_consulta",
                 "viabilidade_migracao",
                 "viabilidade_estudos"
+            ]
+        )
+
+    if chave == "financeiro":
+
+        return any(
+            has_permission(
+                usuario_logado(),
+                permissao_financeiro
+            )
+            for permissao_financeiro in [
+                "financeiro",
+                "financeiro_dashboard",
+                "financeiro_pagamentos",
+                "financeiro_acordos",
+                "financeiro_importar",
+                "financeiro_exportacoes",
+                "financeiro_editar"
             ]
         )
 
