@@ -6,13 +6,25 @@ from unittest.mock import patch
 from app.services.client_viability import dados_cliente_viabilidade
 from app.services.client_viability import salvar_dados_cliente_viabilidade
 from app.services.elevation_service import elevacoes_pontos
+from app.models.site import Site
 from app.ui.views.viability import analisar_ponto_para_site
 from app.ui.views.viability import chave_estado_resultados_visada
 from app.ui.views.viability import ponto_migracao_cliente
+from app.ui.views.viability import sites_candidatos
 from app.ui.views.viability import sincronizar_estado_migracao_cliente
 
 
 class ViabilityServicesTest(unittest.TestCase):
+
+    def site_com_coordenada(self, nome, tipo):
+        site = Site(
+            nome,
+            tipo
+        )
+        site.latitude = -23.0
+        site.longitude = -46.0
+        site.altura = 20
+        return site
 
     def test_salva_e_carrega_dados_tecnicos_cliente(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -65,6 +77,33 @@ class ViabilityServicesTest(unittest.TestCase):
         consulta.assert_not_called()
         self.assertFalse(estimado)
         self.assertEqual(elevacoes, [801.0])
+
+    def test_sites_candidatos_ignora_tipo_cliente(self):
+        pop = self.site_com_coordenada(
+            "POP_A",
+            "POP"
+        )
+        cliente = self.site_com_coordenada(
+            "CLIENTE_A",
+            "Cliente"
+        )
+
+        candidatos = sites_candidatos(
+            {
+                "POP_A": pop,
+                "CLIENTE_A": cliente
+            },
+            {
+                "Latitude": -23.001,
+                "Longitude": -46.001
+            },
+            raio_km=5
+        )
+
+        self.assertEqual(
+            [item[0].nome for item in candidatos],
+            ["POP_A"]
+        )
 
     def test_ponto_migracao_zera_altitude_para_open_elevation(self):
         ponto = {

@@ -17,6 +17,7 @@ from app.services.map_service import endereco_cliente
 from app.services.map_service import geocodificar_endereco
 from app.services.map_service import salvar_cache_geocoding
 from app.services.map_settings import load_map_config
+from app.services.site_registry_service import site_pode_atender_outros_enderecos
 from app.ui.navigation import mostrar_subnavegacao
 
 
@@ -131,6 +132,9 @@ def sites_candidatos(sites, ponto_origem, raio_km):
     candidatos = []
 
     for site in (sites or {}).values():
+        if not site_pode_atender_outros_enderecos(site):
+            continue
+
         ponto = ponto_site(site)
 
         if not coordenada_valida(ponto["Latitude"], ponto["Longitude"]):

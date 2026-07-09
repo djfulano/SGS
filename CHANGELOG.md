@@ -1,5 +1,10 @@
 # Histórico de versões
 
+## 1.2.6
+
+- Tipo de site Cliente passa a ser padronizado e preservado na importação da base Sites.
+- Sites do tipo Cliente deixam de aparecer como candidatos para atendimento em Viabilidade e Migração.
+
 ## 1.2.5
 
 - Cadastro de sites passa a impedir repetição de Código Aquiles, Código Microsiga, Código Condomínio, Abreviação, SNMPc, Nome e Favorecido.

@@ -24,9 +24,11 @@ except ModuleNotFoundError:
     normalizar_assinatura = None
 
 try:
+    from app.importers.topos_importer import carregar_topos
     from app.importers.topos_importer import chave_site
     from app.importers.topos_importer import valor_coordenada
 except ModuleNotFoundError:
+    carregar_topos = None
     chave_site = None
     valor_coordenada = None
 
@@ -165,6 +167,29 @@ class ImportersTest(unittest.TestCase):
         self.assertAlmostEqual(
             valor_coordenada("-2352196800000001", limite=90),
             -23.52196800000001
+        )
+
+    @unittest.skipIf(carregar_topos is None, "pandas nao instalado")
+    def test_carregar_topos_preserva_tipo_cliente(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            caminho = Path(temp_dir) / "Sites.xlsx"
+            pd.DataFrame([
+                {
+                    "CÓDIGO AQUILES": "123",
+                    "SNMPc": "CLI_CLIENTE_123_IP",
+                    "TIPO": "Cliente",
+                    "NOME": "Cliente interno"
+                }
+            ]).to_excel(
+                caminho,
+                index=False
+            )
+
+            df = carregar_topos(caminho)
+
+        self.assertEqual(
+            df.iloc[0]["Tipo Cadastro"],
+            "CLIENTE"
         )
 
     def test_importar_estrutura_minima_com_cliente(self):

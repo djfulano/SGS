@@ -29,6 +29,7 @@ from app.services.contract_service import read_contract_file
 from app.services.contract_service import restore_archived_contract_file
 from app.services.site_registry_service import SITE_CODE_COLUMN
 from app.services.site_registry_service import SITE_CONTACT_TYPES
+from app.services.site_registry_service import SITE_TYPE_OPTIONS
 from app.services.site_registry_service import load_site_contacts
 from app.services.site_registry_service import load_site_registry
 from app.services.site_registry_service import normalize_code
@@ -711,14 +712,7 @@ def montar_registro_site_formulario(registro, df_cadastro, sufixo):
         df_cadastro,
         "TIPO",
         texto_registro_site(registro, "TIPO"),
-        extras=[
-            "Cliente",
-            "POP",
-            "BH",
-            "REP",
-            "DC",
-            "SITE"
-        ]
+        extras=SITE_TYPE_OPTIONS
     )
 
     col1, col2, col3, col4 = st.columns(4)

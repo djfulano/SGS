@@ -66,6 +66,15 @@ SITE_CONTACT_TYPES = [
     "Outro"
 ]
 
+SITE_TYPE_OPTIONS = [
+    "Cliente",
+    "POP",
+    "BH",
+    "REP",
+    "DC",
+    "SITE"
+]
+
 NUMERIC_COLUMNS = {
     "QTDO",
     "ALTURA"
@@ -193,6 +202,16 @@ def normalize_column_key(value):
     )
 
     return re.sub(r"[^A-Za-z0-9]+", " ", text).strip().upper()
+
+
+def normalize_site_type(value):
+    return normalize_column_key(value)
+
+
+def site_pode_atender_outros_enderecos(site):
+    return normalize_site_type(
+        getattr(site, "tipo", "")
+    ) != "CLIENTE"
 
 
 def normalize_columns(df, aliases):

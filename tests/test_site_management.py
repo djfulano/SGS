@@ -3,6 +3,7 @@ import unittest
 import pandas as pd
 
 from app.services.site_registry_service import normalize_site_contacts
+from app.services.site_registry_service import SITE_TYPE_OPTIONS
 from app.services.site_registry_service import duplicated_site_codes
 from app.services.site_registry_service import validate_unique_site_codes
 from app.ui.views.site_management import contatos_arquivados
@@ -206,14 +207,7 @@ class SiteManagementTest(unittest.TestCase):
             df,
             "TIPO",
             "",
-            extras=[
-                "Cliente",
-                "POP",
-                "BH",
-                "REP",
-                "DC",
-                "SITE"
-            ]
+            extras=SITE_TYPE_OPTIONS
         )
 
         self.assertIn(

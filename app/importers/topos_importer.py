@@ -187,6 +187,7 @@ def obter_coluna(colunas, *nomes):
 def obter_coluna_tipo_site(df):
 
     tipos_validos = {
+        "CLIENTE",
         "POP",
         "BH",
         "REP",
