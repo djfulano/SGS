@@ -3,6 +3,8 @@ import unittest
 import pandas as pd
 
 from app.services.site_registry_service import normalize_site_contacts
+from app.services.site_registry_service import duplicated_site_codes
+from app.services.site_registry_service import validate_unique_site_codes
 from app.ui.views.site_management import contatos_arquivados
 from app.ui.views.site_management import contatos_ativos
 from app.ui.views.site_management import contatos_para_exibicao
@@ -14,6 +16,127 @@ from app.ui.views.site_management import opcoes_cadastradas_site
 
 
 class SiteManagementTest(unittest.TestCase):
+
+    def test_detecta_codigos_repetidos_dos_sites(self):
+        df = pd.DataFrame([
+            {
+                "CÓDIGO AQUILES": "100",
+                "CÓDIGO MICROSIGA": "200",
+                "CÓDIGO CONDOMINIO": "300",
+                "ABREVIAÇÃO": "POPA",
+                "SMNPC": "POP_A",
+                "NOME": "Site A",
+                "Favorecido": "Fornecedor A",
+                "Status": "Ativo"
+            },
+            {
+                "CÓDIGO AQUILES": "101",
+                "CÓDIGO MICROSIGA": "200",
+                "CÓDIGO CONDOMINIO": "301",
+                "ABREVIAÇÃO": "POPB",
+                "SMNPC": "POP_B",
+                "NOME": "Site B",
+                "Favorecido": "Fornecedor B",
+                "Status": "Ativo"
+            },
+            {
+                "CÓDIGO AQUILES": "100",
+                "CÓDIGO MICROSIGA": "202",
+                "CÓDIGO CONDOMINIO": "300",
+                "ABREVIAÇÃO": "POPA",
+                "SMNPC": "POP_A",
+                "NOME": "Site A",
+                "Favorecido": "Fornecedor A",
+                "Status": "Cancelado"
+            }
+        ])
+
+        duplicados = duplicated_site_codes(df)
+
+        self.assertEqual(
+            set(duplicados["Campo"]),
+            {
+                "Código Aquiles",
+                "Código Microsiga",
+                "Código Condomínio",
+                "Abreviação",
+                "SNMPc",
+                "Nome",
+                "Favorecido"
+            }
+        )
+        self.assertIn(
+            "POP_A",
+            set(duplicados["SNMPc"])
+        )
+
+    def test_valida_codigos_unicos_ao_criar_site(self):
+        df = pd.DataFrame([
+            {
+                "CÓDIGO AQUILES": "100",
+                "CÓDIGO MICROSIGA": "200",
+                "CÓDIGO CONDOMINIO": "300",
+                "ABREVIAÇÃO": "POP_A",
+                "SMNPC": "POP_A"
+            }
+        ])
+
+        with self.assertRaisesRegex(ValueError, "Código Microsiga 200"):
+            validate_unique_site_codes(
+                df,
+                {
+                    "CÓDIGO AQUILES": "101",
+                    "CÓDIGO MICROSIGA": "200",
+                    "CÓDIGO CONDOMINIO": "301",
+                    "ABREVIAÇÃO": "POP_B",
+                    "SMNPC": "POP_B",
+                    "NOME": "Site B",
+                    "Favorecido": "Fornecedor B"
+                },
+                original_code=""
+            )
+
+        with self.assertRaisesRegex(ValueError, "SNMPc POP_A"):
+            validate_unique_site_codes(
+                df,
+                {
+                    "CÓDIGO AQUILES": "101",
+                    "CÓDIGO MICROSIGA": "201",
+                    "CÓDIGO CONDOMINIO": "301",
+                    "ABREVIAÇÃO": "POP_B",
+                    "SMNPC": "POP_A",
+                    "NOME": "Site B",
+                    "Favorecido": "Fornecedor B"
+                },
+                original_code=""
+            )
+
+    def test_valida_codigos_unicos_permite_editar_mesmo_site(self):
+        df = pd.DataFrame([
+            {
+                "CÓDIGO AQUILES": "100",
+                "CÓDIGO MICROSIGA": "200",
+                "CÓDIGO CONDOMINIO": "300",
+                "ABREVIAÇÃO": "POP_A",
+                "SMNPC": "POP_A",
+                "NOME": "Site A",
+                "Favorecido": "Fornecedor A"
+            }
+        ])
+
+        validate_unique_site_codes(
+            df,
+            {
+                "CÓDIGO AQUILES": "100",
+                "CÓDIGO MICROSIGA": "200",
+                "CÓDIGO CONDOMINIO": "300",
+                "ABREVIAÇÃO": "POP_A",
+                "SMNPC": "POP_A",
+                "NOME": "Site A",
+                "Favorecido": "Fornecedor A"
+            },
+            original_code="100"
+        )
 
     def test_opcoes_cadastradas_site_mantem_vazio_primeiro(self):
         df = pd.DataFrame({

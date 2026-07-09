@@ -1,5 +1,10 @@
 # Histórico de versões
 
+## 1.2.5
+
+- Cadastro de sites passa a impedir repetição de Código Aquiles, Código Microsiga, Código Condomínio, Abreviação, SNMPc, Nome e Favorecido.
+- Conciliação passa a listar identificadores repetidos existentes na base de Sites para conferência.
+
 ## 1.2.4
 
 - Resumo principal da Topologia passa a contar apenas sites com Status Cadastro Ativo no card Sites.

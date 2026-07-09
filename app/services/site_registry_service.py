@@ -77,6 +77,26 @@ CURRENCY_COLUMNS = {
 SITE_CODE_COLUMN = "CÓDIGO AQUILES"
 SITE_CONTACTS_SHEET = "CONTATOS"
 
+UNIQUE_SITE_CODE_COLUMNS = [
+    "CÓDIGO AQUILES",
+    "CÓDIGO MICROSIGA",
+    "CÓDIGO CONDOMINIO",
+    "ABREVIAÇÃO",
+    "SMNPC",
+    "NOME",
+    "Favorecido"
+]
+
+UNIQUE_SITE_CODE_LABELS = {
+    "CÓDIGO AQUILES": "Código Aquiles",
+    "CÓDIGO MICROSIGA": "Código Microsiga",
+    "CÓDIGO CONDOMINIO": "Código Condomínio",
+    "ABREVIAÇÃO": "Abreviação",
+    "SMNPC": "SNMPc",
+    "NOME": "Nome",
+    "Favorecido": "Favorecido"
+}
+
 COLUMN_ALIASES = {
     "CÓDIGO": "CÓDIGO AQUILES",
     "CODIGO": "CÓDIGO AQUILES",
@@ -657,34 +677,119 @@ def save_site_contacts(df_contacts, path=None, create_backup=True):
     )
 
 
+def duplicated_site_codes(df):
+    if df is None or df.empty:
+        return pd.DataFrame(
+            columns=[
+                "Campo",
+                "Código",
+                "Quantidade",
+                "Código Aquiles",
+                "Código Microsiga",
+                "Código Condomínio",
+                "SNMPc",
+                "Nome",
+                "Status"
+            ]
+        )
+
+    df_base = df.copy()
+
+    for column in SITE_REGISTRY_COLUMNS:
+        if column not in df_base.columns:
+            df_base[column] = ""
+
+    registros = []
+
+    for column in UNIQUE_SITE_CODE_COLUMNS:
+        codigos = df_base[column].apply(normalize_code)
+        duplicados = codigos[
+            codigos.ne("")
+            & codigos.duplicated(keep=False)
+        ]
+
+        for codigo in sorted(duplicados.unique()):
+            linhas = df_base[codigos == codigo]
+
+            for _, row in linhas.iterrows():
+                registros.append({
+                    "Campo": UNIQUE_SITE_CODE_LABELS.get(column, column),
+                    "Código": codigo,
+                    "Quantidade": len(linhas),
+                    "Código Aquiles": normalize_code(row.get("CÓDIGO AQUILES")),
+                    "Código Microsiga": normalize_code(row.get("CÓDIGO MICROSIGA")),
+                    "Código Condomínio": normalize_code(row.get("CÓDIGO CONDOMINIO")),
+                    "SNMPc": row.get("SMNPC", ""),
+                    "Nome": row.get("NOME", ""),
+                    "Status": row.get("Status", "")
+                })
+
+    return pd.DataFrame(registros)
+
+
+def validate_unique_site_codes(df, record, original_code=None):
+    original_code = normalize_code(original_code)
+
+    if df is None:
+        df = pd.DataFrame(columns=SITE_REGISTRY_COLUMNS)
+
+    df = df.copy()
+
+    for column in SITE_REGISTRY_COLUMNS:
+        if column not in df.columns:
+            df[column] = ""
+
+    for column in UNIQUE_SITE_CODE_COLUMNS:
+        code = normalize_code(record.get(column))
+
+        if not code:
+            continue
+
+        codes = df[column].apply(normalize_code)
+        duplicates = df[
+            codes.eq(code)
+            & df[SITE_CODE_COLUMN].apply(normalize_code).ne(original_code)
+        ]
+
+        if duplicates.empty:
+            continue
+
+        label = UNIQUE_SITE_CODE_LABELS.get(column, column)
+        nomes = ", ".join(
+            str(valor).strip()
+            for valor in duplicates.get("SMNPC", pd.Series(dtype=object)).tolist()
+            if str(valor).strip()
+        )
+        detalhe = f" em {nomes}" if nomes else ""
+
+        raise ValueError(
+            f"Ja existe outro site com {label} {code}{detalhe}."
+        )
+
+
 def upsert_site(record, original_code=None):
     df = load_site_registry()
     code = normalize_code(record.get(SITE_CODE_COLUMN))
-    original_code = normalize_code(original_code or code)
+    original_code = normalize_code(original_code)
 
     if not code:
         raise ValueError("Informe o codigo do site.")
+
+    validate_unique_site_codes(
+        df,
+        record,
+        original_code=original_code
+    )
 
     codes = df[SITE_CODE_COLUMN].apply(normalize_code)
 
     if original_code and original_code in set(codes):
         index = codes[codes == original_code].index[0]
 
-        duplicate = codes[
-            (codes == code)
-            & (codes.index != index)
-        ]
-
-        if not duplicate.empty:
-            raise ValueError(f"Ja existe outro site com o codigo {code}.")
-
         for column in SITE_REGISTRY_COLUMNS:
             df.at[index, column] = record.get(column, "")
 
     else:
-        if code in set(codes):
-            raise ValueError(f"Ja existe um site com o codigo {code}.")
-
         df = pd.concat(
             [
                 df,

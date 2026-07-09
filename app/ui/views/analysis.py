@@ -20,6 +20,8 @@ from app.reports.site_financials import (
     montar_relatorio_custos_receita as montar_relatorio_custos_receita_relatorio
 )
 from app.services.contract_service import compare_sites_and_document_folders
+from app.services.site_registry_service import duplicated_site_codes
+from app.services.site_registry_service import load_site_registry
 from app.services.site_metrics import clientes_indiretos_site
 from app.services.site_metrics import receita_indireta_site
 from app.services.site_metrics import receita_site
@@ -3195,8 +3197,11 @@ def mostrar_conciliacao_sites(sites, equipamentos):
         sites,
         equipamentos
     )
+    df_codigos_duplicados = duplicated_site_codes(
+        load_site_registry()
+    )
 
-    col1, col2 = st.columns(2)
+    col1, col2, col3 = st.columns(3)
 
     col1.metric(
         "Sites ausentes no SNMPc",
@@ -3205,6 +3210,10 @@ def mostrar_conciliacao_sites(sites, equipamentos):
     col2.metric(
         "Sites no SNMPc e ausentes na lista de Sites",
         len(df_estrutura_sem_topos)
+    )
+    col3.metric(
+        "Identificadores repetidos",
+        len(df_codigos_duplicados)
     )
 
     def mostrar_estrutura_sem_topos():
@@ -3239,6 +3248,26 @@ def mostrar_conciliacao_sites(sites, equipamentos):
                 key="conciliacao_topos_sem_estrutura"
             )
 
+    def mostrar_codigos_duplicados():
+        if df_codigos_duplicados.empty:
+            st.success("Nenhum identificador de site repetido.")
+        else:
+            st.warning(
+                "Foram encontrados identificadores repetidos na base de Sites. "
+                "Corrija os cadastros antes de novas edições."
+            )
+            _mostrar_grid(
+                df_codigos_duplicados.sort_values(
+                    by=[
+                        "Campo",
+                        "Código",
+                        "SNMPc"
+                    ]
+                ),
+                height=560,
+                key="conciliacao_codigos_duplicados"
+            )
+
     funcao = mostrar_subnavegacao(
         [
             (
@@ -3250,6 +3279,11 @@ def mostrar_conciliacao_sites(sites, equipamentos):
                 "estrutura_sem_topos",
                 "Sites no SNMPc e ausentes na lista de Sites",
                 mostrar_estrutura_sem_topos
+            ),
+            (
+                "codigos_duplicados",
+                "Identificadores repetidos",
+                mostrar_codigos_duplicados
             )
         ],
         key="conciliacao_sites_subaba"
