@@ -242,6 +242,49 @@ def assinaturas_ativas_sites(sites):
     return assinaturas
 
 
+def adicionar_vinculos_atendimento_equipamentos(df_equipamentos, sites):
+    if df_equipamentos.empty or "Assinatura" not in df_equipamentos.columns:
+        return df_equipamentos
+
+    vinculos_por_assinatura = {}
+
+    for site in (sites or {}).values():
+        for cliente in site.clientes:
+            assinatura = str(cliente.num_assinatura or "").strip()
+            vinculos = getattr(cliente, "vinculos_atendimento", [])
+            vinculos_por_assinatura[assinatura] = {
+                "Sites Atendimento": ", ".join(
+                    getattr(vinculo.get("site"), "nome", "")
+                    for vinculo in vinculos
+                    if vinculo.get("site") is not None
+                ),
+                "Setoriais Atendimento": ", ".join(
+                    str(vinculo.get("setorial") or "Direto")
+                    for vinculo in vinculos
+                ),
+                "Vínculos Atendimento": ", ".join(
+                    str(vinculo.get("tipo") or "Principal")
+                    for vinculo in vinculos
+                )
+            }
+
+    resultado = df_equipamentos.copy()
+
+    for coluna in [
+        "Sites Atendimento",
+        "Setoriais Atendimento",
+        "Vínculos Atendimento"
+    ]:
+        resultado[coluna] = resultado["Assinatura"].apply(
+            lambda assinatura: vinculos_por_assinatura.get(
+                str(assinatura or "").strip(),
+                {}
+            ).get(coluna, "")
+        )
+
+    return resultado
+
+
 def marcar_status_cliente_equipamentos(df_equipamentos, assinaturas_ativas):
     if df_equipamentos.empty or "Assinatura" not in df_equipamentos.columns:
         return df_equipamentos
@@ -342,6 +385,10 @@ def mostrar_consulta_equipamentos(sites, equipamentos):
     )
     df_equipamentos = enrich_equipments_with_catalog(
         df_equipamentos
+    )
+    df_equipamentos = adicionar_vinculos_atendimento_equipamentos(
+        df_equipamentos,
+        sites
     )
 
     col1, col2 = st.columns(2)
@@ -480,6 +527,9 @@ def mostrar_consulta_equipamentos(sites, equipamentos):
         "Status Cliente",
         "Predio",
         "Assinatura",
+        "Sites Atendimento",
+        "Setoriais Atendimento",
+        "Vínculos Atendimento",
         "Cliente Estrutura"
     ]
 
@@ -517,7 +567,7 @@ def mostrar_consulta_equipamentos(sites, equipamentos):
     )
 
 
-def montar_equipamentos_enriquecidos(equipamentos):
+def montar_equipamentos_enriquecidos(equipamentos, sites=None):
     df_equipamentos = pd.DataFrame(equipamentos)
 
     if df_equipamentos.empty:
@@ -546,6 +596,10 @@ def montar_equipamentos_enriquecidos(equipamentos):
 
     df_equipamentos = enrich_equipments_with_catalog(
         df_equipamentos
+    )
+    df_equipamentos = adicionar_vinculos_atendimento_equipamentos(
+        df_equipamentos,
+        sites
     )
 
     for coluna in [
@@ -634,7 +688,8 @@ def mostrar_busca_equipamentos(sites, equipamentos):
     st.header("Buscar equipamentos")
 
     df_equipamentos = montar_equipamentos_enriquecidos(
-        equipamentos
+        equipamentos,
+        sites
     )
 
     if df_equipamentos.empty:

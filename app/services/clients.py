@@ -23,6 +23,35 @@ def rotulo_site(site):
     )
 
 
+def resumo_vinculos_atendimento(cliente):
+    vinculos = []
+
+    for vinculo in getattr(cliente, "vinculos_atendimento", []):
+        site = vinculo.get("site")
+
+        if site is None:
+            continue
+
+        vinculos.append({
+            "Site": getattr(site, "nome", ""),
+            "Setorial": vinculo.get("setorial") or "Direto",
+            "Vínculo": vinculo.get("tipo") or "Principal"
+        })
+
+    return {
+        "Sites de atendimento": ", ".join(
+            item["Site"]
+            for item in vinculos
+            if item["Site"]
+        ),
+        "Setoriais de atendimento": ", ".join(
+            item["Setorial"]
+            for item in vinculos
+        ),
+        "Vínculos de atendimento": vinculos
+    }
+
+
 def montar_indice_equipamentos(equipamentos):
     indice = {}
 
@@ -164,6 +193,7 @@ def montar_clientes_vinculados(sites, indice_equipamentos, catalogo):
                 "Endereço": endereco_cliente(cliente),
                 "Bairro": getattr(cliente, "bairro", ""),
                 "Cidade": getattr(cliente, "cidade", ""),
+                **resumo_vinculos_atendimento(cliente),
                 **resumo_equipamentos(assinatura, indice_equipamentos, catalogo)
             })
 
@@ -192,6 +222,7 @@ def montar_clientes_vinculados_consulta(sites, indice_equipamentos, catalogo):
                 "Longitude": viabilidade.get("longitude", getattr(cliente, "longitude", 0)),
                 "Altitude": viabilidade.get("altitude", getattr(cliente, "altitude", 0)),
                 "Altura": viabilidade.get("altura", getattr(cliente, "altura", 0)),
+                **resumo_vinculos_atendimento(cliente),
                 **resumo_equipamentos(assinatura, indice_equipamentos, catalogo)
             })
 
@@ -228,6 +259,9 @@ def montar_clientes_sem_vinculo(sites, indice_equipamentos, catalogo, clientes_b
             "Endereço": cliente.get("Endereco") or "",
             "Bairro": cliente.get("Bairro") or "",
             "Cidade": cliente.get("Cidade") or "",
+            "Sites de atendimento": "",
+            "Setoriais de atendimento": "",
+            "Vínculos de atendimento": [],
             **resumo_equipamentos(assinatura, indice_equipamentos, catalogo)
         })
 
@@ -265,6 +299,9 @@ def montar_clientes_sem_vinculo_consulta(
             "Longitude": viabilidade.get("longitude", 0),
             "Altitude": viabilidade.get("altitude", 0),
             "Altura": viabilidade.get("altura", 0),
+            "Sites de atendimento": "",
+            "Setoriais de atendimento": "",
+            "Vínculos de atendimento": [],
             **resumo_equipamentos(assinatura, indice_equipamentos, catalogo)
         })
 
@@ -348,6 +385,9 @@ def montar_base_consulta_clientes(sites, equipamentos, clientes_base=None):
         "Vínculo",
         "Site",
         "Setorial",
+        "Sites de atendimento",
+        "Setoriais de atendimento",
+        "Vínculos de atendimento",
         "GoTo SNMPc",
         "Latitude",
         "Longitude",
@@ -429,7 +469,8 @@ def filtrar_clientes_consulta(df, termo):
             "Assinatura",
             "Produto",
             "Gerente de contas",
-            "Site"
+            "Site",
+            "Sites de atendimento"
         ]
         if coluna in df.columns
     ]

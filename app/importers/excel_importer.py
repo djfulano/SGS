@@ -237,24 +237,42 @@ def importar_clientes(
                 vinculo = assinaturas[num_assinatura]
 
                 if isinstance(vinculo, dict):
-
-                    site = vinculo["site"]
-
-                    setorial = vinculo.get("setorial")
-
-                    cliente.predio_estrutura = vinculo.get("predio")
-                    cliente.origem_estrutura = vinculo.get("origem")
+                    vinculos = vinculo.get("vinculos") or [vinculo]
 
                 else:
+                    vinculos = [{
+                        "site": vinculo,
+                        "setorial": None,
+                        "tipo": "Principal"
+                    }]
 
-                    site = vinculo
-
-                    setorial = None
-
-                site.adicionar_cliente(
-                    cliente,
-                    setorial=setorial
+                vinculo_principal = next(
+                    (
+                        item
+                        for item in vinculos
+                        if item.get("tipo") == "Principal"
+                    ),
+                    vinculos[0]
                 )
+                site_principal = vinculo_principal["site"]
+                setorial_principal = vinculo_principal.get("setorial")
+                cliente.predio_estrutura = vinculo_principal.get("predio")
+                cliente.origem_estrutura = vinculo_principal.get("origem")
+                site_principal.adicionar_cliente(
+                    cliente,
+                    setorial=setorial_principal
+                )
+
+                for vinculo_adicional in vinculos:
+                    if vinculo_adicional is vinculo_principal:
+                        continue
+
+                    vinculo_adicional["site"].adicionar_cliente_adicional(
+                        cliente,
+                        setorial=vinculo_adicional.get("setorial"),
+                        origem=vinculo_adicional.get("origem") or "",
+                        predio=vinculo_adicional.get("predio")
+                    )
 
                 clientes_importados += 1
 

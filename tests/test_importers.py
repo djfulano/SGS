@@ -5,11 +5,13 @@ from unittest.mock import patch
 
 import pandas as pd
 
+from app.models.site import Site
 from app.importers.txt_importer import detectar_tipo
 from app.importers.txt_importer import extrair_assinatura
 from app.importers.txt_importer import importar_estrutura_de_linhas
 from app.importers.txt_importer import normalizar_nome_snmpc
 from app.importers.excel_importer import ler_clientes_base
+from app.importers.excel_importer import importar_clientes
 
 try:
     from app.services.data_loader import sistema_precisa_inicializacao
@@ -218,6 +220,96 @@ class ImportersTest(unittest.TestCase):
         self.assertIn("12345678", assinaturas)
         self.assertEqual(assinaturas["12345678"]["site"].nome, "ABC_POP_1_IP")
         self.assertEqual(equipamentos, [])
+
+    def test_importar_cliente_com_goto_em_outro_site(self):
+        linhas = [
+            {
+                "ID": "1", "Name": "BEL_POP_1_IP", "Type": "Subnet",
+                "Parent": "(NULL)", "Address": "", "Description": ""
+            },
+            {
+                "ID": "2", "Name": "FUV_POP_2_IP", "Type": "Subnet",
+                "Parent": "(NULL)", "Address": "", "Description": ""
+            },
+            {
+                "ID": "10", "Name": "BEL_S10", "Type": "Subnet",
+                "Parent": "1", "Address": "", "Description": ""
+            },
+            {
+                "ID": "20", "Name": "FUV_S6", "Type": "Subnet",
+                "Parent": "2", "Address": "", "Description": ""
+            },
+            {
+                "ID": "100", "Name": "DAVO_ITAQUERA_10986201",
+                "Type": "Subnet", "Parent": "10", "Address": "",
+                "Description": ""
+            },
+            {
+                "ID": "101", "Name": "DAVO_ITAQUERA_10986201",
+                "Type": "Goto", "Parent": "20",
+                "Address": "DAVO_ITAQUERA_10986201", "Description": ""
+            },
+            {
+                "ID": "102", "Name": "DAVO_ITAQUERA_10986201",
+                "Type": "Goto", "Parent": "20",
+                "Address": "DAVO_ITAQUERA_10986201", "Description": ""
+            }
+        ]
+
+        sites, assinaturas, _equipamentos = importar_estrutura_de_linhas(linhas)
+        vinculos = assinaturas["10986201"]["vinculos"]
+
+        self.assertEqual(len(vinculos), 2)
+        self.assertEqual(
+            [(item["site"].nome, item["setorial"], item["tipo"]) for item in vinculos],
+            [
+                ("BEL_POP_1_IP", "BEL_S10", "Principal"),
+                ("FUV_POP_2_IP", "FUV_S6", "Adicional")
+            ]
+        )
+        self.assertIn("10986201", sites["BEL_POP_1_IP"].assinaturas)
+        self.assertIn("10986201", sites["FUV_POP_2_IP"].assinaturas)
+
+    def test_planilha_cria_cliente_principal_e_adicional_sem_duplicar_receita(self):
+        principal = Site("BEL_POP_1_IP", "POP")
+        adicional = Site("FUV_POP_2_IP", "POP")
+        assinaturas = {
+            "10986201": {
+                "site": principal,
+                "setorial": "BEL_S10",
+                "tipo": "Principal",
+                "vinculos": [
+                    {
+                        "site": principal,
+                        "setorial": "BEL_S10",
+                        "tipo": "Principal"
+                    },
+                    {
+                        "site": adicional,
+                        "setorial": "FUV_S6",
+                        "tipo": "Adicional"
+                    }
+                ]
+            }
+        }
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            arquivo = Path(temp_dir) / "clientes.xlsx"
+            pd.DataFrame([{
+                "NOME CLIENTE": "DAVO ITAQUERA",
+                "MENSALIDADE": 900,
+                "NUM ASSINATURA": "10986201",
+                "PRODUTO": "NeoSoft"
+            }]).to_excel(arquivo, index=False, startrow=7)
+
+            with patch("app.importers.excel_importer.registrar_log_sistema"):
+                importar_clientes(arquivo, assinaturas)
+
+        self.assertEqual(len(principal.clientes), 1)
+        self.assertEqual(len(adicional.clientes), 0)
+        self.assertEqual(len(adicional.clientes_adicionais), 1)
+        self.assertEqual(principal.calcular_receita(), 900)
+        self.assertEqual(adicional.calcular_receita(), 0)
 
     def test_importar_estrutura_normaliza_site_com_espaco_antes_do_sufixo(self):
         linhas = [

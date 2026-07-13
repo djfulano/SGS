@@ -110,6 +110,11 @@ def ponto_cliente(site, cliente):
         "Nome": getattr(cliente, "nome", ""),
         "Assinatura": assinatura,
         "Site Atual": getattr(site, "nome", ""),
+        "Sites Atuais": [
+            getattr(vinculo.get("site"), "nome", "")
+            for vinculo in getattr(cliente, "vinculos_atendimento", [])
+            if vinculo.get("site") is not None
+        ],
         "Latitude": latitude,
         "Longitude": longitude,
         "Altitude": valor_float(dados.get("altitude", 0)),
@@ -128,11 +133,15 @@ def ponto_migracao_cliente(ponto, latitude, longitude, altura):
     }
 
 
-def sites_candidatos(sites, ponto_origem, raio_km):
+def sites_candidatos(sites, ponto_origem, raio_km, sites_forcados=None):
     candidatos = []
+    sites_forcados = set(sites_forcados or [])
 
     for site in (sites or {}).values():
-        if not site_pode_atender_outros_enderecos(site):
+        if (
+            not site_pode_atender_outros_enderecos(site)
+            and getattr(site, "nome", "") not in sites_forcados
+        ):
             continue
 
         ponto = ponto_site(site)
@@ -147,7 +156,7 @@ def sites_candidatos(sites, ponto_origem, raio_km):
             ponto["Longitude"]
         )
 
-        if distancia <= raio_km:
+        if distancia <= raio_km or site.nome in sites_forcados:
             candidatos.append((
                 site,
                 ponto,
@@ -193,7 +202,13 @@ def analisar_ponto_para_site(ponto_origem, ponto_destino, config):
     )
 
 
-def montar_resultados_viabilidade(sites, ponto_origem, raio_km, limite_sites=10):
+def montar_resultados_viabilidade(
+    sites,
+    ponto_origem,
+    raio_km,
+    limite_sites=10,
+    sites_atuais=None
+):
     if not coordenada_valida(ponto_origem.get("Latitude"), ponto_origem.get("Longitude")):
         return pd.DataFrame(), {}
 
@@ -201,11 +216,26 @@ def montar_resultados_viabilidade(sites, ponto_origem, raio_km, limite_sites=10)
     registros = []
     perfis = {}
 
-    for site, ponto_destino, distancia in sites_candidatos(
+    sites_atuais = set(sites_atuais or [])
+    candidatos = sites_candidatos(
         sites,
         ponto_origem,
-        raio_km
-    )[:int(limite_sites)]:
+        raio_km,
+        sites_forcados=sites_atuais
+    )
+    selecionados = candidatos[:int(limite_sites)]
+    nomes_selecionados = {
+        getattr(site, "nome", "")
+        for site, _ponto, _distancia in selecionados
+    }
+    selecionados.extend(
+        candidato
+        for candidato in candidatos
+        if getattr(candidato[0], "nome", "") in sites_atuais
+        and getattr(candidato[0], "nome", "") not in nomes_selecionados
+    )
+
+    for site, ponto_destino, distancia in selecionados:
         analise = analisar_ponto_para_site(
             ponto_origem,
             ponto_destino,
@@ -762,6 +792,13 @@ def mostrar_migracao_cliente(sites):
         site_atual,
         cliente
     )
+    sites_atuais = ponto.get("Sites Atuais") or []
+
+    if sites_atuais:
+        st.caption(
+            "Sites atuais de atendimento: "
+            + ", ".join(sites_atuais)
+        )
     sincronizar_estado_migracao_cliente(
         st.session_state,
         assinatura,
@@ -851,7 +888,8 @@ def mostrar_migracao_cliente(sites):
         sites,
         ponto_origem,
         raio_km,
-        limite_sites=limite_sites
+        limite_sites=limite_sites,
+        sites_atuais=sites_atuais
     )
 
     salvar_resultados_visada_estado(

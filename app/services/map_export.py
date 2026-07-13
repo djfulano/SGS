@@ -222,7 +222,8 @@ def campos_por_tipo(campos_detalhe):
             "Cliente"
         ],
         "links": [
-            "Distância Km"
+            "Distância Km",
+            "Vínculo"
         ],
         "nao_plotados": [
             "Tipo Item",

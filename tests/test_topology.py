@@ -12,6 +12,7 @@ from app.ui.views.topology import montar_tabela_sites_usados
 from app.ui.views.topology import montar_metricas_banda_telecom_site
 from app.ui.views.topology import montar_metricas_banda_telecom_sites
 from app.ui.views.topology import montar_resumo_sites
+from app.ui.views.topology import montar_clientes_sites_usados
 from app.ui.views.topology import normalizar_velocidade_mbps
 from app.ui.views.topology import velocidade_telecom_produto_mbps
 from app.services.site_metrics import custo_indireto_site
@@ -22,6 +23,25 @@ from app.services.site_metrics import montar_resumo_selecao_sites
 
 
 class TopologyBandwidthTest(unittest.TestCase):
+
+    def test_cliente_adicional_aparece_sem_duplicar_financeiro(self):
+        principal = Site("BEL_POP_1_IP", "POP")
+        adicional = Site("FUV_POP_2_IP", "POP")
+        cliente = Cliente("DAVO ITAQUERA", 900, "10986201")
+        principal.adicionar_cliente(cliente, setorial="BEL_S10")
+        adicional.adicionar_cliente_adicional(cliente, setorial="FUV_S6")
+
+        df = montar_clientes_sites_usados(
+            {principal.nome: principal, adicional.nome: adicional},
+            {principal.nome: principal, adicional.nome: adicional}
+        )
+
+        self.assertEqual(len(df), 2)
+        self.assertEqual(set(df["Vínculo"]), {"Principal", "Adicional"})
+        self.assertEqual(principal.calcular_receita(), 900)
+        self.assertEqual(adicional.calcular_receita(), 0)
+        self.assertEqual(len(principal.clientes), 1)
+        self.assertEqual(len(adicional.clientes), 0)
 
     def catalogo_vazio(self):
         return pd.DataFrame(

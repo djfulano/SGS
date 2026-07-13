@@ -25,7 +25,7 @@ from app.storage import read_json
 from app.storage import write_json_atomic
 
 
-MAPA_SCHEMA_VERSION = 11
+MAPA_SCHEMA_VERSION = 12
 COR_LINHA_SITE = [210, 30, 30, 145]
 COR_LINHA_CLIENTE = [20, 150, 70, 125]
 COR_LINHA_POP_POP = [35, 110, 255, 180]
@@ -625,6 +625,22 @@ def endereco_cliente(cliente):
     )
 
 
+def vinculos_clientes_site(site):
+    listar = getattr(site, "listar_vinculos_clientes", None)
+
+    if callable(listar):
+        return listar()
+
+    return [
+        {
+            "cliente": cliente,
+            "setorial": getattr(cliente, "setorial", None),
+            "tipo": "Principal"
+        }
+        for cliente in getattr(site, "clientes", []) or []
+    ]
+
+
 def montar_clientes_mapa_sites(sites_usados, limite_clientes):
 
     dados = []
@@ -632,9 +648,12 @@ def montar_clientes_mapa_sites(sites_usados, limite_clientes):
         sites_usados
     )
 
+    assinaturas_incluidas = set()
+
     for site_atual in sites_usados.values():
 
-        for cliente in site_atual.clientes:
+        for vinculo in vinculos_clientes_site(site_atual):
+            cliente = vinculo["cliente"]
 
             endereco = endereco_cliente(cliente)
 
@@ -642,12 +661,21 @@ def montar_clientes_mapa_sites(sites_usados, limite_clientes):
 
                 continue
 
-            setorial = getattr(cliente, "setorial", None) or "Direto"
+            setorial = vinculo.get("setorial") or "Direto"
+            tipo_vinculo = vinculo.get("tipo") or "Principal"
             receita = getattr(cliente, "receita", 0)
             produto = getattr(cliente, "produto", "")
             assinatura = cliente.num_assinatura
+            assinatura_chave = str(assinatura)
+
+            if (
+                assinatura_chave not in assinaturas_incluidas
+                and len(assinaturas_incluidas) >= int(limite_clientes)
+            ):
+                continue
+
             equipamento = equipamentos_por_assinatura.get(
-                str(assinatura),
+                assinatura_chave,
                 ""
             )
             cor = cor_setorial(
@@ -660,6 +688,7 @@ def montar_clientes_mapa_sites(sites_usados, limite_clientes):
                 "Assinatura": assinatura,
                 "Site": site_atual.nome,
                 "Setorial": setorial,
+                "Vínculo": tipo_vinculo,
                 "Produto": produto,
                 "Receita": receita,
                 "Equipamento": equipamento,
@@ -670,15 +699,14 @@ def montar_clientes_mapa_sites(sites_usados, limite_clientes):
                 "Texto": f"{cliente.nome}\n{cliente.num_assinatura}",
                 "Tooltip": (
                     f"<b>{texto_html(cliente.nome)}</b><br/>"
+                    f"Vínculo: {texto_html(tipo_vinculo)}<br/>"
                     f"Produto: {texto_html(produto)}<br/>"
                     f"Receita: {texto_html(formatar_moeda_mapa(receita))}"
                 ),
                 "Cor": cor
             })
 
-            if len(dados) >= int(limite_clientes):
-
-                return pd.DataFrame(dados)
+            assinaturas_incluidas.add(assinatura_chave)
 
     return pd.DataFrame(dados)
 
@@ -968,7 +996,8 @@ def montar_clientes_mapa(site, incluir_filhos=True):
 
     for site_atual in sites_consulta:
 
-        for cliente in site_atual.clientes:
+        for vinculo in vinculos_clientes_site(site_atual):
+            cliente = vinculo["cliente"]
 
             endereco = endereco_cliente(cliente)
 
@@ -976,7 +1005,8 @@ def montar_clientes_mapa(site, incluir_filhos=True):
 
                 continue
 
-            setorial = getattr(cliente, "setorial", None) or "Direto"
+            setorial = vinculo.get("setorial") or "Direto"
+            tipo_vinculo = vinculo.get("tipo") or "Principal"
             receita = getattr(cliente, "receita", 0)
             produto = getattr(cliente, "produto", "")
             assinatura = cliente.num_assinatura
@@ -990,6 +1020,7 @@ def montar_clientes_mapa(site, incluir_filhos=True):
                 "Assinatura": assinatura,
                 "Site": site_atual.nome,
                 "Setorial": setorial,
+                "Vínculo": tipo_vinculo,
                 "Produto": produto,
                 "Receita": receita,
                 "Equipamento": equipamento,
@@ -1001,6 +1032,7 @@ def montar_clientes_mapa(site, incluir_filhos=True):
                 "Icone Setorial": setorial,
                 "Tooltip": (
                     f"<b>{texto_html(cliente.nome)}</b><br/>"
+                    f"Vínculo: {texto_html(tipo_vinculo)}<br/>"
                     f"Produto: {texto_html(produto)}<br/>"
                     f"Receita: {texto_html(formatar_moeda_mapa(receita))}"
                 ),
@@ -1358,7 +1390,16 @@ def compilar_dados_mapa(
             )
             itens_nao_plotados.extend(clientes_nao_plotados)
 
-            for registro in df_clientes.to_dict("records"):
+            registros_clientes = sorted(
+                df_clientes.to_dict("records"),
+                key=lambda registro: (
+                    str(registro.get("Assinatura") or ""),
+                    0 if registro.get("Vínculo") == "Principal" else 1
+                )
+            )
+            assinaturas_plotadas = set()
+
+            for registro in registros_clientes:
 
                 ponto_site = pontos_por_site.get(
                     registro.get("Site")
@@ -1397,9 +1438,15 @@ def compilar_dados_mapa(
                         continue
 
                     registro["Distância Site Km"] = distancia
-                    pontos_clientes.append(registro)
+                    assinatura = str(registro.get("Assinatura") or "")
+
+                    if assinatura not in assinaturas_plotadas:
+                        pontos_clientes.append(registro)
+                        assinaturas_plotadas.add(assinatura)
+
                     registro["Tooltip"] = (
                         f"<b>{texto_html(registro.get('Cliente'))}</b><br/>"
+                        f"Vínculo: {texto_html(registro.get('Vínculo'))}<br/>"
                         f"Produto: {texto_html(registro.get('Produto'))}<br/>"
                         f"Receita: {texto_html(formatar_moeda_mapa(registro.get('Receita')))}<br/>"
                         f"Distância: {distancia:.2f} km<br/>"
@@ -1411,6 +1458,7 @@ def compilar_dados_mapa(
                         "Cliente": registro.get("Cliente"),
                         "Assinatura": registro.get("Assinatura", ""),
                         "Setorial": registro.get("Setorial", "Direto"),
+                        "Vínculo": registro.get("Vínculo", "Principal"),
                         "Produto": registro.get("Produto", ""),
                         "Receita": registro.get("Receita", 0),
                         "Origem": [
@@ -1436,6 +1484,7 @@ def compilar_dados_mapa(
                         "Tooltip": (
                             f"<b>{texto_html(registro.get('Site'))} -> "
                             f"{texto_html(registro.get('Cliente'))}</b><br/>"
+                            f"Vínculo: {texto_html(registro.get('Vínculo'))}<br/>"
                             f"Setorial: {texto_html(registro.get('Setorial'))}<br/>"
                             f"Distância: {distancia:.2f} km"
                         ),

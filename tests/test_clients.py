@@ -18,6 +18,34 @@ from app.ui.views.clients import valor_resumo_cliente
 
 class ClientsServiceTest(unittest.TestCase):
 
+    def test_consulta_retorna_uma_assinatura_com_todos_os_vinculos(self):
+        principal = Site("CPC_POP_1_IP", "POP")
+        adicional = Site("ALC_BH_2_IP", "BH")
+        cliente = Cliente("DAVO SUZANO", 1200, "10986601")
+        principal.adicionar_cliente(cliente, setorial="CPC_S1")
+        adicional.adicionar_cliente_adicional(cliente, setorial="ALC_S3")
+
+        with patch(
+            "app.services.clients.load_equipment_catalog",
+            return_value=pd.DataFrame()
+        ):
+            df = montar_base_consulta_clientes(
+                {principal.nome: principal, adicional.nome: adicional},
+                [],
+                clientes_base={}
+            )
+
+        self.assertEqual(len(df), 1)
+        self.assertEqual(df.loc[0, "Site"], principal.nome)
+        self.assertEqual(
+            df.loc[0, "Sites de atendimento"],
+            f"{principal.nome}, {adicional.nome}"
+        )
+        self.assertEqual(
+            [item["Vínculo"] for item in df.loc[0, "Vínculos de atendimento"]],
+            ["Principal", "Adicional"]
+        )
+
     def test_cliente_vinculado_aparece_com_site_e_setorial(self):
         site = Site("POP_A", "POP")
         site.codigo_topos = "100"

@@ -359,22 +359,25 @@ def montar_clientes_sites_usados(selecionados, usados):
             else "Site filho"
         )
 
-        for cliente in site.clientes:
-
-            setorial = getattr(cliente, "setorial", None)
+        for vinculo in site.listar_vinculos_clientes():
+            cliente = vinculo["cliente"]
+            setorial = vinculo.get("setorial")
 
             dados.append({
                 "Cliente": cliente.nome,
                 "Assinatura": cliente.num_assinatura,
                 "Receita": cliente.receita,
+                "Vínculo": vinculo.get("tipo") or "Principal",
                 "Tipo Vinculo": (
-                    "Setorial"
+                    "Adicional"
+                    if vinculo.get("tipo") == "Adicional"
+                    else "Setorial"
                     if tipo_vinculo_site == "Direto" and setorial
                     else tipo_vinculo_site
                 ),
                 "Site do Cliente": site.nome,
                 "Setorial": setorial or "Direto",
-                "Predio": getattr(cliente, "predio_estrutura", None) or "",
+                "Predio": vinculo.get("predio") or "",
                 "Produto": getattr(cliente, "produto", ""),
                 "Endereco": getattr(cliente, "endereco_completo", ""),
                 "Bairro": getattr(cliente, "bairro", ""),
@@ -415,12 +418,14 @@ def montar_clientes_completos_site(site):
 
     def adicionar_clientes(site_atual, site_origem):
 
-        for cliente in site_atual.clientes:
-
-            setorial = getattr(cliente, "setorial", None)
+        for vinculo in site_atual.listar_vinculos_clientes():
+            cliente = vinculo["cliente"]
+            setorial = vinculo.get("setorial")
             tipo_vinculo = "Site filho"
 
-            if site_atual is site:
+            if vinculo.get("tipo") == "Adicional":
+                tipo_vinculo = "Adicional"
+            elif site_atual is site:
 
                 if setorial:
 
@@ -434,11 +439,12 @@ def montar_clientes_completos_site(site):
                 "Cliente": cliente.nome,
                 "Assinatura": cliente.num_assinatura,
                 "Receita": cliente.receita,
+                "Vínculo": vinculo.get("tipo") or "Principal",
                 "Tipo Vinculo": tipo_vinculo,
                 "Site do Cliente": site_atual.nome,
                 "Site Origem": site_origem.nome,
                 "Setorial": setorial or "Direto",
-                "Predio": getattr(cliente, "predio_estrutura", None) or ""
+                "Predio": vinculo.get("predio") or ""
             })
 
         for filho in site_atual.filhos:
@@ -1115,10 +1121,11 @@ def mostrar_detalhe_site(site):
             key=chave_site("tabela_filhos", site)
         )
 
+    vinculos_site = site.listar_vinculos_clientes()
     clientes_diretos = [
-        cliente
-        for cliente in site.clientes
-        if not getattr(cliente, "setorial", None)
+        vinculo
+        for vinculo in vinculos_site
+        if not vinculo.get("setorial")
     ]
 
     if clientes_diretos:
@@ -1126,16 +1133,27 @@ def mostrar_detalhe_site(site):
         st.markdown("**Diretamente conectados**")
 
         mostrar_grid(
-            montar_clientes_data(clientes_diretos),
+            pd.DataFrame([
+                {
+                    "Vínculo": vinculo.get("tipo") or "Principal",
+                    "Cliente": vinculo["cliente"].nome,
+                    "Assinatura": vinculo["cliente"].num_assinatura,
+                    "Receita": vinculo["cliente"].receita,
+                    "Setorial": "Direto"
+                }
+                for vinculo in clientes_diretos
+            ]),
             height=220,
             key=chave_site("grid_clientes_diretos", site)
         )
 
-    setoriais = getattr(
-        site,
-        "setoriais",
-        {}
-    )
+    setoriais = {}
+
+    for vinculo in vinculos_site:
+        setorial = vinculo.get("setorial")
+
+        if setorial:
+            setoriais.setdefault(setorial, []).append(vinculo)
 
     sites_por_setorial = getattr(
         site,
@@ -1157,14 +1175,16 @@ def mostrar_detalhe_site(site):
 
         for nome_setorial in nomes_setoriais:
 
-            for cliente in setoriais.get(nome_setorial, []):
+            for vinculo in setoriais.get(nome_setorial, []):
+                cliente = vinculo["cliente"]
 
                 clientes_setoriais.append({
+                    "Vínculo": vinculo.get("tipo") or "Principal",
                     "Setorial": nome_setorial,
                     "Cliente": cliente.nome,
                     "Assinatura": cliente.num_assinatura,
                     "Receita": cliente.receita,
-                    "Predio": getattr(cliente, "predio_estrutura", None) or ""
+                    "Predio": vinculo.get("predio") or ""
                 })
 
         if clientes_setoriais:

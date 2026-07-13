@@ -748,6 +748,7 @@ def importar_estrutura_de_linhas(linhas, retornar_enlaces=False):
 
                 links_goto.append(
                     {
+                        "nome": nome,
                         "destino": destino,
                         "parent_id": parent_id
                     }
@@ -879,8 +880,29 @@ def importar_estrutura_de_linhas(linhas, retornar_enlaces=False):
             parent_site.adicionar_filho(site)
 
     assinaturas = {}
+    vinculos_por_assinatura = {}
 
-    assinaturas_duplicadas = {}
+    def adicionar_vinculo_assinatura(assinatura, vinculo):
+        vinculos = vinculos_por_assinatura.setdefault(
+            assinatura,
+            []
+        )
+        chave = (
+            vinculo["site"].nome,
+            str(vinculo.get("setorial") or "Direto")
+        )
+
+        for existente in vinculos:
+            chave_existente = (
+                existente["site"].nome,
+                str(existente.get("setorial") or "Direto")
+            )
+
+            if chave_existente == chave:
+                return False
+
+        vinculos.append(vinculo)
+        return True
 
     for item_id, item in itens.items():
 
@@ -908,80 +930,146 @@ def importar_estrutura_de_linhas(linhas, retornar_enlaces=False):
             itens
         )
 
-        if assinatura_cliente not in site.assinaturas:
-
-            site.assinaturas.append(assinatura_cliente)
-
-        vinculo = {
+        adicionar_vinculo_assinatura(assinatura_cliente, {
             "site": site,
             "setorial": setorial,
             "origem": item["nome"],
-            "predio": item.get("predio")
-        }
+            "predio": item.get("predio"),
+            "origem_tipo": "Subnet"
+        })
 
-        if assinatura_cliente in assinaturas:
+    for link_goto in links_goto:
+        assinatura_cliente = (
+            extrair_assinatura(link_goto.get("destino"))
+            or extrair_assinatura(link_goto.get("nome"))
+        )
 
-            vinculo_existente = assinaturas[assinatura_cliente]
+        if not assinatura_cliente:
+            continue
 
-            if (
-                vinculo_existente["site"].nome != vinculo["site"].nome
-                or vinculo_existente.get("setorial") != vinculo.get("setorial")
-            ):
+        parent_id = link_goto.get("parent_id")
+        site = site_mais_proximo(
+            parent_id,
+            sites_por_id,
+            itens,
+            sites_por_prefixo
+        )
 
-                assinaturas_duplicadas.setdefault(
-                    assinatura_cliente,
-                    [
-                        {
-                            "site": vinculo_existente["site"].nome,
-                            "setorial": vinculo_existente.get("setorial"),
-                            "origem": vinculo_existente.get("origem")
-                        }
-                    ]
-                ).append({
+        if not site:
+            continue
+
+        adicionar_vinculo_assinatura(assinatura_cliente, {
+            "site": site,
+            "setorial": setorial_mais_proximo(parent_id, itens),
+            "origem": link_goto.get("destino") or link_goto.get("nome"),
+            "predio": None,
+            "origem_tipo": "Goto"
+        })
+
+    assinaturas_multiplos_vinculos = {}
+    assinaturas_multiplos_nos_reais = {}
+
+    for assinatura_cliente, vinculos in vinculos_por_assinatura.items():
+        indice_principal = next(
+            (
+                indice
+                for indice, vinculo in enumerate(vinculos)
+                if vinculo.get("origem_tipo") == "Subnet"
+            ),
+            0
+        )
+        principal = vinculos[indice_principal]
+        vinculos_ordenados = [principal] + [
+            vinculo
+            for indice, vinculo in enumerate(vinculos)
+            if indice != indice_principal
+        ]
+        vinculos_normalizados = []
+        nos_reais = [
+            vinculo
+            for vinculo in vinculos_ordenados
+            if vinculo.get("origem_tipo") == "Subnet"
+        ]
+
+        if len(nos_reais) > 1:
+            assinaturas_multiplos_nos_reais[assinatura_cliente] = [
+                {
                     "site": vinculo["site"].nome,
                     "setorial": vinculo.get("setorial"),
                     "origem": vinculo.get("origem")
-                })
+                }
+                for vinculo in nos_reais
+            ]
 
-        else:
+        for indice, vinculo in enumerate(vinculos_ordenados):
+            tipo_vinculo = "Principal" if indice == 0 else "Adicional"
+            vinculo_normalizado = {
+                **vinculo,
+                "predio": vinculo.get("predio") or principal.get("predio"),
+                "tipo": tipo_vinculo
+            }
+            vinculos_normalizados.append(vinculo_normalizado)
+            site = vinculo_normalizado["site"]
 
-            assinaturas[assinatura_cliente] = vinculo
+            if assinatura_cliente not in site.assinaturas:
+                site.assinaturas.append(assinatura_cliente)
 
-        site.adicionar_cliente_estrutura(
-            item["nome"],
-            assinatura_cliente,
-            predio=item.get("predio"),
-            setorial=setorial
-        )
+            site.adicionar_cliente_estrutura(
+                vinculo_normalizado.get("origem") or "",
+                assinatura_cliente,
+                predio=vinculo_normalizado.get("predio"),
+                setorial=vinculo_normalizado.get("setorial"),
+                tipo_vinculo=tipo_vinculo
+            )
 
-    if assinaturas_duplicadas:
+        assinaturas[assinatura_cliente] = {
+            **principal,
+            "tipo": "Principal",
+            "vinculos": vinculos_normalizados
+        }
 
+        if len(vinculos_normalizados) > 1:
+            assinaturas_multiplos_vinculos[assinatura_cliente] = [
+                {
+                    "site": vinculo["site"].nome,
+                    "setorial": vinculo.get("setorial"),
+                    "tipo": vinculo.get("tipo")
+                }
+                for vinculo in vinculos_normalizados
+            ]
+
+    if assinaturas_multiplos_vinculos:
         exemplos = []
 
-        for assinatura, vinculos in list(assinaturas_duplicadas.items())[:10]:
-
+        for assinatura, vinculos in list(
+            assinaturas_multiplos_vinculos.items()
+        )[:10]:
             locais = ", ".join(
-                f"{vinculo['site']} / {vinculo.get('setorial') or 'Direto'}"
+                (
+                    f"{vinculo['site']} / "
+                    f"{vinculo.get('setorial') or 'Direto'} "
+                    f"({vinculo.get('tipo')})"
+                )
                 for vinculo in vinculos
             )
-
-            exemplos.append(
-                f"{assinatura}: {locais}"
-            )
-
-        for assinatura in assinaturas_duplicadas:
-
-            assinaturas.pop(
-                assinatura,
-                None
-            )
+            exemplos.append(f"{assinatura}: {locais}")
 
         registrar_log_sistema(
-            "assinaturas_duplicadas_snmpc",
+            "assinaturas_multiplos_vinculos_snmpc",
+            status="sucesso",
+            detalhes={
+                "quantidade": len(assinaturas_multiplos_vinculos),
+                "exemplos": exemplos
+            }
+        )
+
+    if assinaturas_multiplos_nos_reais:
+        registrar_log_sistema(
+            "assinaturas_multiplos_nos_reais_snmpc",
             status="aviso",
             detalhes={
-                "quantidade": len(assinaturas_duplicadas),
-                "exemplos": exemplos
+                "quantidade": len(assinaturas_multiplos_nos_reais),
+                "assinaturas": assinaturas_multiplos_nos_reais
             }
         )
 

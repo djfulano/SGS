@@ -4,6 +4,8 @@ from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 try:
+    from app.models.cliente import Cliente
+    from app.models.site import Site
     from app.services.map_settings import load_map_config
     from app.services.map_service import chave_cache_mapa
     from app.services.map_service import compilar_dados_mapa
@@ -89,6 +91,54 @@ class ClienteMapaFake:
 
 @unittest.skipIf(chave_cache_mapa is None, "pandas nao instalado")
 class MapServiceTest(unittest.TestCase):
+
+    def test_mapa_gera_um_marcador_e_multiplas_linhas_por_assinatura(self):
+        principal = Site("BEL_POP_1_IP", "POP")
+        adicional = Site("FUV_POP_2_IP", "POP")
+        principal.latitude = -23.0
+        principal.longitude = -46.0
+        adicional.latitude = -23.01
+        adicional.longitude = -46.01
+        cliente = Cliente("DAVO ITAQUERA", 900, "10986201")
+        cliente.endereco_completo = "Rua A, 10"
+        cliente.cidade = "Sao Paulo"
+        principal.adicionar_cliente(cliente, setorial="BEL_S10")
+        adicional.adicionar_cliente_adicional(cliente, setorial="FUV_S6")
+
+        with patch(
+            "app.services.map_service.carregar_cache_mapa",
+            return_value={}
+        ), patch(
+            "app.services.map_service.limites_mapa",
+            return_value={
+                "site_site": 30,
+                "site_cliente": 30,
+                "limite_clientes_padrao": 100
+            }
+        ), patch(
+            "app.services.map_service.salvar_cache_mapa"
+        ), patch(
+            "app.services.map_service.carregar_cache_geocoding",
+            return_value={}
+        ), patch(
+            "app.services.map_service.salvar_cache_geocoding"
+        ), patch(
+            "app.services.map_service.geocodificar_endereco",
+            return_value={"lat": -23.005, "lon": -46.005, "provider": "teste"}
+        ):
+            pacote, _cacheado = compilar_dados_mapa(
+                {principal.nome: principal},
+                {principal.nome: principal, adicional.nome: adicional},
+                incluir_clientes=True,
+                limite_clientes=100
+            )
+
+        self.assertEqual(len(pacote["clientes"]), 1)
+        self.assertEqual(len(pacote["links_clientes"]), 2)
+        self.assertEqual(
+            {item["Vínculo"] for item in pacote["links_clientes"]},
+            {"Principal", "Adicional"}
+        )
 
     def test_cor_setorial_usa_paleta_fixa_por_tipo(self):
         self.assertEqual(

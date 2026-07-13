@@ -66,6 +66,8 @@ class Site:
         # Clientes vinculados
         self.clientes = []
 
+        self.clientes_adicionais = []
+
         self.setoriais = {}
 
         self.sites_por_setorial = {}
@@ -139,7 +141,82 @@ class Site:
                 []
             ).append(cliente)
 
+        cliente.adicionar_vinculo_atendimento(
+            self,
+            setorial=setorial,
+            tipo="Principal",
+            origem=getattr(cliente, "origem_estrutura", ""),
+            predio=getattr(cliente, "predio_estrutura", None)
+        )
+
         self.limpar_receita_cache()
+
+    def adicionar_cliente_adicional(
+        self,
+        cliente,
+        setorial=None,
+        origem="",
+        predio=None
+    ):
+        assinatura = str(
+            getattr(cliente, "num_assinatura", "") or ""
+        ).strip()
+        chave = (
+            assinatura,
+            str(setorial or "Direto")
+        )
+
+        for vinculo in self.clientes_adicionais:
+            cliente_existente = vinculo.get("cliente")
+            chave_existente = (
+                str(
+                    getattr(
+                        cliente_existente,
+                        "num_assinatura",
+                        ""
+                    ) or ""
+                ).strip(),
+                str(vinculo.get("setorial") or "Direto")
+            )
+
+            if chave_existente == chave:
+                return False
+
+        self.clientes_adicionais.append({
+            "cliente": cliente,
+            "setorial": setorial,
+            "origem": origem or "",
+            "predio": predio
+        })
+        cliente.adicionar_vinculo_atendimento(
+            self,
+            setorial=setorial,
+            tipo="Adicional",
+            origem=origem,
+            predio=predio
+        )
+
+        return True
+
+    def listar_vinculos_clientes(self, incluir_adicionais=True):
+        vinculos = [
+            {
+                "cliente": cliente,
+                "setorial": getattr(cliente, "setorial", None),
+                "tipo": "Principal",
+                "origem": getattr(cliente, "origem_estrutura", ""),
+                "predio": getattr(cliente, "predio_estrutura", None)
+            }
+            for cliente in self.clientes
+        ]
+
+        if incluir_adicionais:
+            vinculos.extend({
+                **vinculo,
+                "tipo": "Adicional"
+            } for vinculo in self.clientes_adicionais)
+
+        return vinculos
 
     def adicionar_site_setorial(self, setorial, site):
 
@@ -161,15 +238,35 @@ class Site:
         nome,
         assinatura,
         predio=None,
-        setorial=None
+        setorial=None,
+        tipo_vinculo="Principal"
     ):
+
+        chave = (
+            str(assinatura or "").strip(),
+            str(setorial or "Direto"),
+            str(tipo_vinculo or "Principal")
+        )
+
+        for vinculo in self.clientes_estrutura:
+            chave_existente = (
+                str(vinculo.get("assinatura") or "").strip(),
+                str(vinculo.get("setorial") or "Direto"),
+                str(vinculo.get("tipo_vinculo") or "Principal")
+            )
+
+            if chave_existente == chave:
+                return False
 
         self.clientes_estrutura.append({
             "nome": nome,
             "assinatura": assinatura,
             "predio": predio,
-            "setorial": setorial
+            "setorial": setorial,
+            "tipo_vinculo": tipo_vinculo
         })
+
+        return True
 
     def adicionar_equipamento(self, equipamento):
 

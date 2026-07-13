@@ -229,6 +229,36 @@ def mostrar_links_uteis_cliente(cliente):
     )
 
 
+def mostrar_vinculos_atendimento_cliente(cliente):
+    vinculos = cliente.get("Vínculos de atendimento") or []
+
+    if not isinstance(vinculos, list) or not vinculos:
+        return
+
+    st.markdown("**Sites de atendimento**")
+
+    for vinculo in vinculos:
+        site = str(vinculo.get("Site") or "").strip()
+        setorial = str(vinculo.get("Setorial") or "Direto").strip()
+        tipo = str(vinculo.get("Vínculo") or "Principal").strip()
+
+        if not site:
+            continue
+
+        site_href = f"?abrir_site_gerenciamento={quote(site)}"
+        topologia_href = f"?abrir_topologia_site={quote(site)}"
+        st.markdown(
+            (
+                f"- **{html.escape(tipo)}:** "
+                f'<a href="{site_href}" target="_self">'
+                f"{html.escape(site)}</a> / "
+                f'<a href="{topologia_href}" target="_self">'
+                f"{html.escape(setorial)}</a>"
+            ),
+            unsafe_allow_html=True
+        )
+
+
 def mostrar_resumo_cliente(cliente):
     st.subheader(valor_resumo_cliente(cliente, "Cliente", "Cliente"))
 
@@ -300,6 +330,7 @@ def mostrar_resumo_cliente(cliente):
                 else:
                     mostrar_campo_resumo(rotulo, valor)
 
+    mostrar_vinculos_atendimento_cliente(cliente)
     mostrar_links_uteis_cliente(cliente)
 
 

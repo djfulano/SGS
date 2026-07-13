@@ -186,6 +186,13 @@ def montar_dados_agendamento(sites, equipamentos, assinatura):
         "Setorial": texto(setorial),
         "Produto contratado": texto(produto),
         "Site": texto(getattr(site_referencia, "nome", "")),
+        "Sites de atendimento": texto(
+            ", ".join(
+                getattr(vinculo.get("site"), "nome", "")
+                for vinculo in getattr(cliente, "vinculos_atendimento", [])
+                if vinculo.get("site") is not None
+            ) if cliente else ""
+        ),
     }, df_equipamentos
 
 
@@ -223,6 +230,7 @@ def mostrar_agendamento(sites, equipamentos):
         ["Equipamento Cliente", dados["Equipamento Cliente"]],
         ["Caminho até o POP", dados["Caminho até o POP"]],
         ["Setorial", dados["Setorial"]],
+        ["Sites de atendimento", dados["Sites de atendimento"]],
         ["Produto contratado", dados["Produto contratado"]],
     ]
 

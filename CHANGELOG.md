@@ -1,5 +1,12 @@
 # Histórico de versões
 
+## 1.2.8
+
+- Clientes atendidos por múltiplos sites passam a ter um vínculo principal e vínculos adicionais identificados pelos objetos Goto do SNMPc.
+- Topologia, Consulta de Clientes, Equipamentos, Suporte e Viabilidade passam a exibir todos os sites e setoriais de atendimento com o tipo do vínculo.
+- Mapa e exportação KML/KMZ passam a manter um único marcador por assinatura e desenhar uma linha para cada site de atendimento.
+- Receita, clientes, produtos, rankings e demais indicadores financeiros continuam contabilizados somente no vínculo principal.
+
 ## 1.2.7
 
 - Topologia passa a exibir custos diretos, indiretos e totais no resumo dos sites selecionados, na tabela de sites usados e no detalhe individual.
