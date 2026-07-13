@@ -1,5 +1,10 @@
 # Histórico de versões
 
+## 1.2.7
+
+- Topologia passa a exibir custos diretos, indiretos e totais no resumo dos sites selecionados, na tabela de sites usados e no detalhe individual.
+- Consolidação dos custos respeita a inclusão de sites filhos, evita dupla contagem e mantém a restrição de acesso aos valores de custos.
+
 ## 1.2.6
 
 - Tipo de site Cliente passa a ser padronizado e preservado na importação da base Sites.

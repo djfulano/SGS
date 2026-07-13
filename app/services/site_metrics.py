@@ -32,6 +32,27 @@ def receita_total_site(site):
     return receita_site(site) + receita_indireta_site(site)
 
 
+def custo_site(site):
+
+    try:
+        return float(getattr(site, "custo", 0) or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def custo_indireto_site(site):
+
+    return sum(
+        custo_total_site(filho)
+        for filho in site.filhos
+    )
+
+
+def custo_total_site(site):
+
+    return custo_site(site) + custo_indireto_site(site)
+
+
 def sites_descendentes(site):
 
     sites = [site]
@@ -85,6 +106,14 @@ def montar_resumo_selecao_sites(selecionados, usados):
         receita_site(site)
         for site in usados.values()
     )
+    custo_direto = sum(
+        custo_site(site)
+        for site in selecionados.values()
+    )
+    custo_total = sum(
+        custo_site(site)
+        for site in usados.values()
+    )
 
     return {
         "clientes_total": clientes_total,
@@ -92,5 +121,8 @@ def montar_resumo_selecao_sites(selecionados, usados):
         "clientes_diretos": clientes_diretos,
         "receita_direta": receita_direta,
         "clientes_indiretos": clientes_total - clientes_diretos,
-        "receita_indireta": receita_total - receita_direta
+        "receita_indireta": receita_total - receita_direta,
+        "custo_direto": custo_direto,
+        "custo_indireto": custo_total - custo_direto,
+        "custo_total": custo_total
     }

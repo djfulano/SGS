@@ -12,6 +12,9 @@ from app.services.products import carregar_clientes_excel_sva
 from app.services.products import eh_produto_sva
 from app.services.site_metrics import clientes_indiretos_site
 from app.services.site_metrics import clientes_totais_site
+from app.services.site_metrics import custo_indireto_site
+from app.services.site_metrics import custo_site
+from app.services.site_metrics import custo_total_site
 from app.services.site_metrics import montar_escopo_sites
 from app.services.site_metrics import montar_resumo_selecao_sites
 from app.services.site_metrics import receita_indireta_site
@@ -76,6 +79,22 @@ def usuario_atual():
         return _usuario_logado() or {}
 
     return {}
+
+
+def usuario_pode_ver_custos():
+
+    return has_permission(
+        usuario_atual(),
+        "visualizar_valores_custos"
+    )
+
+
+def formatar_custo(valor):
+
+    if not usuario_pode_ver_custos():
+        return "Restrito"
+
+    return formatar_moeda(valor)
 
 
 def normalizar_velocidade_mbps(valor):
@@ -252,6 +271,8 @@ def montar_resumo_sites(sites):
         clientes_indiretos = clientes_indiretos_site(site)
         receita_direta = receita_site(site)
         receita_indireta = receita_indireta_site(site)
+        custo_direto = custo_site(site)
+        custo_indireto = custo_indireto_site(site)
 
         dados.append({
             "Site": site.nome,
@@ -264,7 +285,10 @@ def montar_resumo_sites(sites):
             "Receita Direta": receita_direta,
             "Receita Indireta": receita_indireta,
             "Receita Total": receita_direta + receita_indireta,
-            "Custo": getattr(site, "custo", 0)
+            "Custo": custo_direto,
+            "Custo Direto": custo_direto,
+            "Custo Indireto": custo_indireto,
+            "Custo Total": custo_direto + custo_indireto
         })
 
     return pd.DataFrame(dados)
@@ -292,16 +316,19 @@ def montar_tabela_sites_usados(sites_usados, incluir_filhos):
 
         clientes_diretos = len(site.clientes)
         receita_direta = receita_site(site)
+        custo_direto = custo_site(site)
 
         if incluir_filhos:
 
             clientes_indiretos = clientes_indiretos_site(site)
             receita_indireta = receita_indireta_site(site)
+            custo_indireto = custo_indireto_site(site)
 
         else:
 
             clientes_indiretos = 0
             receita_indireta = 0
+            custo_indireto = 0
 
         dados.append({
             "Site": site.nome,
@@ -311,7 +338,10 @@ def montar_tabela_sites_usados(sites_usados, incluir_filhos):
             "Clientes Indiretos": clientes_indiretos,
             "Receita Indireta": receita_indireta,
             "Clientes Totais": clientes_diretos + clientes_indiretos,
-            "Receita Total": receita_direta + receita_indireta
+            "Receita Total": receita_direta + receita_indireta,
+            "Custo Direto": custo_direto,
+            "Custo Indireto": custo_indireto,
+            "Custo Total": custo_direto + custo_indireto
         })
 
     return pd.DataFrame(dados)
@@ -762,6 +792,23 @@ def mostrar_sites_receitas(sites, df_sites):
     col1, col2, col3 = st.columns(3)
 
     col1.metric(
+        "Custo direto",
+        formatar_custo(resumo["custo_direto"])
+    )
+
+    col2.metric(
+        "Custo indireto",
+        formatar_custo(resumo["custo_indireto"])
+    )
+
+    col3.metric(
+        "Custo total",
+        formatar_custo(resumo["custo_total"])
+    )
+
+    col1, col2, col3 = st.columns(3)
+
+    col1.metric(
         "Maior banda Telecom ativa",
         maior_banda
     )
@@ -784,6 +831,9 @@ def mostrar_sites_receitas(sites, df_sites):
         f"Receita direta\t{formatar_moeda(resumo['receita_direta'])}",
         f"Clientes indiretos\t{resumo['clientes_indiretos']}",
         f"Receita indireta\t{formatar_moeda(resumo['receita_indireta'])}",
+        f"Custo direto\t{formatar_custo(resumo['custo_direto'])}",
+        f"Custo indireto\t{formatar_custo(resumo['custo_indireto'])}",
+        f"Custo total\t{formatar_custo(resumo['custo_total'])}",
         f"Maior banda Telecom ativa\t{maior_banda}",
         f"Somatória das bandas ativas\t{soma_banda}",
         (
@@ -890,6 +940,9 @@ def mostrar_detalhe_site(site):
     clientes_indiretos_qtd = clientes_indiretos_site(site)
     receita_direta = receita_site(site)
     receita_indireta = receita_indireta_site(site)
+    custo_direto = custo_site(site)
+    custo_indireto = custo_indireto_site(site)
+    custo_total = custo_total_site(site)
     clientes_total = clientes_diretos_qtd + clientes_indiretos_qtd
     receita_total = receita_direta + receita_indireta
     catalogo_produtos = load_product_catalog()
@@ -948,6 +1001,23 @@ def mostrar_detalhe_site(site):
     col1, col2, col3 = st.columns(3)
 
     col1.metric(
+        "Custo direto",
+        formatar_custo(custo_direto)
+    )
+
+    col2.metric(
+        "Custo indireto",
+        formatar_custo(custo_indireto)
+    )
+
+    col3.metric(
+        "Custo total",
+        formatar_custo(custo_total)
+    )
+
+    col1, col2, col3 = st.columns(3)
+
+    col1.metric(
         "Maior banda Telecom ativa no site",
         maior_banda
     )
@@ -971,6 +1041,9 @@ def mostrar_detalhe_site(site):
         f"Receita Indireta\t{formatar_moeda(receita_indireta)}",
         f"Clientes Total\t{clientes_total}",
         f"Receita Total\t{formatar_moeda(receita_total)}",
+        f"Custo Direto\t{formatar_custo(custo_direto)}",
+        f"Custo Indireto\t{formatar_custo(custo_indireto)}",
+        f"Custo Total\t{formatar_custo(custo_total)}",
         f"Maior banda Telecom ativa no site\t{maior_banda}",
         f"Somatória das bandas ativas\t{soma_banda}",
         (

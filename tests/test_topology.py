@@ -1,16 +1,24 @@
 import unittest
+from unittest.mock import patch
 
 import pandas as pd
 
+import app.ui.views.topology as topology_view
 from app.models.cliente import Cliente
 from app.models.site import Site
 from app.ui.views.topology import formatar_banda_mbps
 from app.ui.views.topology import contar_sites_ativos_resumo
+from app.ui.views.topology import montar_tabela_sites_usados
 from app.ui.views.topology import montar_metricas_banda_telecom_site
 from app.ui.views.topology import montar_metricas_banda_telecom_sites
 from app.ui.views.topology import montar_resumo_sites
 from app.ui.views.topology import normalizar_velocidade_mbps
 from app.ui.views.topology import velocidade_telecom_produto_mbps
+from app.services.site_metrics import custo_indireto_site
+from app.services.site_metrics import custo_site
+from app.services.site_metrics import custo_total_site
+from app.services.site_metrics import montar_escopo_sites
+from app.services.site_metrics import montar_resumo_selecao_sites
 
 
 class TopologyBandwidthTest(unittest.TestCase):
@@ -48,6 +56,18 @@ class TopologyBandwidthTest(unittest.TestCase):
 
         self.assertEqual(
             df_resumo.loc[0, "Custo"],
+            1234.56
+        )
+        self.assertEqual(
+            df_resumo.loc[0, "Custo Direto"],
+            1234.56
+        )
+        self.assertEqual(
+            df_resumo.loc[0, "Custo Indireto"],
+            0
+        )
+        self.assertEqual(
+            df_resumo.loc[0, "Custo Total"],
             1234.56
         )
         self.assertEqual(
@@ -116,6 +136,95 @@ class TopologyBandwidthTest(unittest.TestCase):
             df_resumo["Custo"].sum(),
             120
         )
+
+    def test_custos_direto_indireto_e_total_multinivel(self):
+        pai = Site("POP_A", "POP")
+        filho = Site("BH_A", "BH")
+        neto = Site("REP_A", "REP")
+        pai.custo = 100
+        filho.custo = 40
+        neto.custo = 10
+        pai.adicionar_filho(filho)
+        filho.adicionar_filho(neto)
+
+        self.assertEqual(custo_site(pai), 100)
+        self.assertEqual(custo_indireto_site(pai), 50)
+        self.assertEqual(custo_total_site(pai), 150)
+
+    def test_tabela_sites_usados_respeita_incluir_filhos(self):
+        pai = Site("POP_A", "POP")
+        filho = Site("BH_A", "BH")
+        pai.custo = 100
+        filho.custo = 40
+        pai.adicionar_filho(filho)
+
+        sem_filhos = montar_tabela_sites_usados(
+            {pai.nome: pai},
+            incluir_filhos=False
+        ).iloc[0]
+        com_filhos = montar_tabela_sites_usados(
+            {pai.nome: pai, filho.nome: filho},
+            incluir_filhos=True
+        )
+        linha_pai = com_filhos[
+            com_filhos["Site"] == pai.nome
+        ].iloc[0]
+
+        self.assertEqual(sem_filhos["Custo Direto"], 100)
+        self.assertEqual(sem_filhos["Custo Indireto"], 0)
+        self.assertEqual(sem_filhos["Custo Total"], 100)
+        self.assertEqual(linha_pai["Custo Indireto"], 40)
+        self.assertEqual(linha_pai["Custo Total"], 140)
+
+    def test_resumo_nao_duplica_custo_com_pai_e_filho_selecionados(self):
+        pai = Site("POP_A", "POP")
+        filho = Site("BH_A", "BH")
+        pai.custo = 100
+        filho.custo = 40
+        pai.adicionar_filho(filho)
+
+        selecionados, usados = montar_escopo_sites(
+            [pai, filho],
+            incluir_filhos=True
+        )
+        resumo = montar_resumo_selecao_sites(
+            selecionados,
+            usados
+        )
+
+        self.assertEqual(resumo["custo_direto"], 140)
+        self.assertEqual(resumo["custo_indireto"], 0)
+        self.assertEqual(resumo["custo_total"], 140)
+
+    def test_formatacao_de_custo_respeita_permissao(self):
+        usuario_logado_anterior = topology_view._usuario_logado
+        formatador_anterior = topology_view._formatar_moeda
+        topology_view._usuario_logado = lambda: {"profile": "Teste"}
+        topology_view._formatar_moeda = lambda valor: f"R$ {valor:.2f}"
+
+        try:
+            with patch.object(
+                topology_view,
+                "has_permission",
+                return_value=False
+            ):
+                self.assertEqual(
+                    topology_view.formatar_custo(100),
+                    "Restrito"
+                )
+
+            with patch.object(
+                topology_view,
+                "has_permission",
+                return_value=True
+            ):
+                self.assertEqual(
+                    topology_view.formatar_custo(100),
+                    "R$ 100.00"
+                )
+        finally:
+            topology_view._usuario_logado = usuario_logado_anterior
+            topology_view._formatar_moeda = formatador_anterior
 
     def test_normaliza_velocidades_em_mbps(self):
         self.assertEqual(
