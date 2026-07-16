@@ -108,6 +108,14 @@ class ProfilePermissionsGridTest(unittest.TestCase):
             grupos.index("Suporte")
         )
         self.assertLess(
+            grupos.index("Viabilidade"),
+            grupos.index("Gestão de Viabilidades")
+        )
+        self.assertLess(
+            grupos.index("Gestão de Viabilidades"),
+            grupos.index("Financeiro")
+        )
+        self.assertLess(
             grupos.index("Sistema"),
             grupos.index("Valores")
         )
@@ -155,6 +163,14 @@ class ProfilePermissionsGridTest(unittest.TestCase):
         self.assertEqual(
             grupos_por_chave["importacao"],
             "Sistema"
+        )
+        self.assertEqual(
+            grupos_por_chave["gestao_viabilidades_dashboard"],
+            "Gestão de Viabilidades"
+        )
+        self.assertEqual(
+            grupos_por_chave["gestao_viabilidades_consulta"],
+            "Gestão de Viabilidades"
         )
 
     def test_extrai_chaves_selecionadas_da_grade(self):

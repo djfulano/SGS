@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import patch
 
 import pandas as pd
 
@@ -11,12 +12,44 @@ from app.ui.views.site_management import contatos_ativos
 from app.ui.views.site_management import contatos_para_exibicao
 from app.ui.views.site_management import indice_tipo_contato
 from app.ui.views.site_management import normalizar_tipo_contato_exibicao
+from app.ui.views.site_management import nome_destaque_site
 from app.ui.views.site_management import opcoes_tipo_contato
 from app.ui.views.site_management import opcoes_contatos_com_indices
 from app.ui.views.site_management import opcoes_cadastradas_site
+from app.ui.views.site_management import pode_visualizar_custos_site
+from app.ui.views.site_management import valor_custo_site
 
 
 class SiteManagementTest(unittest.TestCase):
+
+    def test_nome_destaque_prioriza_nome_cadastro(self):
+        self.assertEqual(
+            nome_destaque_site({
+                "Nome Cadastro": "VITA ALTO DA LAPA",
+                "Site SNMPc": "VIT_POP_105743_IP",
+                "Busca": "texto composto"
+            }),
+            "VITA ALTO DA LAPA"
+        )
+
+    def test_custo_fica_restrito_sem_permissao(self):
+        with patch(
+            "app.ui.views.site_management.has_permission",
+            return_value=False
+        ):
+            self.assertFalse(pode_visualizar_custos_site({"profile": "NOC"}))
+            self.assertEqual(valor_custo_site(1234.56), "Restrito")
+
+    def test_custo_e_formatado_com_permissao(self):
+        with patch(
+            "app.ui.views.site_management.has_permission",
+            return_value=True
+        ), patch(
+            "app.ui.views.site_management._formatar_moeda",
+            side_effect=lambda valor: f"R$ {valor:.2f}"
+        ):
+            self.assertTrue(pode_visualizar_custos_site({"profile": "Master"}))
+            self.assertEqual(valor_custo_site(1234.56), "R$ 1234.56")
 
     def test_detecta_codigos_repetidos_dos_sites(self):
         df = pd.DataFrame([

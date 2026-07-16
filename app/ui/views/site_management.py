@@ -217,6 +217,25 @@ def valor_exibicao_site(valor):
     return str(valor)
 
 
+def pode_visualizar_custos_site(usuario=None):
+    if usuario is None:
+        usuario = _usuario_logado() if callable(_usuario_logado) else {}
+
+    return has_permission(
+        usuario,
+        "visualizar_valores_custos"
+    )
+
+
+def nome_destaque_site(site):
+    return valor_exibicao_site(
+        site.get("Nome Cadastro")
+        or site.get("Site SNMPc")
+        or site.get("SNMPc")
+        or site.get("Busca")
+    )
+
+
 def chave_campo_site(sufixo, campo):
     return f"gerenciar_site_{sufixo}_{campo}"
 
@@ -678,6 +697,7 @@ def montar_registro_site_formulario(registro, df_cadastro, sufixo):
     status_atual = texto_registro_site(registro, "Status")
     relacionamento_atual = texto_registro_site(registro, "Relacionamento")
     favorecido_atual = texto_registro_site(registro, "Favorecido")
+    custo_atual = texto_registro_site(registro, "CUSTO")
 
     opcoes_contrato = opcoes_cadastradas_site(df_cadastro, "CONTRATO", contrato_atual)
     opcoes_categoria = opcoes_cadastradas_site(df_cadastro, "CATEGORIA", categoria_atual)
@@ -804,11 +824,20 @@ def montar_registro_site_formulario(registro, df_cadastro, sufixo):
         )
 
     with col4:
-        custo = st.text_input(
-            "Custo",
-            value=texto_registro_site(registro, "CUSTO"),
-            key=chave_campo_site(sufixo, "custo")
-        )
+        if pode_visualizar_custos_site():
+            custo = st.text_input(
+                "Custo",
+                value=custo_atual,
+                key=chave_campo_site(sufixo, "custo")
+            )
+        else:
+            st.text_input(
+                "Custo",
+                value="Restrito",
+                disabled=True,
+                key=chave_campo_site(sufixo, "custo_restrito")
+            )
+            custo = custo_atual
 
     st.markdown("**Contrato e perfil**")
     col1, col2, col3, col4 = st.columns(4)
@@ -1057,6 +1086,9 @@ def mostrar_item_contratual(rotulo, valor):
 
 
 def valor_custo_site(valor):
+    if not pode_visualizar_custos_site():
+        return "Restrito"
+
     try:
         return _formatar_moeda(float(valor or 0))
     except (TypeError, ValueError):
@@ -1719,7 +1751,11 @@ def mostrar_financeiro_site_selecionado(site, site_modelo=None):
     )
     col4.metric(
         "Resultado",
-        _formatar_moeda(float(site.get("Resultado") or 0))
+        (
+            _formatar_moeda(float(site.get("Resultado") or 0))
+            if pode_visualizar_custos_site()
+            else "Restrito"
+        )
     )
 
     col1, col2, col3, col4 = st.columns(4)
@@ -1738,7 +1774,11 @@ def mostrar_financeiro_site_selecionado(site, site_modelo=None):
     )
     col4.metric(
         "Margem",
-        f"{float(site.get('Margem %') or 0):.1%}"
+        (
+            f"{float(site.get('Margem %') or 0):.1%}"
+            if pode_visualizar_custos_site()
+            else "Restrito"
+        )
     )
 
     st.markdown("**Detalhamento financeiro**")
@@ -2950,9 +2990,7 @@ def mostrar_gerenciamento_sites_unificado(
             site
         )
 
-        st.caption(
-            f"Site selecionado: {valor_exibicao_site(site.get('Busca'))}"
-        )
+        st.subheader(nome_destaque_site(site))
 
     subabas = [
         (

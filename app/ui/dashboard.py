@@ -87,6 +87,8 @@ from app.ui.views.support import configurar_suporte
 from app.ui.views.support import mostrar_suporte
 from app.ui.views.viability import configurar_viabilidade
 from app.ui.views.viability import mostrar_viabilidade
+from app.ui.views.feasibility_management import configurar_gestao_viabilidades
+from app.ui.views.feasibility_management import mostrar_gestao_viabilidades
 from app.ui.views.finance import configurar_financeiro
 from app.ui.views.finance import mostrar_financeiro
 from app.ui.views.topology import configurar_topologia
@@ -963,6 +965,11 @@ configurar_viabilidade(
     usuario_logado,
     mostrar_grid
 )
+configurar_gestao_viabilidades(
+    usuario_logado,
+    mostrar_grid,
+    formatar_moeda
+)
 configurar_financeiro(
     usuario_logado,
     mostrar_grid,
@@ -1516,6 +1523,11 @@ abas_disponiveis = [
         )
     ),
     (
+        "gestao_viabilidades",
+        "Gestão de Viabilidades",
+        lambda: mostrar_gestao_viabilidades(sites)
+    ),
+    (
         "financeiro",
         "Financeiro",
         lambda: mostrar_financeiro(
@@ -1626,6 +1638,21 @@ def permissao_aba(aba):
                 "viabilidade_consulta",
                 "viabilidade_migracao",
                 "viabilidade_estudos"
+            ]
+        )
+
+    if chave == "gestao_viabilidades":
+
+        return any(
+            has_permission(
+                usuario_logado(),
+                permissao_gestao_viabilidades
+            )
+            for permissao_gestao_viabilidades in [
+                "gestao_viabilidades",
+                "gestao_viabilidades_dashboard",
+                "gestao_viabilidades_consulta",
+                "gestao_viabilidades_importar"
             ]
         )
 

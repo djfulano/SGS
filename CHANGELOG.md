@@ -1,5 +1,17 @@
 # Histórico de versões
 
+## 1.3.0
+
+- Adicionado o módulo Gestão de Viabilidades com Dashboard, Consulta e Importação mensal.
+- Importação da aba PreVendas com histórico por linha, auditoria de revisões e conciliação dos caminhos com os sites do SGS.
+- Rankings de oportunidades por site, produto, gerente e cidade, com valores protegidos pelas permissões existentes.
+
+## 1.2.9
+
+- Gerenciamento de Sites passa a destacar o Nome do site selecionado como título e remove a legenda redundante de seleção.
+- Custo, resultado e margem passam a respeitar a permissão de visualização de custos também nos cards, detalhes contratuais e formulário de edição.
+- Edição por usuário sem acesso a custos preserva o valor existente sem exibi-lo na interface.
+
 ## 1.2.8
 
 - Clientes atendidos por múltiplos sites passam a ter um vínculo principal e vínculos adicionais identificados pelos objetos Goto do SNMPc.
