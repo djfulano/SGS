@@ -18,6 +18,9 @@ from app.services.map_service import geocodificar_endereco
 from app.services.map_service import salvar_cache_geocoding
 from app.services.map_settings import load_map_config
 from app.services.site_registry_service import site_pode_atender_outros_enderecos
+from app.ui.views.feasibility_management import mostrar_consulta as mostrar_historico_viabilidades
+from app.ui.views.feasibility_management import mostrar_dashboard as mostrar_dashboard_viabilidades
+from app.ui.views.feasibility_management import mostrar_importacao as mostrar_importacao_viabilidades
 from app.ui.navigation import mostrar_subnavegacao
 
 
@@ -915,25 +918,50 @@ def mostrar_viabilidade(sites, equipamentos=None):
     usuario = usuario_atual()
     subabas = [
         (
+            "gestao_viabilidades_dashboard",
+            "Dashboard",
+            lambda: mostrar_dashboard_viabilidades(sites),
+            "gestao_viabilidades"
+        ),
+        (
             "viabilidade_consulta",
             "Viabilidade",
-            lambda: mostrar_viabilidade_endereco(sites)
+            lambda: mostrar_viabilidade_endereco(sites),
+            "viabilidade"
         ),
         (
             "viabilidade_migracao",
             "Migração",
-            lambda: mostrar_migracao_cliente(sites)
+            lambda: mostrar_migracao_cliente(sites),
+            "viabilidade"
+        ),
+        (
+            "gestao_viabilidades_consulta",
+            "Histórico",
+            lambda: mostrar_historico_viabilidades(sites),
+            "gestao_viabilidades"
+        ),
+        (
+            "gestao_viabilidades_importar",
+            "Importação",
+            lambda: mostrar_importacao_viabilidades(sites),
+            "gestao_viabilidades"
         ),
         (
             "viabilidade_estudos",
             "Estudos de Engenharia",
-            mostrar_estudos_engenharia
+            mostrar_estudos_engenharia,
+            "viabilidade"
         )
     ]
     permitidas = [
-        subaba
-        for subaba in subabas
-        if has_permission(usuario, "viabilidade") or has_permission(usuario, subaba[0])
+        (chave, rotulo, funcao)
+        for chave, rotulo, funcao, permissao_pai in subabas
+        if (
+            has_permission(usuario, "viabilidade")
+            or has_permission(usuario, permissao_pai)
+            or has_permission(usuario, chave)
+        )
     ]
 
     if not permitidas:

@@ -1,6 +1,20 @@
 import streamlit as st
 
 
+def preparar_navegacao_mapa_endereco(session_state, endereco):
+    endereco = str(endereco or "").strip()
+
+    if not endereco:
+        return False
+
+    session_state["mapa_subaba"] = "mapa_geral"
+    session_state["mapa_geral_busca"] = endereco
+    session_state.pop("mapa_geral_busca_limpar_pendente", None)
+    session_state["proxima_aba_principal"] = "mapa"
+
+    return True
+
+
 def mostrar_subnavegacao(itens, key, label="Subnavegação"):
 
     if not itens:

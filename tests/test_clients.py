@@ -12,6 +12,7 @@ from app.services.clients import filtrar_clientes_consulta
 from app.services.clients import montar_base_consulta_clientes
 from app.services.clients import montar_base_clientes
 from app.ui.views.clients import preparar_busca_clientes
+from app.ui.views.clients import href_navegacao_resumo
 from app.ui.views.clients import rotulo_cliente
 from app.ui.views.clients import valor_resumo_cliente
 
@@ -234,6 +235,9 @@ class ClientsServiceTest(unittest.TestCase):
         cliente = Cliente("Cliente A", 120, "123")
         cliente.produto = "NeoSoft 100"
         cliente.gerente_contas = "Maria Silva"
+        cliente.endereco_completo = "Rua Teste, 10"
+        cliente.bairro = "Centro"
+        cliente.cidade = "São Paulo"
         site.adicionar_cliente(
             cliente,
             setorial="POP_S1"
@@ -261,11 +265,42 @@ class ClientsServiceTest(unittest.TestCase):
         self.assertEqual(df.loc[0, "Gerente de contas"], "Maria Silva")
         self.assertEqual(df.loc[0, "Site"], "POP_A")
         self.assertEqual(
+            df.loc[0, "Endereço"],
+            "Rua Teste, 10, Centro, São Paulo, SP, Brasil"
+        )
+        self.assertEqual(
             df.loc[0, "Equipamentos"],
             "Equipamento: AP | IP: 10.0.0.2"
         )
         self.assertNotIn("Site Completo", df.columns)
         self.assertNotIn("Tipo Produto", df.columns)
+
+    def test_base_consulta_cliente_sem_vinculo_preserva_endereco(self):
+        with patch(
+            "app.services.clients.load_equipment_catalog",
+            return_value=pd.DataFrame()
+        ):
+            df = montar_base_consulta_clientes(
+                {},
+                [],
+                clientes_base={
+                    "456": {
+                        "Cliente": "Cliente Sem Vinculo",
+                        "Endereco": "Avenida Exemplo, 200"
+                    }
+                }
+            )
+
+        self.assertEqual(df.loc[0, "Endereço"], "Avenida Exemplo, 200")
+
+    def test_link_de_endereco_codifica_caracteres_especiais(self):
+        self.assertEqual(
+            href_navegacao_resumo(
+                "abrir_mapa_endereco",
+                "Rua A/B & C, 10"
+            ),
+            "?abrir_mapa_endereco=Rua%20A%2FB%20%26%20C%2C%2010"
+        )
 
     def test_base_consulta_clientes_usa_nome_cadastrado_e_ip_do_equipamento(self):
         site = Site("POP_A", "POP")

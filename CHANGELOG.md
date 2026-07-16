@@ -1,5 +1,17 @@
 # Histórico de versões
 
+## 1.3.2
+
+- Clientes > Consulta passa a exibir o endereço do cliente na base leve de consulta.
+- Usuários com acesso ao Mapa podem abrir o endereço diretamente no Mapa Geral com a busca preenchida.
+- Endereços não passam a fazer parte da busca de clientes, preservando o desempenho atual da consulta.
+
+## 1.3.1
+
+- Viabilidade e Gestão de Viabilidades passam a formar um único módulo principal.
+- Dashboard, análise por endereço, Migração, Histórico, Importação e Estudos de Engenharia ficam reunidos na mesma subnavegação.
+- Permissões existentes são preservadas e passam a ser agrupadas visualmente em Viabilidade.
+
 ## 1.3.0
 
 - Adicionado o módulo Gestão de Viabilidades com Dashboard, Consulta e Importação mensal.

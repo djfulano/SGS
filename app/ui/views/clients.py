@@ -149,6 +149,10 @@ def mostrar_campo_resumo_multilinha(rotulo, valor):
     )
 
 
+def href_navegacao_resumo(parametro, valor):
+    return f"?{parametro}={quote(str(valor or ''), safe='')}"
+
+
 def site_valido_cliente(cliente):
     site = valor_resumo_cliente(cliente, "Site", "")
 
@@ -158,14 +162,14 @@ def site_valido_cliente(cliente):
     return site
 
 
-def mostrar_campo_resumo_link(rotulo, valor, parametro, site):
+def mostrar_campo_resumo_link(rotulo, valor, parametro, destino):
     st.caption(rotulo)
 
-    if not site:
+    if not destino:
         st.markdown(f"**{valor}**")
         return
 
-    href = f"?{parametro}={quote(site)}"
+    href = href_navegacao_resumo(parametro, destino)
     texto = html.escape(str(valor))
     st.markdown(
         f'<a href="{href}" target="_self">{texto}</a>',
@@ -270,12 +274,18 @@ def mostrar_resumo_cliente(cliente):
 
     site_cliente = site_valido_cliente(cliente)
     setorial = valor_resumo_cliente(cliente, "Setorial")
+    endereco_mapa = valor_resumo_cliente(cliente, "Endereço", "")
     campos = [
         ("Assinatura", valor_resumo_cliente(cliente, "Assinatura", "-")),
         ("Nome", valor_resumo_cliente(cliente, "Cliente")),
         ("Receita", receita),
         ("Produto", valor_resumo_cliente(cliente, "Produto")),
         ("Gerente de contas", valor_resumo_cliente(cliente, "Gerente de contas")),
+        (
+            "Endereço",
+            valor_resumo_cliente(cliente, "Endereço"),
+            "mapa" if endereco_mapa and pode_ver("mapa") else ""
+        ),
         (
             "Site SNMPc",
             valor_resumo_cliente(cliente, "Site", "Sem vínculo"),
@@ -324,6 +334,13 @@ def mostrar_resumo_cliente(cliente):
                         valor,
                         "abrir_topologia_site",
                         site_cliente
+                    )
+                elif acao == "mapa":
+                    mostrar_campo_resumo_link(
+                        rotulo,
+                        valor,
+                        "abrir_mapa_endereco",
+                        endereco_mapa
                     )
                 elif acao == "multilinha":
                     mostrar_campo_resumo_multilinha(rotulo, valor)

@@ -55,6 +55,7 @@ from app.ui.components.tables import mostrar_botao_copiar_texto
 from app.ui.components.tables import mostrar_dataframe_nativo
 from app.ui.components.tables import mostrar_grid
 from app.ui.navigation import mostrar_subnavegacao
+from app.ui.navigation import preparar_navegacao_mapa_endereco
 from app.ui.session import preparar_sessao_usuario
 from app.ui.session import usuario_logado
 from app.ui.theme import aplicar_tema_visual
@@ -88,7 +89,6 @@ from app.ui.views.support import mostrar_suporte
 from app.ui.views.viability import configurar_viabilidade
 from app.ui.views.viability import mostrar_viabilidade
 from app.ui.views.feasibility_management import configurar_gestao_viabilidades
-from app.ui.views.feasibility_management import mostrar_gestao_viabilidades
 from app.ui.views.finance import configurar_financeiro
 from app.ui.views.finance import mostrar_financeiro
 from app.ui.views.topology import configurar_topologia
@@ -453,6 +453,9 @@ def consumir_links_navegacao_cliente():
     site_topologia = str(
         st.query_params.get("abrir_topologia_site") or ""
     ).strip()
+    endereco_mapa = str(
+        st.query_params.get("abrir_mapa_endereco") or ""
+    ).strip()
 
     if site_gerenciamento:
         st.session_state["abrir_site_gerenciamento"] = site_gerenciamento
@@ -475,6 +478,15 @@ def consumir_links_navegacao_cliente():
 
         try:
             del st.query_params["abrir_topologia_site"]
+        except KeyError:
+            pass
+
+    if preparar_navegacao_mapa_endereco(
+        st.session_state,
+        endereco_mapa
+    ):
+        try:
+            del st.query_params["abrir_mapa_endereco"]
         except KeyError:
             pass
 
@@ -1523,11 +1535,6 @@ abas_disponiveis = [
         )
     ),
     (
-        "gestao_viabilidades",
-        "Gestão de Viabilidades",
-        lambda: mostrar_gestao_viabilidades(sites)
-    ),
-    (
         "financeiro",
         "Financeiro",
         lambda: mostrar_financeiro(
@@ -1637,18 +1644,7 @@ def permissao_aba(aba):
                 "viabilidade",
                 "viabilidade_consulta",
                 "viabilidade_migracao",
-                "viabilidade_estudos"
-            ]
-        )
-
-    if chave == "gestao_viabilidades":
-
-        return any(
-            has_permission(
-                usuario_logado(),
-                permissao_gestao_viabilidades
-            )
-            for permissao_gestao_viabilidades in [
+                "viabilidade_estudos",
                 "gestao_viabilidades",
                 "gestao_viabilidades_dashboard",
                 "gestao_viabilidades_consulta",
