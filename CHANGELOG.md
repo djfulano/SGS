@@ -1,5 +1,11 @@
 # Histórico de versões
 
+## 1.3.3
+
+- Histórico de viabilidades passa a reutilizar em memória o JSON e o DataFrame enquanto o arquivo não mudar.
+- Conciliação de caminhos reutiliza índices de sites e rankings deixam de percorrer registros linha a linha.
+- Consulta limita a renderização a 1.000 linhas e prepara a exportação Excel somente quando solicitada.
+
 ## 1.3.2
 
 - Clientes > Consulta passa a exibir o endereço do cliente na base leve de consulta.

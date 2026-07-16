@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from datetime import datetime
+import hashlib
+import re
 
 import pandas as pd
 import plotly.express as px
@@ -11,9 +13,12 @@ from app.auth import can_view_values
 from app.auth import has_permission
 from app.logs import registrar_log_sistema
 from app.services.feasibility_history import CLASSIFICACOES
+from app.services.feasibility_history import cached_records_dataframe
 from app.services.feasibility_history import default_dashboard_period
 from app.services.feasibility_history import export_records_excel
 from app.services.feasibility_history import load_imports
+from app.services.feasibility_history import load_record
+from app.services.feasibility_history import load_records
 from app.services.feasibility_history import preview_import
 from app.services.feasibility_history import records_dataframe
 from app.services.feasibility_history import save_import
@@ -47,13 +52,8 @@ def pode(permission):
 def opcoes(df, column):
     if df is None or df.empty or column not in df.columns:
         return []
-    values = set()
-    for value in df[column].dropna():
-        for part in str(value).split(";"):
-            part = part.strip()
-            if part:
-                values.add(part)
-    return sorted(values)
+    values = df[column].dropna().astype(str).str.split(";").explode().str.strip()
+    return sorted(values[values.ne("")].unique().tolist())
 
 
 def filtrar_registros(
@@ -69,13 +69,18 @@ def filtrar_registros(
     status=None,
     termo="",
 ):
-    result = df.copy()
-    dates = pd.to_datetime(result.get("Data Início"), errors="coerce")
+    if df is None or df.empty:
+        return df.copy()
+    mask = pd.Series(True, index=df.index)
+    dates = (
+        df["_Data Início TS"]
+        if "_Data Início TS" in df.columns
+        else pd.to_datetime(df.get("Data Início"), errors="coerce")
+    )
     if inicio is not None:
-        result = result[dates >= pd.Timestamp(inicio)]
-        dates = pd.to_datetime(result.get("Data Início"), errors="coerce")
+        mask &= dates >= pd.Timestamp(inicio)
     if fim is not None:
-        result = result[dates <= pd.Timestamp(fim)]
+        mask &= dates <= pd.Timestamp(fim)
 
     exact_filters = {
         "Classificação": classificacoes,
@@ -85,22 +90,23 @@ def filtrar_registros(
         "Status Projeto": status,
     }
     for column, values in exact_filters.items():
-        if values and column in result.columns:
-            result = result[result[column].astype(str).isin(values)]
+        if values and column in df.columns:
+            mask &= df[column].astype(str).isin(values)
 
     for column, values in [("Sites localizados", sites), ("Produtos", produtos)]:
-        if not values or column not in result.columns:
+        if not values or column not in df.columns:
             continue
-        mask = pd.Series(False, index=result.index)
-        source = result[column].fillna("").astype(str)
-        for value in values:
-            mask |= source.str.split(";").apply(
-                lambda parts: value in [part.strip() for part in parts]
-            )
-        result = result[mask]
+        choices = "|".join(re.escape(str(value)) for value in values)
+        token_pattern = rf"(?:^|;)\s*(?:{choices})\s*(?:;|$)"
+        mask &= df[column].fillna("").astype(str).str.contains(
+            token_pattern,
+            case=False,
+            regex=True,
+            na=False,
+        )
 
     if termo:
-        mask = pd.Series(False, index=result.index)
+        search_mask = pd.Series(False, index=df.index)
         for column in [
             "Projeto",
             "Nome Projeto",
@@ -109,12 +115,12 @@ def filtrar_registros(
             "Produtos",
             "Sites candidatos",
         ]:
-            if column in result.columns:
-                mask |= result[column].astype(str).str.contains(
+            if column in df.columns:
+                search_mask |= df[column].astype(str).str.contains(
                     termo, case=False, regex=False, na=False
                 )
-        result = result[mask]
-    return result.copy()
+        mask &= search_mask
+    return df.loc[mask].copy()
 
 
 def _common_filters(df, prefix, include_period=True):
@@ -201,7 +207,8 @@ def _group_ranking(df, column, title, limit=20):
 
 def mostrar_dashboard(sites):
     st.header("Dashboard de viabilidades")
-    df = records_dataframe(sites=sites)
+    with st.spinner("Carregando histórico de viabilidades..."):
+        df = cached_records_dataframe(sites=sites)
     if df.empty:
         st.info("Nenhuma viabilidade foi importada.")
         return
@@ -254,7 +261,12 @@ def mostrar_dashboard(sites):
     if unresolved.empty:
         st.success("Todos os caminhos do período foram conciliados.")
     else:
-        _show_grid(unresolved, height=350, key="gestao_via_caminhos_pendentes")
+        visible = unresolved.head(1000)
+        _show_grid(visible, height=350, key="gestao_via_caminhos_pendentes")
+        if len(unresolved) > len(visible):
+            st.caption(
+                f"Exibindo 1.000 de {len(unresolved)} pendências. Use os filtros para refinar."
+            )
 
 
 def _consultation_columns(df):
@@ -309,7 +321,8 @@ def _show_record_detail(record):
 
 def mostrar_consulta(sites):
     st.header("Consulta de viabilidades")
-    df = records_dataframe(sites=sites)
+    with st.spinner("Carregando histórico de viabilidades..."):
+        df = cached_records_dataframe(sites=sites)
     if df.empty:
         st.info("Nenhuma viabilidade foi importada.")
         return
@@ -323,28 +336,59 @@ def mostrar_consulta(sites):
     filtered = filtrar_registros(df, termo=term, **filters)
     st.caption(f"{len(filtered)} solicitação(ões) encontrada(s).")
 
+    visible = filtered.head(1000)
     response = _show_grid(
-        filtered[_consultation_columns(filtered)],
+        visible[_consultation_columns(visible)],
         height=480,
         key="gestao_via_consulta_grid",
         habilitar_selecao=True,
         mostrar_abrir_site=False,
     )
+    if len(filtered) > len(visible):
+        st.caption(
+            f"Exibindo 1.000 de {len(filtered)} solicitações. Todas serão consideradas na exportação."
+        )
     selected = primeira_linha_selecionada(response) if isinstance(response, dict) else None
     if selected:
         selected_id = selected.get("ID SGS")
         rows = filtered[filtered["ID SGS"] == selected_id]
         if not rows.empty:
-            _show_record_detail(rows.iloc[0].to_dict())
+            detail = rows.iloc[0].to_dict()
+            stored = load_record(selected_id)
+            if stored:
+                detail["Dados Fonte"] = stored.get("Dados Fonte") or {}
+            _show_record_detail(detail)
 
-    export = export_records_excel(filtered, include_proposal_values=can_view_values(usuario_atual()))
-    st.download_button(
-        "Baixar resultados em Excel",
-        data=export,
-        file_name=f"viabilidades_{datetime.now():%Y%m%d_%H%M%S}.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        key="gestao_via_consulta_exportar",
-    )
+    ids = filtered.get("ID SGS", pd.Series(dtype=str)).fillna("").astype(str)
+    export_signature = hashlib.sha1(
+        ("\0".join(ids.tolist()) + f"|{can_view_values(usuario_atual())}").encode("utf-8")
+    ).hexdigest()
+    prepared = st.session_state.get("gestao_via_consulta_exportacao")
+    if st.button(
+        "Preparar Excel para download",
+        key="gestao_via_consulta_preparar_exportacao",
+        disabled=filtered.empty,
+    ):
+        with st.spinner("Preparando arquivo Excel..."):
+            export = export_records_excel(
+                filtered,
+                include_proposal_values=can_view_values(usuario_atual()),
+                source_records=load_records(),
+            )
+        prepared = {
+            "signature": export_signature,
+            "data": export,
+            "filename": f"viabilidades_{datetime.now():%Y%m%d_%H%M%S}.xlsx",
+        }
+        st.session_state["gestao_via_consulta_exportacao"] = prepared
+    if prepared and prepared.get("signature") == export_signature:
+        st.download_button(
+            "Baixar resultados em Excel",
+            data=prepared["data"],
+            file_name=prepared["filename"],
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            key="gestao_via_consulta_exportar",
+        )
 
 
 def _preview_summary(batch):

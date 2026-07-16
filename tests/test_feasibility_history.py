@@ -164,6 +164,38 @@ class FeasibilityHistoryTest(unittest.TestCase):
         self.assertEqual(alfa["Clientes atuais"], 1)
         self.assertEqual(alfa["Receita atual"], 100.0)
 
+    def test_records_dataframe_builds_site_indexes_once(self):
+        records = fh.read_feasibility_excel(
+            io.BytesIO(self.make_workbook([self.row(), self.row()])),
+            self.sites(),
+        )
+        with patch.object(fh, "_site_indexes", wraps=fh._site_indexes) as indexes:
+            frame = fh.records_dataframe(records, self.sites())
+        self.assertEqual(indexes.call_count, 1)
+        self.assertEqual(len(frame), 2)
+
+    def test_records_dataframe_omits_heavy_source_by_default(self):
+        records = fh.read_feasibility_excel(
+            io.BytesIO(self.make_workbook([self.row()])),
+            self.sites(),
+        )
+        light = fh.records_dataframe(records, self.sites())
+        complete = fh.records_dataframe(records, self.sites(), include_source=True)
+        self.assertNotIn("Dados Fonte", light.columns)
+        self.assertNotIn("Sites Candidatos", light.columns)
+        self.assertIn("Dados Fonte", complete.columns)
+
+    def test_site_ranking_preserves_distinct_requests_for_same_project(self):
+        records = fh.read_feasibility_excel(
+            io.BytesIO(self.make_workbook([self.row(), self.row()])),
+            self.sites(),
+        )
+        ranking = fh.site_opportunity_ranking(
+            fh.records_dataframe(records, self.sites()),
+            self.sites(),
+        )
+        self.assertEqual(int(ranking.iloc[0]["Solicitações viáveis"]), 2)
+
     def test_export_hides_proposal_values_without_permission(self):
         frame = pd.DataFrame([{
             "Projeto": "1",

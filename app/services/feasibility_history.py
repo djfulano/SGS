@@ -7,7 +7,9 @@ import re
 import unicodedata
 from collections import Counter
 from datetime import date, datetime
+from functools import lru_cache
 from pathlib import Path
+from types import SimpleNamespace
 
 import pandas as pd
 
@@ -244,8 +246,8 @@ def _site_indexes(sites):
     return by_name, by_code, by_abbreviation
 
 
-def resolve_site_reference(reference, sites):
-    by_name, by_code, by_abbreviation = _site_indexes(sites)
+def resolve_site_reference(reference, sites=None, indexes=None):
+    by_name, by_code, by_abbreviation = indexes or _site_indexes(sites)
     normalized = normalize_text(reference)
     site = by_name.get(normalized)
     method = "Nome SNMPc" if site else ""
@@ -277,11 +279,15 @@ def resolve_site_reference(reference, sites):
     }
 
 
-def resolve_candidates(path, sites):
+def resolve_candidates(path, sites=None, indexes=None):
+    indexes = indexes or _site_indexes(sites)
     result = []
     seen = set()
     for token in parse_site_path(path):
-        resolved = resolve_site_reference(token["Referência site"], sites)
+        resolved = resolve_site_reference(
+            token["Referência site"],
+            indexes=indexes,
+        )
         item = dict(token)
         item.update(resolved or {
             "Site": "",
@@ -396,8 +402,21 @@ def read_feasibility_excel(source, sites=None, return_stats=False):
     return records
 
 
+def records_version():
+    try:
+        stat = RECORDS_FILE.stat()
+    except FileNotFoundError:
+        return (str(RECORDS_FILE), 0, 0)
+    return (str(RECORDS_FILE), stat.st_mtime_ns, stat.st_size)
+
+
+@lru_cache(maxsize=1)
+def _load_records_cached(version):
+    return read_json(Path(version[0]), [])
+
+
 def load_records():
-    return read_json(RECORDS_FILE, [])
+    return _load_records_cached(records_version())
 
 
 def load_imports():
@@ -509,6 +528,8 @@ def preview_import(source, sites=None, filename="", user=""):
 
 def save_import(preview):
     write_json_atomic(RECORDS_FILE, preview["merged_records"])
+    _load_records_cached.cache_clear()
+    _records_dataframe_cached.cache_clear()
     imports = load_imports()
     batch_id = preview["batch"].get("ID")
     imports = [item for item in imports if item.get("ID") != batch_id]
@@ -520,12 +541,39 @@ def save_import(preview):
     return preview["batch"]
 
 
-def records_dataframe(records=None, sites=None):
+def _site_snapshot(sites):
+    return tuple(sorted(
+        (
+            _text(getattr(site, "nome", "")),
+            _text(getattr(site, "codigo_topos", "")),
+            _text(getattr(site, "abreviacao", "")),
+            _text(getattr(site, "nome_cadastro", "")),
+        )
+        for site in (sites or {}).values()
+    ))
+
+
+def _sites_from_snapshot(snapshot):
+    return {
+        name: SimpleNamespace(
+            nome=name,
+            codigo_topos=code,
+            abreviacao=abbreviation,
+            nome_cadastro=registered_name,
+        )
+        for name, code, abbreviation, registered_name in snapshot
+    }
+
+
+def records_dataframe(records=None, sites=None, include_source=False):
     rows = []
+    indexes = _site_indexes(sites)
     for stored in records if records is not None else load_records():
         record = dict(stored)
-        candidates = resolve_candidates(record.get("Caminho", ""), sites)
-        record["Sites Candidatos"] = candidates
+        candidates = resolve_candidates(
+            record.get("Caminho", ""),
+            indexes=indexes,
+        )
         record["Sites candidatos"] = "; ".join(
             candidate.get("Site") or candidate.get("Referência site", "")
             for candidate in candidates
@@ -539,8 +587,36 @@ def records_dataframe(records=None, sites=None):
         )
         record["Condições"] = "; ".join(record.get("Condições") or [])
         record["Produtos"] = "; ".join(record.get("Produtos") or [])
+        record["_Data Início TS"] = pd.to_datetime(
+            record.get("Data Início"), errors="coerce"
+        )
+        record.pop("Sites Candidatos", None)
+        if not include_source:
+            record.pop("Dados Fonte", None)
         rows.append(record)
     return pd.DataFrame(rows)
+
+
+@lru_cache(maxsize=1)
+def _records_dataframe_cached(version, site_snapshot):
+    return records_dataframe(
+        _load_records_cached(version),
+        _sites_from_snapshot(site_snapshot),
+        include_source=False,
+    )
+
+
+def cached_records_dataframe(sites=None):
+    """Return the shared read-only history frame for the current data version."""
+    return _records_dataframe_cached(records_version(), _site_snapshot(sites))
+
+
+def load_record(record_id):
+    target = _text(record_id)
+    return next(
+        (record for record in load_records() if _text(record.get("ID SGS")) == target),
+        None,
+    )
 
 
 def site_opportunity_ranking(df, sites):
@@ -560,25 +636,17 @@ def site_opportunity_ranking(df, sites):
     if df is None or df.empty:
         return pd.DataFrame(columns=columns)
 
-    viable = df[df["Classificação"].isin(["Viável direto", "Viável condicional"])]
-    events = []
-    for _, record in viable.iterrows():
-        candidates = record.get("Sites Candidatos") or resolve_candidates(record.get("Caminho"), sites)
-        seen = set()
-        for candidate in candidates:
-            site_name = candidate.get("Site")
-            if not site_name or site_name in seen:
-                continue
-            seen.add(site_name)
-            events.append({
-                "Nome SNMPc": site_name,
-                "Classificação": record.get("Classificação"),
-                "Projeto": record.get("Projeto"),
-            })
-    if not events:
+    viable = df[df["Classificação"].isin(["Viável direto", "Viável condicional"])].copy()
+    if viable.empty or "Sites localizados" not in viable.columns:
         return pd.DataFrame(columns=columns)
-
-    events_df = pd.DataFrame(events)
+    events_df = viable[["ID SGS", "Sites localizados", "Classificação", "Projeto"]].copy()
+    events_df["Nome SNMPc"] = events_df["Sites localizados"].fillna("").astype(str).str.split(";")
+    events_df = events_df.explode("Nome SNMPc")
+    events_df["Nome SNMPc"] = events_df["Nome SNMPc"].astype(str).str.strip()
+    events_df = events_df[events_df["Nome SNMPc"] != ""]
+    events_df = events_df.drop_duplicates(subset=["ID SGS", "Nome SNMPc"])
+    if events_df.empty:
+        return pd.DataFrame(columns=columns)
     grouped = events_df.groupby("Nome SNMPc", as_index=False).agg(
         **{
             "Solicitações viáveis": ("Nome SNMPc", "size"),
@@ -621,8 +689,16 @@ def default_dashboard_period(today=None):
     return start.date(), end.date()
 
 
-def export_records_excel(df, include_proposal_values=True):
+def export_records_excel(df, include_proposal_values=True, source_records=None):
     export = df.copy()
+    if "Dados Fonte" not in export.columns and source_records is not None:
+        source_by_id = {
+            _text(record.get("ID SGS")): record.get("Dados Fonte") or {}
+            for record in source_records
+        }
+        export["Dados Fonte"] = export.get("ID SGS", pd.Series(index=export.index)).map(
+            source_by_id
+        )
     if "Dados Fonte" in export.columns:
         source_rows = [
             value if isinstance(value, dict) else {}
@@ -633,7 +709,7 @@ def export_records_excel(df, include_proposal_values=True):
             if column not in export.columns:
                 export[column] = source_frame[column]
 
-    hidden = ["Dados Fonte", "Sites Candidatos"]
+    hidden = ["Dados Fonte", "Sites Candidatos", "_Data Início TS"]
     if not include_proposal_values:
         hidden.extend(PROPOSAL_VALUE_COLUMNS)
         hidden.extend(["Vlr Mens Total", "Vlr Inst Total"])
