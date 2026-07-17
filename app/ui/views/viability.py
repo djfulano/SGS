@@ -21,6 +21,7 @@ from app.services.site_registry_service import site_pode_atender_outros_endereco
 from app.ui.views.feasibility_management import mostrar_consulta as mostrar_historico_viabilidades
 from app.ui.views.feasibility_management import mostrar_dashboard as mostrar_dashboard_viabilidades
 from app.ui.views.feasibility_management import mostrar_importacao as mostrar_importacao_viabilidades
+from app.ui.views.feasibility_management import mostrar_oportunidades_site
 from app.ui.navigation import mostrar_subnavegacao
 
 
@@ -933,6 +934,12 @@ def mostrar_viabilidade(sites, equipamentos=None):
             "viabilidade_migracao",
             "Migração",
             lambda: mostrar_migracao_cliente(sites),
+            "viabilidade"
+        ),
+        (
+            "viabilidade_oportunidades_site",
+            "Oportunidades por Site",
+            lambda: mostrar_oportunidades_site(sites),
             "viabilidade"
         ),
         (

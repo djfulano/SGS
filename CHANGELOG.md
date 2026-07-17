@@ -1,5 +1,36 @@
 # Histórico de versões
 
+## 1.3.8
+
+- Valores programados passam a iniciar no mês atual, incluindo obrigações abertas vencidas dentro do próprio mês.
+- Meses sem mensalidades ou acordos são preenchidos com zero para manter uma sequência mensal contínua.
+
+## 1.3.7
+
+- Valores programados por mês passam a separar mensalidades recorrentes e acordos/parcelamentos em colunas empilhadas.
+- O gráfico destaca o total de cada mês e mantém valores, eixo e tooltips identificados em Reais.
+- A programação usa apenas obrigações abertas atuais ou futuras e evita somar novamente a base derivada de acordos.
+
+## 1.3.6
+
+- Gráficos e tabelas do Financeiro passam a exibir valores monetários com identificação em Reais.
+- Valores programados por mês passam a usar o vencimento original e considerar somente obrigações atuais ou futuras.
+- Origem mensal dos débitos passa a considerar somente obrigações já vencidas, sem incluir vencimentos futuros.
+
+## 1.3.5
+
+- Financeiro passa a importar arquivos `.xls`, `.xlsx` e `.xlsm`, com detecção automática do formato `TOPO EM ABERTO` pela aba `TOPOS`.
+- Obrigações abertas preservam todos os anos, usam `VALOR TOTAL A PAGAR` como saldo e vinculam Sites pelo sufixo Microsiga do favorecido.
+- Mensalidades e acordos passam a ser classificados exclusivamente por `TIPO DE DESPESA`, mantendo linhas idênticas com IDs distintos.
+- A primeira gravação do novo formato exige confirmação para substituir a base antiga; reimportações preservam ausentes e edições manuais.
+- Dashboard Financeiro passa a mostrar atraso, acordos, sites com/sem acordo, próximos 30 dias, pendências sem vínculo, aging, rankings e séries mensais.
+
+## 1.3.4
+
+- Viabilidade passa a ter a subaba Oportunidades por Site, com resumo, mapa e lista de solicitações próximas.
+- Endereços do histórico podem ser geocodificados em lotes retomáveis, com cobertura e falhas persistidas.
+- A análise aproxima oportunidades por distância, separando caminhos já indicados de novas possibilidades geográficas.
+
 ## 1.3.3
 
 - Histórico de viabilidades passa a reutilizar em memória o JSON e o DataFrame enquanto o arquivo não mudar.

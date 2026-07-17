@@ -6,6 +6,7 @@ import re
 
 import pandas as pd
 import plotly.express as px
+import pydeck as pdk
 import streamlit as st
 
 from app.auth import can_view_cost_values
@@ -23,6 +24,16 @@ from app.services.feasibility_history import preview_import
 from app.services.feasibility_history import records_dataframe
 from app.services.feasibility_history import save_import
 from app.services.feasibility_history import site_opportunity_ranking
+from app.services.feasibility_opportunities import STATUS_ERROR
+from app.services.feasibility_opportunities import STATUS_NOT_FOUND
+from app.services.feasibility_opportunities import aggregate_map_points
+from app.services.feasibility_opportunities import eligible_sites
+from app.services.feasibility_opportunities import geocoding_coverage
+from app.services.feasibility_opportunities import load_geocoding
+from app.services.feasibility_opportunities import opportunities_for_site
+from app.services.feasibility_opportunities import opportunity_summary
+from app.services.feasibility_opportunities import process_geocoding_batch
+from app.services.feasibility_opportunities import synchronize_addresses
 from app.ui.components.tables import primeira_linha_selecionada
 from app.ui.navigation import mostrar_subnavegacao
 
@@ -269,6 +280,198 @@ def mostrar_dashboard(sites):
             )
 
 
+def _mapa_oportunidades(site, opportunities):
+    points = aggregate_map_points(opportunities)
+    if points.empty:
+        return
+    points = points.copy()
+    points["Raio"] = 70 + points["Solicitações"].pow(0.5) * 55
+    points["Tooltip"] = points.apply(
+        lambda row: (
+            f"<b>{row['Endereço']}</b><br/>"
+            f"Distância: {row['Distância km']:.2f} km<br/>"
+            f"Solicitações: {int(row['Solicitações'])}<br/>"
+            f"Viáveis diretas: {int(row['Viáveis diretas'])}<br/>"
+            f"Condicionais: {int(row['Condicionais'])}<br/>"
+            f"Não viáveis: {int(row['Não viáveis'])}<br/>"
+            f"Pendentes: {int(row['Pendentes'])}"
+        ),
+        axis=1,
+    )
+    site_frame = pd.DataFrame([{
+        "Latitude": float(getattr(site, "latitude", 0) or 0),
+        "Longitude": float(getattr(site, "longitude", 0) or 0),
+        "Tooltip": (
+            f"<b>{getattr(site, 'nome_cadastro', '') or getattr(site, 'nome', '')}</b><br/>"
+            f"{getattr(site, 'nome', '')}"
+        ),
+    }])
+    layers = [
+        pdk.Layer(
+            "ScatterplotLayer",
+            data=points,
+            get_position="[Longitude, Latitude]",
+            get_radius="Raio",
+            get_fill_color=[45, 125, 240, 165],
+            get_line_color=[255, 255, 255, 210],
+            line_width_min_pixels=1,
+            pickable=True,
+        ),
+        pdk.Layer(
+            "ScatterplotLayer",
+            data=site_frame,
+            get_position="[Longitude, Latitude]",
+            get_radius=150,
+            get_fill_color=[235, 65, 70, 235],
+            get_line_color=[255, 255, 255, 255],
+            line_width_min_pixels=2,
+            pickable=True,
+        ),
+    ]
+    max_distance = float(points["Distância km"].max() or 0)
+    zoom = 12 if max_distance <= 2 else 10.5 if max_distance <= 5 else 9.5 if max_distance <= 10 else 8.5
+    st.pydeck_chart(pdk.Deck(
+        map_style="https://basemaps.cartocdn.com/gl/positron-gl-style/style.json",
+        initial_view_state=pdk.ViewState(
+            latitude=float(getattr(site, "latitude", 0) or 0),
+            longitude=float(getattr(site, "longitude", 0) or 0),
+            zoom=zoom,
+            pitch=0,
+        ),
+        layers=layers,
+        tooltip={"html": "{Tooltip}"},
+    ))
+
+
+def mostrar_oportunidades_site(sites):
+    st.header("Oportunidades por Site")
+    st.caption(
+        "Análise aproximada por distância. A proximidade não confirma visada nem capacidade de atendimento."
+    )
+    with st.spinner("Carregando histórico geocodificado..."):
+        df = cached_records_dataframe(sites=sites)
+        geocoding = load_geocoding()
+    if df.empty:
+        st.info("Nenhuma viabilidade foi importada.")
+        return
+    candidates = eligible_sites(sites)
+    if not candidates:
+        st.warning("Nenhum site ativo e apto possui coordenadas válidas.")
+        return
+    labels = {
+        getattr(site, "nome", ""): (
+            f"{getattr(site, 'nome_cadastro', '') or getattr(site, 'nome', '')} - "
+            f"{getattr(site, 'nome', '')}"
+        )
+        for site in candidates
+    }
+    site_by_name = {getattr(site, "nome", ""): site for site in candidates}
+    selected_name = st.selectbox(
+        "Site",
+        list(site_by_name),
+        format_func=lambda name: labels.get(name, name),
+        key="viabilidade_oportunidades_site_selecionado",
+    )
+    selected_site = site_by_name[selected_name]
+
+    default_start, default_end = default_dashboard_period()
+    period = st.columns(3)
+    start = period[0].date_input(
+        "Período inicial", default_start, key="viabilidade_oportunidades_inicio"
+    )
+    end = period[1].date_input(
+        "Período final", default_end, key="viabilidade_oportunidades_fim"
+    )
+    radius = period[2].slider(
+        "Raio de aproximação (km)", 1, 30, 5,
+        key="viabilidade_oportunidades_raio",
+    )
+    filters_row = st.columns(4)
+    classifications = filters_row[0].multiselect(
+        "Classificação", CLASSIFICACOES,
+        key="viabilidade_oportunidades_classificacao",
+    )
+    products = filters_row[1].multiselect(
+        "Produto", opcoes(df, "Produtos"),
+        key="viabilidade_oportunidades_produto",
+    )
+    managers = filters_row[2].multiselect(
+        "Gerente de contas", opcoes(df, "Gerente de Contas"),
+        key="viabilidade_oportunidades_gerente",
+    )
+    cities = filters_row[3].multiselect(
+        "Cidade", opcoes(df, "Cidade"),
+        key="viabilidade_oportunidades_cidade",
+    )
+    filtered = filtrar_registros(
+        df,
+        inicio=start,
+        fim=end,
+        classificacoes=classifications,
+        produtos=products,
+        gerentes=managers,
+        cidades=cities,
+    )
+    opportunities = opportunities_for_site(
+        filtered,
+        selected_site,
+        radius_km=radius,
+        data=geocoding,
+    )
+    coverage = geocoding_coverage(load_records(), geocoding)
+    st.caption(
+        f"Cobertura geográfica: {coverage['Localizado']} de {coverage['Total']} endereços "
+        f"({coverage['Cobertura %']:.1f}%). Pendentes: {coverage['Pendente']}; "
+        f"não localizados/erros: {coverage['Não localizado'] + coverage['Erro']}."
+    )
+    summary = opportunity_summary(opportunities)
+    first_metrics = st.columns(4)
+    first_metrics[0].metric("Solicitações próximas", summary["Solicitações"])
+    first_metrics[1].metric("Projetos distintos", summary["Projetos distintos"])
+    first_metrics[2].metric("Já indicadas", summary["Já indicadas"])
+    first_metrics[3].metric("Somente proximidade", summary["Somente proximidade"])
+    second_metrics = st.columns(4)
+    second_metrics[0].metric("Viáveis diretas", summary["Viáveis diretas"])
+    second_metrics[1].metric("Condicionais", summary["Condicionais"])
+    second_metrics[2].metric("Não viáveis", summary["Não viáveis"])
+    second_metrics[3].metric("Pendentes", summary["Pendentes"])
+    if opportunities.empty:
+        st.info("Nenhuma solicitação geocodificada atende aos filtros e ao raio escolhidos.")
+        return
+
+    st.subheader("Distribuição por distância")
+    distance_summary = opportunities.groupby(
+        "Faixa de distância", observed=False, as_index=False
+    ).size().rename(columns={"size": "Solicitações"})
+    distance_summary = distance_summary[distance_summary["Solicitações"] > 0]
+    _show_grid(
+        distance_summary,
+        height=min(240, 80 + len(distance_summary) * 31),
+        key="viabilidade_oportunidades_faixas",
+        mostrar_abrir_site=False,
+    )
+    st.subheader("Mapa das oportunidades")
+    _mapa_oportunidades(selected_site, opportunities)
+
+    st.subheader("Solicitações próximas")
+    columns = [
+        "Projeto", "Data Início", "Endereço Completo", "Distância km",
+        "Faixa de distância", "Classificação", "Origem da oportunidade",
+        "Produtos", "Gerente de Contas", "Cidade", "Sites candidatos",
+    ]
+    visible = opportunities.head(1000)
+    _show_grid(
+        visible[[column for column in columns if column in visible.columns]],
+        height=480,
+        key="viabilidade_oportunidades_lista",
+        mostrar_abrir_site=False,
+    )
+    if len(opportunities) > len(visible):
+        st.caption(
+            f"Exibindo 1.000 de {len(opportunities)} solicitações. Refine os filtros para reduzir a lista."
+        )
+
+
 def _consultation_columns(df):
     columns = [
         "ID SGS",
@@ -481,6 +684,94 @@ def mostrar_importacao(sites):
                 st.rerun()
             except Exception as error:
                 st.error(f"Falha ao gravar importação: {error}")
+
+    st.subheader("Geocodificação dos endereços")
+    records = load_records()
+    geocoding, _added = synchronize_addresses(records)
+    coverage = geocoding_coverage(records, geocoding)
+    coverage_columns = st.columns(4)
+    coverage_columns[0].metric("Endereços únicos", coverage["Total"])
+    coverage_columns[1].metric("Localizados", coverage["Localizado"])
+    coverage_columns[2].metric("Pendentes", coverage["Pendente"])
+    coverage_columns[3].metric(
+        "Não localizados/erros",
+        coverage["Não localizado"] + coverage["Erro"],
+    )
+    st.caption(
+        f"Cobertura atual: {coverage['Cobertura %']:.1f}%. O processamento é retomável e não repete endereços localizados."
+    )
+    with st.expander("Processamento administrativo do estoque inicial"):
+        st.code(
+            "sudo docker compose exec -T snmpc-dashboard "
+            "python -m scripts.geocode_feasibility_history --all --batch-size 500",
+            language="bash",
+        )
+        st.caption(
+            "O comando pode ser interrompido e executado novamente; endereços já localizados não serão consultados outra vez."
+        )
+    geocoding_controls = st.columns(3)
+    batch_size = geocoding_controls[0].selectbox(
+        "Tamanho do lote",
+        [100, 500, 1000],
+        index=1,
+        key="gestao_via_geocoding_lote",
+    )
+    retry_not_found = geocoding_controls[1].checkbox(
+        "Reprocessar não localizados",
+        key="gestao_via_geocoding_retry_nao_localizado",
+    )
+    retry_errors = geocoding_controls[2].checkbox(
+        "Reprocessar erros",
+        key="gestao_via_geocoding_retry_erros",
+    )
+    retry_statuses = set()
+    if retry_not_found:
+        retry_statuses.add(STATUS_NOT_FOUND)
+    if retry_errors:
+        retry_statuses.add(STATUS_ERROR)
+    has_work = coverage["Pendente"] > 0 or (
+        retry_not_found and coverage["Não localizado"] > 0
+    ) or (retry_errors and coverage["Erro"] > 0)
+    if st.button(
+        "Processar próximo lote",
+        disabled=not has_work,
+        key="gestao_via_geocoding_processar",
+    ):
+        progress = st.progress(0.0)
+        status = st.empty()
+
+        def update_progress(index, total, entry):
+            progress.progress(index / max(1, total))
+            status.caption(
+                f"Geocodificando {index}/{total}: {entry.get('Endereço', '')}"
+            )
+
+        try:
+            result = process_geocoding_batch(
+                records,
+                limit=batch_size,
+                retry_statuses=retry_statuses,
+                progress_callback=update_progress,
+            )
+            registrar_log_sistema(
+                "gestao_viabilidades_geocodificacao",
+                usuario=usuario_atual().get("username"),
+                status="sucesso",
+                detalhes=result,
+            )
+            st.success(
+                f"Lote concluído. Localizados: {result['Localizados']}; "
+                f"não localizados: {result['Não localizados']}; erros: {result['Erros']}."
+            )
+            st.rerun()
+        except Exception as error:
+            registrar_log_sistema(
+                "gestao_viabilidades_geocodificacao",
+                usuario=usuario_atual().get("username"),
+                status="erro",
+                detalhes={"erro": str(error)},
+            )
+            st.error(f"Falha ao processar geocodificação: {error}")
 
     st.subheader("Histórico de importações")
     history = pd.DataFrame(load_imports())

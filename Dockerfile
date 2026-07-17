@@ -25,6 +25,7 @@ COPY main.py ./main.py
 COPY VERSION ./VERSION
 COPY CHANGELOG.md ./CHANGELOG.md
 COPY docs ./docs
+COPY scripts ./scripts
 COPY tests ./tests
 
 RUN PYTHONPYCACHEPREFIX=/tmp/pycache python -m compileall -q app main.py \

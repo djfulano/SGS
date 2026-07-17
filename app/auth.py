@@ -63,6 +63,7 @@ MODULES = [
     ("viabilidade", "Viabilidade"),
     ("viabilidade_consulta", "Viabilidade > Viabilidade"),
     ("viabilidade_migracao", "Viabilidade > Migração"),
+    ("viabilidade_oportunidades_site", "Viabilidade > Oportunidades por Site"),
     ("viabilidade_estudos", "Viabilidade > Estudos de Engenharia"),
     ("gestao_viabilidades", "Viabilidade > Gestão de Viabilidades"),
     ("gestao_viabilidades_dashboard", "Viabilidade > Dashboard"),

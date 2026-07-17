@@ -165,6 +165,10 @@ class ProfilePermissionsGridTest(unittest.TestCase):
             grupos_por_chave["gestao_viabilidades_consulta"],
             "Viabilidade"
         )
+        self.assertEqual(
+            grupos_por_chave["viabilidade_oportunidades_site"],
+            "Viabilidade"
+        )
 
     def test_extrai_chaves_selecionadas_da_grade(self):
         df_grade = montar_grade_permissoes_perfil(

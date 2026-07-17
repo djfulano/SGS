@@ -530,6 +530,11 @@ def save_import(preview):
     write_json_atomic(RECORDS_FILE, preview["merged_records"])
     _load_records_cached.cache_clear()
     _records_dataframe_cached.cache_clear()
+    from app.services.feasibility_opportunities import synchronize_addresses
+    synchronize_addresses(
+        preview["merged_records"],
+        path=RECORDS_FILE.parent / "geocoding.json",
+    )
     imports = load_imports()
     batch_id = preview["batch"].get("ID")
     imports = [item for item in imports if item.get("ID") != batch_id]

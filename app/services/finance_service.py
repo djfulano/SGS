@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import math
+import re
 from datetime import date, datetime, timedelta
 from io import BytesIO
 from pathlib import Path
@@ -65,6 +66,40 @@ PAYMENT_COLUMNS = [
     "Locação",
     "Subtotal",
     "Descrição",
+    "Fonte",
+    "Status Fonte",
+    "Empresa",
+    "Aprovação/Negociação",
+    "OC / Conta Contábil",
+    "Data relatório",
+    "Conciliação",
+    "Dias em atraso fonte",
+    "Prazo suspensão/negativação",
+    "Data programada pagamento",
+    "Vencimento original",
+    "Projeção",
+    "Banco pagamento",
+    "Favorecido",
+    "Nota Fiscal",
+    "Conta Financeira",
+    "Valor principal",
+    "Ajustes",
+    "Valor Total a Pagar",
+    "Informação extra",
+    "Tipo de despesa",
+    "PF/PJ",
+    "Referente",
+    "Despesas",
+    "Observação fonte",
+    "Vencimento auxiliar",
+    "Valor auxiliar",
+    "Data pagamento auxiliar",
+    "Multa auxiliar",
+    "Dias auxiliar",
+    "Mora auxiliar",
+    "Total a pagar auxiliar",
+    "Total pago auxiliar",
+    "Diferença a pagar auxiliar",
     "Código Aquiles",
     "Nome SNMPc",
     "Nome Site",
@@ -76,6 +111,7 @@ PAYMENT_COLUMNS = [
 
 AGREEMENT_COLUMNS = [
     "ID SGS",
+    "ID Pagamento",
     "Status",
     "Obs",
     "Competência",
@@ -88,6 +124,14 @@ AGREEMENT_COLUMNS = [
     "Valor Acordo",
     "Descrição",
     "Multa + Juros",
+    "Fonte",
+    "Tipo de despesa",
+    "Data de vencimento",
+    "Data programada pagamento",
+    "Prioridade",
+    "Favorecido",
+    "Aprovação/Negociação",
+    "OC / Conta Contábil",
     "Código Aquiles",
     "Nome SNMPc",
     "Nome Site",
@@ -117,6 +161,15 @@ PAYMENT_NUMERIC_COLUMNS = [
     "Outros",
     "Locação",
     "Subtotal",
+    "Valor principal",
+    "Ajustes",
+    "Valor Total a Pagar",
+    "Valor auxiliar",
+    "Multa auxiliar",
+    "Mora auxiliar",
+    "Total a pagar auxiliar",
+    "Total pago auxiliar",
+    "Diferença a pagar auxiliar",
 ]
 
 AGREEMENT_NUMERIC_COLUMNS = [
@@ -127,6 +180,61 @@ AGREEMENT_NUMERIC_COLUMNS = [
 FINANCE_AUDIT_COLUMNS = {
     "Importado em",
     "Atualizado em",
+}
+
+TOPO_SHEET = "TOPOS"
+TOPO_SOURCE = "TOPO EM ABERTO"
+TOPO_AGREEMENT_TYPE = "ACORDO/PARCELAMENTO"
+TOPO_RECURRING_TYPE = "RECORRENTE"
+
+TOPO_COLUMNS = {
+    "ANO": "Ano",
+    "COMPETÊNCIA MÊS DO VENCIMENTO": "Competência",
+    "EMP": "Empresa",
+    "STATUS (A VENCER/PAGO/ EM ATRASO)": "Status Fonte",
+    "APROVAÇÃO/NEGOCIAÇÃO": "Aprovação/Negociação",
+    "O.C / CONTA CONTÁBIL": "OC / Conta Contábil",
+    "DATA RELATÓRIO (PREENCHER A DATA QUE RECEBEU PARA INCLUSÃO)": "Data relatório",
+    "CONCILIAÇÃO": "Conciliação",
+    "DIAS EM ATRASO - VCTO X DATA PGTO": "Dias em atraso fonte",
+    "PRAZO SUSPENSÃO SERVIÇOS / NEGATIVAÇÃO": "Prazo suspensão/negativação",
+    "DATA PAGAMENTO (FLUXO DE CAIXA)": "Data programada pagamento",
+    "VENCIMENTO ORIGINAL": "Vencimento original",
+    "PROJEÇÃO": "Projeção",
+    "BANCO PGTO": "Banco pagamento",
+    "PRIORIDADE": "Prioridade",
+    "TIPO PGTO": "Tipo",
+    "FAVORECIDO": "Favorecido",
+    "N° Nota Fiscal (informação referente a despesa/entrada)": "Nota Fiscal",
+    "CONTA FINANCEIRA": "Conta Financeira",
+    "VALOR": "Valor principal",
+    "JUROS/DESC/CRED/DIF A PAGAR": "Ajustes",
+    "VALOR TOTAL A PAGAR": "Valor Total a Pagar",
+    "INFORMAÇÃO EXTRA (DESCRIÇÃO DO SERVIÇO)": "Informação extra",
+    "TIPO DE DESPESA": "Tipo de despesa",
+    "PF/PJ": "PF/PJ",
+    "VENCIMENTO": "Vencimento auxiliar",
+    "Valor": "Valor auxiliar",
+    "Data Pagamento": "Data pagamento auxiliar",
+    "Multa": "Multa auxiliar",
+    "Dias": "Dias auxiliar",
+    "Mora": "Mora auxiliar",
+    "Total a Pagar": "Total a pagar auxiliar",
+    "Total pago": "Total pago auxiliar",
+    "Diferença a pagar": "Diferença a pagar auxiliar",
+    "COMPETÊNCIA": "Competência fonte",
+    "REFERENTE": "Referente",
+    "DESPESAS": "Despesas",
+    "DESCRIÇÃO": "Descrição",
+    "OBSERVAÇÃO - APURAÇÃO PROJEÇÃO": "Observação fonte",
+    "NOME BANCO": "Banco",
+    "BANCO": "Cód",
+    "AG": "Agência",
+    "CC": "C/Corrente",
+    "CNPJ/CPF": "CNPJ/CPF",
+    "CHAVE PIX": "PIX",
+    "MULTA": "Multa",
+    "JUROS": "Juros",
 }
 
 
@@ -196,7 +304,13 @@ def _excel_date(valor):
     numero = pd.to_numeric(valor, errors="coerce")
     if pd.isna(numero):
         texto = _texto(valor)
-        data = pd.to_datetime(texto, errors="coerce", dayfirst=True)
+        formato_iso = bool(re.match(r"^\d{4}-\d{2}-\d{2}", texto))
+        data = pd.to_datetime(
+            texto,
+            errors="coerce",
+            dayfirst=not formato_iso,
+            yearfirst=formato_iso,
+        )
         if pd.isna(data):
             return texto
         return data.date().isoformat()
@@ -296,7 +410,18 @@ def _id_estavel(prefixo, registro, campos):
 
 
 def _ler_excel(arquivo):
-    return pd.ExcelFile(arquivo, engine="openpyxl")
+    caminho = str(getattr(arquivo, "name", arquivo)).lower()
+    engine = "xlrd" if caminho.endswith(".xls") else "openpyxl"
+    return pd.ExcelFile(arquivo, engine=engine)
+
+
+def formato_planilha_financeira(arquivo):
+    xl, fechar = _normalizar_fonte_excel(arquivo)
+    try:
+        return TOPO_SOURCE if TOPO_SHEET in xl.sheet_names else "NOVO FECHAMENTO"
+    finally:
+        if fechar:
+            xl.close()
 
 
 def _normalizar_fonte_excel(fonte):
@@ -323,6 +448,150 @@ def _normalizar_colunas(df, aliases):
     df = df.copy()
     df.columns = colunas
     return df
+
+
+def extrair_microsiga_favorecido(valor):
+    correspondencia = re.search(r"(\d{6})\s*$", _texto(valor))
+    return correspondencia.group(1) if correspondencia else ""
+
+
+def _valor_data_fonte(valor):
+    if valor is None or (not isinstance(valor, str) and pd.isna(valor)):
+        return ""
+    return _excel_date(valor)
+
+
+def _tipo_despesa(valor):
+    return " ".join(_texto(valor).upper().split())
+
+
+def ler_topos_em_aberto_excel(arquivo):
+    xl, fechar = _normalizar_fonte_excel(arquivo)
+    try:
+        if TOPO_SHEET not in xl.sheet_names:
+            return (
+                pd.DataFrame(columns=PAYMENT_COLUMNS),
+                pd.DataFrame(columns=AGREEMENT_COLUMNS),
+            )
+        fonte = pd.read_excel(
+            xl,
+            sheet_name=TOPO_SHEET,
+            header=0,
+            dtype=object,
+        )
+    finally:
+        if fechar:
+            xl.close()
+
+    fonte.columns = [_texto(coluna) for coluna in fonte.columns]
+    agora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    pagamentos = []
+    acordos = []
+    ocorrencias = {}
+
+    for _idx, linha in fonte.iterrows():
+        favorecido = _texto(linha.get("FAVORECIDO"))
+        tipo_despesa = _tipo_despesa(linha.get("TIPO DE DESPESA"))
+        valor_total = _numero(linha.get("VALOR TOTAL A PAGAR"))
+        vencimento = _valor_data_fonte(linha.get("VENCIMENTO ORIGINAL"))
+        if not any([favorecido, tipo_despesa, valor_total, vencimento]):
+            continue
+
+        registro = {coluna: "" for coluna in PAYMENT_COLUMNS}
+        for origem, destino in TOPO_COLUMNS.items():
+            registro[destino] = linha.get(origem, "")
+
+        for coluna in PAYMENT_COLUMNS:
+            if coluna not in PAYMENT_NUMERIC_COLUMNS:
+                registro[coluna] = _texto(registro.get(coluna))
+        for coluna in PAYMENT_NUMERIC_COLUMNS:
+            registro[coluna] = _numero(registro.get(coluna))
+
+        for coluna in [
+            "Competência",
+            "Data relatório",
+            "Data programada pagamento",
+            "Vencimento original",
+            "Vencimento auxiliar",
+            "Data pagamento auxiliar",
+        ]:
+            registro[coluna] = _valor_data_fonte(registro.get(coluna))
+
+        registro["Fonte"] = TOPO_SOURCE
+        registro["Status"] = "Pendente"
+        registro["Tipo de despesa"] = tipo_despesa
+        registro["Microsiga"] = extrair_microsiga_favorecido(favorecido)
+        registro["Nome"] = favorecido
+        registro["Fornecedor"] = favorecido
+        registro["Data de vencimento"] = registro["Vencimento original"]
+        registro["Subtotal"] = valor_total
+        registro["Valor Total a Pagar"] = valor_total
+        registro["Descrição"] = (
+            _texto(registro.get("Descrição"))
+            or _texto(registro.get("Informação extra"))
+        )
+        registro["OC Primário"] = _texto(registro.get("OC / Conta Contábil"))
+        registro["Observação interna"] = ""
+        registro["Importado em"] = agora
+        registro["Atualizado em"] = agora
+
+        identidade = (
+            registro["Microsiga"],
+            registro["Vencimento original"],
+            tipo_despesa,
+            f"{valor_total:.6f}",
+            favorecido,
+            _texto(registro.get("OC / Conta Contábil")),
+        )
+        ocorrencias[identidade] = ocorrencias.get(identidade, 0) + 1
+        registro["ID SGS"] = _id_estavel(
+            "topo",
+            {**registro, "Ocorrência": ocorrencias[identidade]},
+            [
+                "Microsiga",
+                "Vencimento original",
+                "Tipo de despesa",
+                "Valor Total a Pagar",
+                "Favorecido",
+                "OC / Conta Contábil",
+                "Ocorrência",
+            ],
+        )
+        pagamentos.append(registro)
+
+        if tipo_despesa == TOPO_AGREEMENT_TYPE:
+            acordo = {coluna: "" for coluna in AGREEMENT_COLUMNS}
+            acordo.update({
+                "ID SGS": registro["ID SGS"].replace("TOPO-", "ACO-", 1),
+                "ID Pagamento": registro["ID SGS"],
+                "Status": "Em pagamento",
+                "Competência": registro["Competência"],
+                "Acordo": registro["Aprovação/Negociação"],
+                "Nome": favorecido,
+                "Aprovado Sindico": registro["Aprovação/Negociação"],
+                "PAGO": "NÃO",
+                "Microsiga": registro["Microsiga"],
+                "Valor Acordo": valor_total,
+                "Descrição": registro["Descrição"],
+                "Multa + Juros": registro["Multa"] + registro["Juros"],
+                "Fonte": TOPO_SOURCE,
+                "Tipo de despesa": tipo_despesa,
+                "Data de vencimento": registro["Data de vencimento"],
+                "Data programada pagamento": registro["Data programada pagamento"],
+                "Prioridade": registro["Prioridade"],
+                "Favorecido": favorecido,
+                "Aprovação/Negociação": registro["Aprovação/Negociação"],
+                "OC / Conta Contábil": registro["OC / Conta Contábil"],
+                "Observação interna": "",
+                "Importado em": agora,
+                "Atualizado em": agora,
+            })
+            acordos.append(acordo)
+
+    return (
+        pd.DataFrame(pagamentos, columns=PAYMENT_COLUMNS),
+        pd.DataFrame(acordos, columns=AGREEMENT_COLUMNS),
+    )
 
 
 def ler_pagamentos_excel(arquivo):
@@ -425,34 +694,24 @@ def ler_acordos_excel(arquivo):
 
 
 def carregar_pagamentos():
-    return filtrar_periodo_operacional_pagamentos(
-        pd.DataFrame(read_json(PAYMENTS_FILE, []), columns=PAYMENT_COLUMNS)
-    )
+    return pd.DataFrame(read_json(PAYMENTS_FILE, []), columns=PAYMENT_COLUMNS)
 
 
 def carregar_acordos():
-    return filtrar_periodo_operacional_acordos(
-        pd.DataFrame(read_json(AGREEMENTS_FILE, []), columns=AGREEMENT_COLUMNS)
-    )
+    return pd.DataFrame(read_json(AGREEMENTS_FILE, []), columns=AGREEMENT_COLUMNS)
 
 
 def salvar_pagamentos(df):
     write_json_atomic(
         PAYMENTS_FILE,
-        _records(
-            filtrar_periodo_operacional_pagamentos(df),
-            PAYMENT_COLUMNS
-        )
+        _records(df, PAYMENT_COLUMNS)
     )
 
 
 def salvar_acordos(df):
     write_json_atomic(
         AGREEMENTS_FILE,
-        _records(
-            filtrar_periodo_operacional_acordos(df),
-            AGREEMENT_COLUMNS
-        )
+        _records(df, AGREEMENT_COLUMNS)
     )
 
 
@@ -501,29 +760,78 @@ def _mesclar_por_id(df_atual, df_novo, colunas, preservar_edicao=True):
     return resultado, {"novos": novos, "atualizados": atualizados, "duplicados": duplicados}
 
 
-def importar_planilha_financeira(arquivo, sites=None, salvar=False, usuario=""):
+def importar_planilha_financeira(
+    arquivo,
+    sites=None,
+    salvar=False,
+    usuario="",
+    substituir_base_antiga=False,
+):
     xl = _ler_excel(arquivo)
 
     try:
-        pagamentos = ler_pagamentos_excel(xl)
-        acordos = ler_acordos_excel(xl)
+        formato = TOPO_SOURCE if TOPO_SHEET in xl.sheet_names else "NOVO FECHAMENTO"
+        if formato == TOPO_SOURCE:
+            pagamentos, acordos = ler_topos_em_aberto_excel(xl)
+        else:
+            pagamentos = ler_pagamentos_excel(xl)
+            acordos = ler_acordos_excel(xl)
     finally:
         xl.close()
 
     if sites is not None:
         pagamentos = pagamentos.apply(lambda row: pd.Series(vincular_site(row.to_dict(), sites)), axis=1) if not pagamentos.empty else pagamentos
         acordos = acordos.apply(lambda row: pd.Series(vincular_site(row.to_dict(), sites)), axis=1) if not acordos.empty else acordos
+        if formato == TOPO_SOURCE:
+            if not pagamentos.empty:
+                pagamentos.loc[pagamentos["Site localizado"].ne("Sim"), "Microsiga"] = ""
+            if not acordos.empty:
+                acordos.loc[acordos["Site localizado"].ne("Sim"), "Microsiga"] = ""
         pagamentos = pagamentos[PAYMENT_COLUMNS]
         acordos = acordos[AGREEMENT_COLUMNS]
-    pagamentos_mesclados, resumo_pag = _mesclar_por_id(carregar_pagamentos(), pagamentos, PAYMENT_COLUMNS)
-    acordos_mesclados, resumo_aco = _mesclar_por_id(carregar_acordos(), acordos, AGREEMENT_COLUMNS)
+
+    pagamentos_atuais = carregar_pagamentos()
+    acordos_atuais = carregar_acordos()
+    primeira_importacao_topos = (
+        formato == TOPO_SOURCE
+        and not pagamentos_atuais.get("Fonte", pd.Series(dtype=str)).eq(TOPO_SOURCE).any()
+    )
+    requer_substituicao = primeira_importacao_topos and (
+        not pagamentos_atuais.empty or not acordos_atuais.empty
+    )
+    if salvar and requer_substituicao and not substituir_base_antiga:
+        raise ValueError(
+            "A primeira importação de TOPO EM ABERTO exige confirmação para substituir a base financeira antiga."
+        )
+
+    base_pagamentos = (
+        pd.DataFrame(columns=PAYMENT_COLUMNS)
+        if primeira_importacao_topos and substituir_base_antiga
+        else pagamentos_atuais
+    )
+    base_acordos = (
+        pd.DataFrame(columns=AGREEMENT_COLUMNS)
+        if primeira_importacao_topos and substituir_base_antiga
+        else acordos_atuais
+    )
+    pagamentos_mesclados, resumo_pag = _mesclar_por_id(base_pagamentos, pagamentos, PAYMENT_COLUMNS)
+    acordos_mesclados, resumo_aco = _mesclar_por_id(base_acordos, acordos, AGREEMENT_COLUMNS)
+
+    pagamentos_status = preparar_pagamentos_exibicao(pagamentos)
+    vencidos = int(pagamentos_status["Status Atual"].eq("Vencido").sum()) if not pagamentos_status.empty else 0
+    programados = len(pagamentos_status) - vencidos
     resumo = {
+        "formato": formato,
+        "primeira_importacao_topos": primeira_importacao_topos,
+        "requer_substituicao_base_antiga": requer_substituicao,
         "pagamentos": {
             **resumo_pag,
             "importados": len(pagamentos),
             "com_site": int((pagamentos.get("Site localizado", pd.Series(dtype=str)) == "Sim").sum()) if not pagamentos.empty else 0,
             "sem_site": int((pagamentos.get("Site localizado", pd.Series(dtype=str)) == "Não").sum()) if not pagamentos.empty else 0,
             "sem_microsiga": int(pagamentos.get("Microsiga", pd.Series(dtype=str)).astype(str).str.strip().eq("").sum()) if not pagamentos.empty else 0,
+            "vencidos": vencidos,
+            "programados": programados,
         },
         "acordos": {
             **resumo_aco,
@@ -543,6 +851,9 @@ def importar_planilha_financeira(arquivo, sites=None, salvar=False, usuario=""):
             detalhes=resumo,
         )
     return {
+        "formato": formato,
+        "primeira_importacao_topos": primeira_importacao_topos,
+        "requer_substituicao_base_antiga": requer_substituicao,
         "pagamentos": pagamentos,
         "acordos": acordos,
         "pagamentos_mesclados": pagamentos_mesclados,
@@ -553,7 +864,7 @@ def importar_planilha_financeira(arquivo, sites=None, salvar=False, usuario=""):
 
 def status_pagamento_exibicao(row, hoje=None):
     status = _texto(row.get("Status")) or "Pendente"
-    if status in {"Pago", "Cancelado", "Exportado"}:
+    if status in {"Pago", "Cancelado"}:
         return status
     hoje = hoje or date.today()
     venc = pd.to_datetime(row.get("Data de vencimento"), errors="coerce")
@@ -570,34 +881,171 @@ def preparar_pagamentos_exibicao(df=None):
     return df
 
 
-def dashboard_financeiro():
+def _abertos_pagamentos(pagamentos):
+    if pagamentos.empty:
+        return pagamentos.copy()
+    return pagamentos[~pagamentos["Status Atual"].isin(["Pago", "Cancelado"])].copy()
+
+
+def _abertos_acordos(acordos, pagamentos=None):
+    if acordos.empty:
+        return acordos.copy()
+    abertos = acordos[~acordos["Status"].isin(["Quitado", "Cancelado"])].copy()
+    if pagamentos is None or pagamentos.empty or "ID Pagamento" not in abertos.columns:
+        return abertos
+    fechados = set(
+        pagamentos.loc[
+            pagamentos["Status Atual"].isin(["Pago", "Cancelado"]),
+            "ID SGS",
+        ].astype(str)
+    )
+    return abertos[~abertos["ID Pagamento"].astype(str).isin(fechados)].copy()
+
+
+def _serie_mensal(df, coluna_data, coluna_valor="Subtotal"):
+    if df.empty or coluna_data not in df.columns:
+        return pd.DataFrame(columns=["Mês", "Valor"])
+    dados = df.copy()
+    dados["_data"] = pd.to_datetime(dados[coluna_data], errors="coerce")
+    dados["_valor"] = pd.to_numeric(dados.get(coluna_valor, 0), errors="coerce").fillna(0.0)
+    dados = dados[dados["_data"].notna()]
+    if dados.empty:
+        return pd.DataFrame(columns=["Mês", "Valor"])
+    dados["Mês"] = dados["_data"].dt.to_period("M").astype(str)
+    return dados.groupby("Mês", as_index=False)["_valor"].sum().rename(columns={"_valor": "Valor"})
+
+
+def _programacao_mensal_por_tipo(df, inicio=None):
+    colunas = ["Mês", "Mensalidades", "Acordos", "Total"]
+    if df.empty or "Data de vencimento" not in df.columns or "Tipo de despesa" not in df.columns:
+        return pd.DataFrame(columns=colunas)
+
+    dados = df.copy()
+    dados["_data"] = pd.to_datetime(dados["Data de vencimento"], errors="coerce")
+    dados["_valor"] = pd.to_numeric(dados.get("Subtotal", 0), errors="coerce").fillna(0.0)
+    dados["_categoria"] = dados["Tipo de despesa"].apply(_tipo_despesa).map({
+        TOPO_RECURRING_TYPE: "Mensalidades",
+        TOPO_AGREEMENT_TYPE: "Acordos",
+    })
+    dados = dados[dados["_data"].notna() & dados["_categoria"].notna()]
+    if dados.empty:
+        return pd.DataFrame(columns=colunas)
+
+    dados["Mês"] = dados["_data"].dt.to_period("M").astype(str)
+    serie = dados.pivot_table(
+        index="Mês",
+        columns="_categoria",
+        values="_valor",
+        aggfunc="sum",
+        fill_value=0.0,
+    ).reset_index()
+    serie.columns.name = None
+    for coluna in ["Mensalidades", "Acordos"]:
+        if coluna not in serie.columns:
+            serie[coluna] = 0.0
+    serie["Total"] = serie["Mensalidades"] + serie["Acordos"]
+    serie = serie[colunas].sort_values("Mês").reset_index(drop=True)
+
+    if inicio is not None and not serie.empty:
+        periodo_inicial = pd.Period(pd.Timestamp(inicio), freq="M")
+        periodo_final = pd.Period(serie["Mês"].max(), freq="M")
+        meses = pd.period_range(periodo_inicial, periodo_final, freq="M").astype(str)
+        serie = (
+            serie.set_index("Mês")
+            .reindex(meses, fill_value=0.0)
+            .rename_axis("Mês")
+            .reset_index()
+        )
+    return serie[colunas]
+
+
+def _aging_atrasados(atrasados, hoje):
+    faixas = ["0-30", "31-90", "91-180", "181-365", "Mais de 365"]
+    if atrasados.empty:
+        return pd.DataFrame({"Faixa": faixas, "Quantidade": 0, "Valor": 0.0})
+    dados = atrasados.copy()
+    datas = pd.to_datetime(dados["Data de vencimento"], errors="coerce")
+    dados["_dias"] = datas.apply(lambda valor: (hoje - valor.date()).days if not pd.isna(valor) else -1)
+    dados["Faixa"] = pd.cut(
+        dados["_dias"],
+        bins=[-1, 30, 90, 180, 365, float("inf")],
+        labels=faixas,
+    )
+    dados["_valor"] = pd.to_numeric(dados["Subtotal"], errors="coerce").fillna(0.0)
+    resumo = dados.groupby("Faixa", observed=False).agg(
+        Quantidade=("ID SGS", "count"),
+        Valor=("_valor", "sum"),
+    ).reset_index()
+    resumo["Faixa"] = resumo["Faixa"].astype(str)
+    return resumo
+
+
+def _ranking_saldos(abertos):
+    if abertos.empty:
+        return pd.DataFrame(columns=["Nome Site", "Nome SNMPc", "Microsiga", "Obrigações", "Saldo em aberto"])
+    vinculados = abertos[abertos.get("Site localizado", pd.Series(index=abertos.index, dtype=str)).eq("Sim")].copy()
+    if vinculados.empty:
+        return pd.DataFrame(columns=["Nome Site", "Nome SNMPc", "Microsiga", "Obrigações", "Saldo em aberto"])
+    vinculados["_valor"] = pd.to_numeric(vinculados["Subtotal"], errors="coerce").fillna(0.0)
+    return vinculados.groupby(
+        ["Nome Site", "Nome SNMPc", "Microsiga"],
+        dropna=False,
+        as_index=False,
+    ).agg(
+        Obrigações=("ID SGS", "count"),
+        **{"Saldo em aberto": ("_valor", "sum")},
+    ).sort_values("Saldo em aberto", ascending=False).head(20)
+
+
+def dashboard_financeiro(hoje=None):
     pagamentos = preparar_pagamentos_exibicao()
     acordos = carregar_acordos()
-    total_pendente = 0.0
-    total_vencido = 0.0
-    proximos_30 = 0.0
-    hoje = date.today()
-    if not pagamentos.empty:
-        pendentes = pagamentos[~pagamentos["Status Atual"].isin(["Pago", "Cancelado"])]
-        total_pendente = float(pendentes["Subtotal"].sum())
-        total_vencido = float(pagamentos.loc[pagamentos["Status Atual"].eq("Vencido"), "Subtotal"].sum())
-        datas = pd.to_datetime(pagamentos["Data de vencimento"], errors="coerce")
-        mask_30 = datas.dt.date.between(hoje, hoje + timedelta(days=30)) & ~pagamentos["Status Atual"].isin(["Pago", "Cancelado"])
-        proximos_30 = float(pagamentos.loc[mask_30.fillna(False), "Subtotal"].sum())
-    acordos_abertos = 0
-    total_acordos_abertos = 0.0
-    if not acordos.empty:
-        abertos = acordos[~acordos["Status"].isin(["Quitado", "Cancelado"])]
-        acordos_abertos = len(abertos)
-        total_acordos_abertos = float(abertos["Valor Acordo"].sum())
+    hoje = hoje or date.today()
+    abertos = _abertos_pagamentos(pagamentos)
+    atrasados = abertos[abertos["Status Atual"].eq("Vencido")].copy() if not abertos.empty else abertos
+    acordos_abertos_df = _abertos_acordos(acordos, pagamentos)
+
+    total_pendente = float(pd.to_numeric(abertos.get("Subtotal", 0), errors="coerce").fillna(0).sum()) if not abertos.empty else 0.0
+    total_vencido = float(pd.to_numeric(atrasados.get("Subtotal", 0), errors="coerce").fillna(0).sum()) if not atrasados.empty else 0.0
+    total_acordos_abertos = float(pd.to_numeric(acordos_abertos_df.get("Valor Acordo", 0), errors="coerce").fillna(0).sum()) if not acordos_abertos_df.empty else 0.0
+
+    datas = pd.to_datetime(abertos.get("Data de vencimento", pd.Series(index=abertos.index, dtype=str)), errors="coerce")
+    mask_30 = datas.dt.date.between(hoje, hoje + timedelta(days=30)) if not abertos.empty else pd.Series(dtype=bool)
+    proximos_30 = float(pd.to_numeric(abertos.loc[mask_30.fillna(False), "Subtotal"], errors="coerce").fillna(0).sum()) if not abertos.empty else 0.0
+
+    sites_acordo = set(acordos_abertos_df.loc[acordos_abertos_df["Site localizado"].eq("Sim"), "Microsiga"].astype(str)) if not acordos_abertos_df.empty else set()
+    sites_atrasados = set(atrasados.loc[atrasados["Site localizado"].eq("Sim"), "Microsiga"].astype(str)) if not atrasados.empty else set()
+    sem_vinculo = abertos[abertos.get("Site localizado", pd.Series(index=abertos.index, dtype=str)).eq("Não")] if not abertos.empty else abertos
+
+    programados = abertos.copy()
+    inicio_mes = hoje.replace(day=1)
+    if not programados.empty:
+        datas_programadas = pd.to_datetime(programados["Data de vencimento"], errors="coerce")
+        programados = programados[datas_programadas.dt.date.ge(inicio_mes).fillna(False)]
+    origem_mensal = _serie_mensal(atrasados, "Data de vencimento")
+    acumulado = _serie_mensal(atrasados, "Data de vencimento")
+    if not acumulado.empty:
+        acumulado["Valor acumulado"] = acumulado["Valor"].cumsum()
     return {
         "pagamentos": pagamentos,
         "acordos": acordos,
         "total_pendente": total_pendente,
         "total_vencido": total_vencido,
         "proximos_30": proximos_30,
-        "acordos_abertos": acordos_abertos,
+        "abertos": abertos,
+        "atrasados": atrasados,
+        "acordos_abertos_df": acordos_abertos_df,
+        "acordos_abertos": len(acordos_abertos_df),
         "total_acordos_abertos": total_acordos_abertos,
+        "sites_com_acordo": len(sites_acordo),
+        "sites_atrasados_sem_acordo": len(sites_atrasados - sites_acordo),
+        "sem_vinculo_quantidade": len(sem_vinculo),
+        "sem_vinculo_valor": float(pd.to_numeric(sem_vinculo.get("Subtotal", 0), errors="coerce").fillna(0).sum()) if not sem_vinculo.empty else 0.0,
+        "programacao_mensal": _programacao_mensal_por_tipo(programados, inicio=inicio_mes),
+        "origem_mensal": origem_mensal,
+        "acumulado_atrasados": acumulado,
+        "aging": _aging_atrasados(atrasados, hoje),
+        "ranking_saldos": _ranking_saldos(abertos),
     }
 
 
