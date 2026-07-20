@@ -13,6 +13,15 @@ from app.services import finance_service as fs
 
 class FinanceServiceTest(unittest.TestCase):
 
+    def setUp(self):
+        patcher = patch.object(
+            fs,
+            "load_site_registry",
+            return_value=pd.DataFrame(),
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def criar_topos(self, linhas=None):
         linhas = linhas or [
             {
@@ -326,7 +335,6 @@ class FinanceServiceTest(unittest.TestCase):
             "Código Microsiga duplicado no cadastro",
             "Vínculo incompatível com o cadastro atual",
             "Vínculo com site inativo",
-            "Registro não vinculado a site existente",
             "Acordo sem pagamento de origem",
             "Vencimento ausente ou inválido",
             "Valor ausente, zero ou inválido",
@@ -378,6 +386,52 @@ class FinanceServiceTest(unittest.TestCase):
             "valor_em_atraso": 125.0,
             "parcelas_vencidas": 1,
         })
+
+    def test_vincula_site_do_cadastro_completo_mesmo_ausente_do_snmpc(self):
+        cadastro = pd.DataFrame([{
+            "CÓDIGO MICROSIGA": "91187",
+            "CÓDIGO AQUILES": "94733",
+            "SMNPC": "AMERICA_II_BH_94733_IP",
+            "NOME": "AMÉRICA II",
+            "Status": "Ativo",
+        }])
+        pagamentos = pd.DataFrame([{
+            **{c: "" for c in fs.PAYMENT_COLUMNS},
+            "ID SGS": "AMERICA-II",
+            "Status": "Pendente",
+            "Favorecido": "ED. AMERICA II091187",
+            "Data de vencimento": "2026-08-01",
+            "Subtotal": 1000.0,
+            "Site localizado": "Não",
+        }])
+
+        vinculados = fs.enriquecer_vinculos_financeiros(
+            pagamentos,
+            sites={},
+            cadastro_sites=cadastro,
+        )
+        registro = vinculados.iloc[0]
+        self.assertEqual(registro["Microsiga"], "091187")
+        self.assertEqual(registro["Código Aquiles"], "94733")
+        self.assertEqual(registro["Nome SNMPc"], "AMERICA_II_BH_94733_IP")
+        self.assertEqual(registro["Nome Site"], "AMÉRICA II")
+        self.assertEqual(registro["Site localizado"], "Sim")
+
+        conciliacao = fs.analisar_conciliacao_financeira(
+            {},
+            pagamentos=pagamentos,
+            acordos=pd.DataFrame(columns=fs.AGREEMENT_COLUMNS),
+            cadastro_sites=cadastro,
+        )
+        self.assertNotIn(
+            "Código Microsiga não encontrado",
+            set(conciliacao.get("Tipo do problema", pd.Series(dtype=str))),
+        )
+
+    def test_normaliza_variacoes_do_codigo_microsiga(self):
+        self.assertEqual(fs.normalizar_codigo_microsiga("91187"), "091187")
+        self.assertEqual(fs.normalizar_codigo_microsiga("091187"), "091187")
+        self.assertEqual(fs.normalizar_codigo_microsiga(91187.0), "091187")
 
     def test_exporta_conciliacao_excel(self):
         dados = pd.DataFrame([{

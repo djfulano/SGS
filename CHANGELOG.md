@@ -1,5 +1,12 @@
 # Histórico de versões
 
+## 1.3.12
+
+- O Financeiro passa a vincular obrigações usando o cadastro completo de Sites, mesmo quando o site não está presente na estrutura atual do SNMPc.
+- Códigos Microsiga são normalizados para seis dígitos e registros antigos recuperam o código a partir do favorecido sem exigir nova importação.
+- Importações futuras preservam o Código Microsiga de registros ainda não vinculados para facilitar a conciliação.
+- O Histórico por Site passa a listar também sites cadastrados que estejam ausentes do SNMPc.
+
 ## 1.3.11
 
 - Financeiro passa a ter Conciliação somente para consulta e exportação de vínculos, códigos, vencimentos, valores e acordos inconsistentes.

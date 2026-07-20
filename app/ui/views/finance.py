@@ -20,9 +20,11 @@ from app.services.finance_service import dataframe_para_excel
 from app.services.finance_service import exportar_conciliacao_financeira_excel
 from app.services.finance_service import historico_financeiro_site
 from app.services.finance_service import importar_planilha_financeira
+from app.services.finance_service import preparar_acordos_exibicao
 from app.services.finance_service import preparar_pagamentos_exibicao
 from app.services.finance_service import salvar_acordos
 from app.services.finance_service import salvar_pagamentos
+from app.services.finance_service import sites_financeiros_cadastrados
 from app.ui.navigation import mostrar_subnavegacao
 
 
@@ -350,7 +352,7 @@ def mostrar_editor_acordos(df):
 
 def mostrar_acordos():
     st.header("Acordos")
-    df = carregar_acordos()
+    df = preparar_acordos_exibicao()
     if df.empty:
         st.info("Nenhum acordo importado.")
         return
@@ -452,10 +454,10 @@ def mostrar_conciliacao_financeira(sites):
 
 def _sites_para_historico(sites):
     return sorted(
-        (sites or {}).values(),
+        sites_financeiros_cadastrados(sites),
         key=lambda site: (
-            str(getattr(site, "nome_cadastro", "") or "").casefold(),
-            str(getattr(site, "nome", "") or "").casefold(),
+            str(site.get("nome_cadastro") or "").casefold(),
+            str(site.get("nome") or "").casefold(),
         ),
     )
 
@@ -467,24 +469,24 @@ def mostrar_historico_financeiro_site(sites):
         st.info("Nenhum site cadastrado foi encontrado.")
         return
     site_por_nome = {
-        str(getattr(site, "nome", "") or ""): site for site in opcoes_sites
+        str(site.get("nome") or ""): site for site in opcoes_sites
     }
     nome_site = st.selectbox(
         "Site",
         list(site_por_nome),
         format_func=lambda nome: (
-            f"{getattr(site_por_nome[nome], 'nome_cadastro', '') or nome} - "
-            f"{nome} - Microsiga: {getattr(site_por_nome[nome], 'microsiga', '') or 'Não informado'}"
+            f"{site_por_nome[nome].get('nome_cadastro') or nome} - "
+            f"{nome} - Microsiga: {site_por_nome[nome].get('microsiga') or 'Não informado'}"
         ),
         key="financeiro_historico_site_selecionado",
     )
     site = site_por_nome[nome_site]
-    microsiga = getattr(site, "microsiga", "")
+    microsiga = site.get("microsiga", "")
 
     identificacao = st.columns(4)
-    identificacao[0].metric("Nome", getattr(site, "nome_cadastro", "") or "Não informado")
+    identificacao[0].metric("Nome", site.get("nome_cadastro") or "Não informado")
     identificacao[1].metric("Nome SNMPc", nome_site or "Não informado")
-    identificacao[2].metric("Código Aquiles", getattr(site, "codigo_topos", "") or "Não informado")
+    identificacao[2].metric("Código Aquiles", site.get("codigo_topos") or "Não informado")
     identificacao[3].metric("Código Microsiga", microsiga or "Não informado")
     if not str(microsiga or "").strip():
         st.warning("O site não possui Código Microsiga e não pode ser relacionado à base financeira.")
@@ -663,7 +665,7 @@ def mostrar_exportacoes():
         st.info("Seu perfil não possui permissão para exportar dados financeiros.")
         return
     pagamentos = preparar_pagamentos_exibicao()
-    acordos = carregar_acordos()
+    acordos = preparar_acordos_exibicao()
     col1, col2 = st.columns(2)
     with col1:
         st.download_button(

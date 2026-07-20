@@ -11,6 +11,7 @@ import pandas as pd
 
 from app.config import CONFIG_DIR
 from app.logs import registrar_log_sistema
+from app.services.site_registry_service import load_site_registry
 from app.storage import read_json
 from app.storage import write_json_atomic
 
@@ -371,27 +372,95 @@ def filtrar_periodo_operacional_acordos(df, ano_minimo=None):
     ].copy()
 
 
-def _site_index(sites):
+def _registro_site_financeiro(
+    microsiga,
+    codigo_aquiles,
+    nome_snmpc,
+    nome_site,
+    status,
+):
+    return {
+        "microsiga": normalizar_codigo_microsiga(microsiga),
+        "codigo_topos": _texto(codigo_aquiles),
+        "nome": _texto(nome_snmpc),
+        "nome_cadastro": _texto(nome_site),
+        "status_cadastro": _texto(status),
+    }
+
+
+def sites_financeiros_cadastrados(sites=None, cadastro_sites=None):
+    """Retorna o cadastro completo usado pelos vínculos financeiros."""
+    cadastro = load_site_registry() if cadastro_sites is None else cadastro_sites.copy()
+    registros = []
+    vistos = set()
+    codigos_cadastro = set()
+
+    if cadastro is not None and not cadastro.empty:
+        for linha in cadastro.to_dict(orient="records"):
+            site = _registro_site_financeiro(
+                linha.get("CÓDIGO MICROSIGA"),
+                linha.get("CÓDIGO AQUILES"),
+                linha.get("SMNPC"),
+                linha.get("NOME"),
+                linha.get("Status"),
+            )
+            chave = (site["microsiga"], site["codigo_topos"], site["nome"])
+            if site["microsiga"] and chave not in vistos:
+                registros.append(site)
+                vistos.add(chave)
+                codigos_cadastro.add(site["microsiga"])
+
+    # Mantém compatibilidade com sites técnicos ainda não presentes na planilha.
+    for item in (sites or {}).values():
+        site = _registro_site_financeiro(
+            getattr(item, "microsiga", ""),
+            getattr(item, "codigo_topos", ""),
+            getattr(item, "nome", ""),
+            getattr(item, "nome_cadastro", ""),
+            getattr(item, "status_cadastro", ""),
+        )
+        chave = (site["microsiga"], site["codigo_topos"], site["nome"])
+        if (
+            site["microsiga"]
+            and site["microsiga"] not in codigos_cadastro
+            and chave not in vistos
+        ):
+            registros.append(site)
+            vistos.add(chave)
+    return registros
+
+
+def _sites_por_microsiga(sites=None, cadastro_sites=None):
     indice = {}
-    for site in (sites or {}).values():
-        microsiga = normalizar_codigo_microsiga(getattr(site, "microsiga", ""))
-        if not microsiga:
-            continue
-        indice[microsiga] = {
-            "Código Aquiles": _texto(getattr(site, "codigo_topos", "")),
-            "Nome SNMPc": _texto(getattr(site, "nome", "")),
-            "Nome Site": _texto(getattr(site, "nome_cadastro", "")),
-            "Site localizado": "Sim",
-        }
+    for site in sites_financeiros_cadastrados(sites, cadastro_sites):
+        indice.setdefault(site["microsiga"], []).append(site)
     return indice
 
 
-def vincular_site(registro, sites):
-    microsiga = normalizar_codigo_microsiga(registro.get("Microsiga"))
+def _codigo_microsiga_registro(registro):
+    codigo = normalizar_codigo_microsiga(registro.get("Microsiga"))
+    if codigo:
+        return codigo
+    favorecido = (
+        registro.get("Favorecido")
+        or registro.get("Nome")
+        or registro.get("Fornecedor")
+    )
+    return extrair_microsiga_favorecido(favorecido)
+
+
+def vincular_site(registro, sites=None, cadastro_sites=None):
+    microsiga = _codigo_microsiga_registro(registro)
     registro["Microsiga"] = microsiga
-    vinculo = _site_index(sites).get(microsiga)
-    if vinculo:
-        registro.update(vinculo)
+    candidatos = _sites_por_microsiga(sites, cadastro_sites).get(microsiga, [])
+    if len(candidatos) == 1:
+        site = candidatos[0]
+        registro.update({
+            "Código Aquiles": site["codigo_topos"],
+            "Nome SNMPc": site["nome"],
+            "Nome Site": site["nome_cadastro"],
+            "Site localizado": "Sim",
+        })
     else:
         registro.update({
             "Código Aquiles": "",
@@ -400,6 +469,48 @@ def vincular_site(registro, sites):
             "Site localizado": "Não",
         })
     return registro
+
+
+def enriquecer_vinculos_financeiros(
+    df,
+    sites=None,
+    cadastro_sites=None,
+    forcar=False,
+):
+    if df is None or df.empty:
+        return df.copy() if df is not None else pd.DataFrame()
+    indice = _sites_por_microsiga(sites, cadastro_sites)
+    dados = df.copy()
+
+    def enriquecer(linha):
+        registro = linha.to_dict()
+        codigo = _codigo_microsiga_registro(registro)
+        registro["Microsiga"] = codigo
+        if (
+            not forcar
+            and _texto(registro.get("Site localizado")).casefold() == "sim"
+            and codigo
+        ):
+            return pd.Series(registro)
+        candidatos = indice.get(codigo, []) if codigo else []
+        if len(candidatos) == 1:
+            site = candidatos[0]
+            registro.update({
+                "Código Aquiles": site["codigo_topos"],
+                "Nome SNMPc": site["nome"],
+                "Nome Site": site["nome_cadastro"],
+                "Site localizado": "Sim",
+            })
+        else:
+            registro.update({
+                "Código Aquiles": "",
+                "Nome SNMPc": "",
+                "Nome Site": "",
+                "Site localizado": "Não",
+            })
+        return pd.Series(registro)
+
+    return dados.apply(enriquecer, axis=1)
 
 
 def _id_estavel(prefixo, registro, campos):
@@ -779,16 +890,21 @@ def importar_planilha_financeira(
     finally:
         xl.close()
 
-    if sites is not None:
-        pagamentos = pagamentos.apply(lambda row: pd.Series(vincular_site(row.to_dict(), sites)), axis=1) if not pagamentos.empty else pagamentos
-        acordos = acordos.apply(lambda row: pd.Series(vincular_site(row.to_dict(), sites)), axis=1) if not acordos.empty else acordos
-        if formato == TOPO_SOURCE:
-            if not pagamentos.empty:
-                pagamentos.loc[pagamentos["Site localizado"].ne("Sim"), "Microsiga"] = ""
-            if not acordos.empty:
-                acordos.loc[acordos["Site localizado"].ne("Sim"), "Microsiga"] = ""
-        pagamentos = pagamentos[PAYMENT_COLUMNS]
-        acordos = acordos[AGREEMENT_COLUMNS]
+    cadastro_sites = load_site_registry()
+    pagamentos = enriquecer_vinculos_financeiros(
+        pagamentos,
+        sites=sites,
+        cadastro_sites=cadastro_sites,
+        forcar=True,
+    )
+    acordos = enriquecer_vinculos_financeiros(
+        acordos,
+        sites=sites,
+        cadastro_sites=cadastro_sites,
+        forcar=True,
+    )
+    pagamentos = pagamentos[PAYMENT_COLUMNS]
+    acordos = acordos[AGREEMENT_COLUMNS]
 
     pagamentos_atuais = carregar_pagamentos()
     acordos_atuais = carregar_acordos()
@@ -873,15 +989,35 @@ def status_pagamento_exibicao(row, hoje=None):
     return status
 
 
-def preparar_pagamentos_exibicao(df=None, hoje=None):
+def preparar_pagamentos_exibicao(
+    df=None,
+    hoje=None,
+    enriquecer=True,
+    cadastro_sites=None,
+):
     df = carregar_pagamentos() if df is None else df.copy()
     if df.empty:
         return pd.DataFrame(columns=PAYMENT_COLUMNS)
+    if enriquecer:
+        df = enriquecer_vinculos_financeiros(
+            df,
+            cadastro_sites=cadastro_sites,
+        )
     df["Status Atual"] = df.apply(
         lambda row: status_pagamento_exibicao(row, hoje=hoje),
         axis=1,
     )
     return df
+
+
+def preparar_acordos_exibicao(df=None, cadastro_sites=None):
+    df = carregar_acordos() if df is None else df.copy()
+    if df.empty:
+        return pd.DataFrame(columns=AGREEMENT_COLUMNS)
+    return enriquecer_vinculos_financeiros(
+        df,
+        cadastro_sites=cadastro_sites,
+    )
 
 
 def _abertos_pagamentos(pagamentos):
@@ -1002,8 +1138,12 @@ def _ranking_saldos(abertos):
 
 def dashboard_financeiro(hoje=None):
     hoje = hoje or date.today()
-    pagamentos = preparar_pagamentos_exibicao(hoje=hoje)
-    acordos = carregar_acordos()
+    cadastro_sites = load_site_registry()
+    pagamentos = preparar_pagamentos_exibicao(
+        hoje=hoje,
+        cadastro_sites=cadastro_sites,
+    )
+    acordos = preparar_acordos_exibicao(cadastro_sites=cadastro_sites)
     abertos = _abertos_pagamentos(pagamentos)
     atrasados = abertos[abertos["Status Atual"].eq("Vencido")].copy() if not abertos.empty else abertos
     acordos_abertos_df = _abertos_acordos(acordos, pagamentos)
@@ -1067,15 +1207,6 @@ CONCILIATION_COLUMNS = [
 ]
 
 
-def _sites_por_microsiga(sites):
-    indice = {}
-    for site in (sites or {}).values():
-        codigo = normalizar_codigo_microsiga(getattr(site, "microsiga", ""))
-        if codigo:
-            indice.setdefault(codigo, []).append(site)
-    return indice
-
-
 def _linha_conciliacao(
     problema,
     origem,
@@ -1107,17 +1238,35 @@ def _linha_conciliacao(
     }
 
 
-def analisar_conciliacao_financeira(sites, pagamentos=None, acordos=None):
-    pagamentos = preparar_pagamentos_exibicao(pagamentos)
+def analisar_conciliacao_financeira(
+    sites,
+    pagamentos=None,
+    acordos=None,
+    cadastro_sites=None,
+):
+    cadastro_sites = (
+        load_site_registry() if cadastro_sites is None else cadastro_sites.copy()
+    )
+    pagamentos = preparar_pagamentos_exibicao(pagamentos, enriquecer=False)
     acordos = carregar_acordos() if acordos is None else acordos.copy()
-    indice_sites = _sites_por_microsiga(sites)
+    pagamentos = enriquecer_vinculos_financeiros(
+        pagamentos,
+        sites=sites,
+        cadastro_sites=cadastro_sites,
+    )
+    acordos = enriquecer_vinculos_financeiros(
+        acordos,
+        sites=sites,
+        cadastro_sites=cadastro_sites,
+    )
+    indice_sites = _sites_por_microsiga(sites, cadastro_sites)
     problemas = []
 
     for codigo, sites_codigo in indice_sites.items():
         if len(sites_codigo) <= 1:
             continue
         nomes = "; ".join(
-            sorted(_texto(getattr(site, "nome", "")) for site in sites_codigo)
+            sorted(_texto(site.get("nome")) for site in sites_codigo)
         )
         problemas.append(_linha_conciliacao(
             "Código Microsiga duplicado no cadastro",
@@ -1169,8 +1318,8 @@ def analisar_conciliacao_financeira(sites, pagamentos=None, acordos=None):
                 ))
             elif len(sites_codigo) == 1:
                 site_atual = sites_codigo[0]
-                nome_atual = _texto(getattr(site_atual, "nome", ""))
-                codigo_aquiles_atual = _texto(getattr(site_atual, "codigo_topos", ""))
+                nome_atual = _texto(site_atual.get("nome"))
+                codigo_aquiles_atual = _texto(site_atual.get("codigo_topos"))
                 registro_aquiles = _texto(registro.get("Código Aquiles"))
                 marcado_vinculado = _texto(registro.get("Site localizado")).casefold() == "sim"
                 if not marcado_vinculado:
@@ -1201,7 +1350,7 @@ def analisar_conciliacao_financeira(sites, pagamentos=None, acordos=None):
                         acao=f"Revisar o vínculo; o cadastro atual aponta para {nome_atual}.",
                     ))
                 status_site = _texto(
-                    getattr(site_atual, "status_cadastro", "")
+                    site_atual.get("status_cadastro")
                 ).casefold()
                 if status_site and status_site != "ativo":
                     problemas.append(_linha_conciliacao(
@@ -1267,7 +1416,7 @@ def historico_financeiro_site(
     codigo = normalizar_codigo_microsiga(microsiga)
     hoje = hoje or date.today()
     pagamentos = preparar_pagamentos_exibicao(pagamentos, hoje=hoje)
-    acordos = carregar_acordos() if acordos is None else acordos.copy()
+    acordos = preparar_acordos_exibicao(acordos)
 
     def filtrar_codigo(df):
         if df is None or df.empty or not codigo:
