@@ -1662,8 +1662,10 @@ def permissao_aba(aba):
             for permissao_financeiro in [
                 "financeiro",
                 "financeiro_dashboard",
+                "financeiro_historico_site",
                 "financeiro_pagamentos",
                 "financeiro_acordos",
+                "financeiro_conciliacao",
                 "financeiro_importar",
                 "financeiro_exportacoes",
                 "financeiro_editar"

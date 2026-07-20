@@ -279,6 +279,114 @@ class FinanceServiceTest(unittest.TestCase):
                 self.assertEqual(preservado["Status"], "Pago")
                 self.assertEqual(preservado["Observação interna"], "Baixa manual")
 
+    def test_conciliacao_identifica_problemas_sem_alterar_bases(self):
+        sites = {
+            "ATIVO": SimpleNamespace(
+                microsiga="1", codigo_topos="101", nome="ATIVO",
+                nome_cadastro="Site Ativo", status_cadastro="Ativo",
+            ),
+            "INATIVO": SimpleNamespace(
+                microsiga="2", codigo_topos="102", nome="INATIVO",
+                nome_cadastro="Site Inativo", status_cadastro="Cancelado",
+            ),
+            "DUP_A": SimpleNamespace(
+                microsiga="3", codigo_topos="103", nome="DUP_A",
+                nome_cadastro="Duplicado A", status_cadastro="Ativo",
+            ),
+            "DUP_B": SimpleNamespace(
+                microsiga="000003", codigo_topos="104", nome="DUP_B",
+                nome_cadastro="Duplicado B", status_cadastro="Ativo",
+            ),
+        }
+        pagamentos = pd.DataFrame([
+            {**{c: "" for c in fs.PAYMENT_COLUMNS}, "ID SGS": "P1", "Status": "Pendente", "Favorecido": "SEM CODIGO", "Data de vencimento": "2026-08-01", "Subtotal": 100.0, "Site localizado": "Não"},
+            {**{c: "" for c in fs.PAYMENT_COLUMNS}, "ID SGS": "P2", "Status": "Pendente", "Favorecido": "DESCONHECIDO 999999", "Data de vencimento": "2026-08-01", "Subtotal": 200.0, "Site localizado": "Não"},
+            {**{c: "" for c in fs.PAYMENT_COLUMNS}, "ID SGS": "P3", "Status": "Pendente", "Microsiga": "1", "Nome SNMPc": "ANTIGO", "Código Aquiles": "999", "Data de vencimento": "2026-08-01", "Subtotal": 300.0, "Site localizado": "Sim"},
+            {**{c: "" for c in fs.PAYMENT_COLUMNS}, "ID SGS": "P4", "Status": "Pendente", "Microsiga": "2", "Nome SNMPc": "INATIVO", "Data de vencimento": "2026-08-01", "Subtotal": 400.0, "Site localizado": "Sim"},
+            {**{c: "" for c in fs.PAYMENT_COLUMNS}, "ID SGS": "P5", "Status": "Pendente", "Microsiga": "1", "Data de vencimento": "inválido", "Subtotal": 0.0, "Site localizado": "Não"},
+        ])
+        acordos = pd.DataFrame([{
+            **{c: "" for c in fs.AGREEMENT_COLUMNS},
+            "ID SGS": "A1", "ID Pagamento": "INEXISTENTE",
+            "Status": "Em pagamento", "Microsiga": "1",
+            "Data de vencimento": "2026-08-01", "Valor Acordo": 500.0,
+            "Nome SNMPc": "ATIVO", "Site localizado": "Sim",
+        }])
+        pagamentos_antes = pagamentos.copy(deep=True)
+        acordos_antes = acordos.copy(deep=True)
+
+        resultado = fs.analisar_conciliacao_financeira(
+            sites, pagamentos=pagamentos, acordos=acordos
+        )
+
+        tipos = set(resultado["Tipo do problema"])
+        self.assertTrue({
+            "Sem Código Microsiga",
+            "Código Microsiga não encontrado",
+            "Código Microsiga duplicado no cadastro",
+            "Vínculo incompatível com o cadastro atual",
+            "Vínculo com site inativo",
+            "Registro não vinculado a site existente",
+            "Acordo sem pagamento de origem",
+            "Vencimento ausente ou inválido",
+            "Valor ausente, zero ou inválido",
+        }.issubset(tipos))
+        pd.testing.assert_frame_equal(pagamentos, pagamentos_antes)
+        pd.testing.assert_frame_equal(acordos, acordos_antes)
+
+    def test_historico_financeiro_site_separa_status_e_valores(self):
+        pagamentos = pd.DataFrame([
+            {**{c: "" for c in fs.PAYMENT_COLUMNS}, "ID SGS": "V", "Status": "Pendente", "Microsiga": "1", "Data de vencimento": "2026-06-01", "Subtotal": 100.0},
+            {**{c: "" for c in fs.PAYMENT_COLUMNS}, "ID SGS": "F", "Status": "Pendente", "Microsiga": "000001", "Data de vencimento": "2026-08-01", "Subtotal": 200.0},
+            {**{c: "" for c in fs.PAYMENT_COLUMNS}, "ID SGS": "P", "Status": "Pago", "Microsiga": "1", "Data de vencimento": "2026-05-01", "Subtotal": 300.0},
+            {**{c: "" for c in fs.PAYMENT_COLUMNS}, "ID SGS": "C", "Status": "Cancelado", "Microsiga": "1", "Data de vencimento": "2026-04-01", "Subtotal": 400.0},
+            {**{c: "" for c in fs.PAYMENT_COLUMNS}, "ID SGS": "OUTRO", "Status": "Pendente", "Microsiga": "2", "Data de vencimento": "2026-06-01", "Subtotal": 900.0},
+        ])
+        acordos = pd.DataFrame([
+            {**{c: "" for c in fs.AGREEMENT_COLUMNS}, "ID SGS": "A1", "Status": "Em pagamento", "Microsiga": "1", "Valor Acordo": 500.0},
+            {**{c: "" for c in fs.AGREEMENT_COLUMNS}, "ID SGS": "A2", "Status": "Quitado", "Microsiga": "1", "Valor Acordo": 600.0},
+        ])
+
+        historico = fs.historico_financeiro_site(
+            "000001",
+            pagamentos=pagamentos,
+            acordos=acordos,
+            hoje=date(2026, 7, 20),
+        )
+
+        self.assertEqual(historico["valor_em_atraso"], 100.0)
+        self.assertEqual(historico["parcelas_vencidas"], 1)
+        self.assertEqual(historico["valor_futuro"], 200.0)
+        self.assertEqual(historico["parcelas_futuras"], 1)
+        self.assertEqual(historico["valor_realizado"], 300.0)
+        self.assertEqual(historico["quantidade_realizada"], 1)
+        self.assertEqual(historico["valor_acordos_abertos"], 500.0)
+        self.assertEqual(historico["quantidade_acordos_abertos"], 1)
+        self.assertEqual(set(historico["pagamentos"]["ID SGS"]), {"V", "F", "P", "C"})
+
+    def test_resumo_atraso_site_exclui_pagos_cancelados_e_futuros(self):
+        pagamentos = pd.DataFrame([
+            {**{c: "" for c in fs.PAYMENT_COLUMNS}, "ID SGS": "V", "Status": "Pendente", "Microsiga": "123", "Data de vencimento": "2026-06-01", "Subtotal": 125.0},
+            {**{c: "" for c in fs.PAYMENT_COLUMNS}, "ID SGS": "P", "Status": "Pago", "Microsiga": "123", "Data de vencimento": "2026-06-01", "Subtotal": 200.0},
+            {**{c: "" for c in fs.PAYMENT_COLUMNS}, "ID SGS": "C", "Status": "Cancelado", "Microsiga": "123", "Data de vencimento": "2026-06-01", "Subtotal": 300.0},
+            {**{c: "" for c in fs.PAYMENT_COLUMNS}, "ID SGS": "F", "Status": "Pendente", "Microsiga": "123", "Data de vencimento": "2026-08-01", "Subtotal": 400.0},
+        ])
+        resumo = fs.resumo_atraso_site(
+            "000123", pagamentos=pagamentos, hoje=date(2026, 7, 20)
+        )
+        self.assertEqual(resumo, {
+            "valor_em_atraso": 125.0,
+            "parcelas_vencidas": 1,
+        })
+
+    def test_exporta_conciliacao_excel(self):
+        dados = pd.DataFrame([{
+            coluna: (10.0 if coluna == "Valor" else "Teste")
+            for coluna in fs.CONCILIATION_COLUMNS
+        }])
+        conteudo = fs.exportar_conciliacao_financeira_excel(dados)
+        self.assertTrue(conteudo.startswith(b"PK"))
+
 
 if __name__ == "__main__":
     unittest.main()

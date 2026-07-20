@@ -52,6 +52,13 @@ def main():
             retry_statuses=retries,
         )
         print(result, flush=True)
+        if result.get("Interrompido"):
+            print(
+                "Processamento interrompido pelo provedor; os endereços restantes "
+                "continuam pendentes.",
+                flush=True,
+            )
+            break
         if not args.all or result["Processados"] == 0:
             break
 

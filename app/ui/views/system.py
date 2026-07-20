@@ -54,12 +54,141 @@ from app.services.data_export_service import exportar_indice_documentos_excel
 from app.services.data_export_service import exportar_logs_excel
 from app.services.data_export_service import exportar_mapa
 from app.services.data_export_service import exportar_produtos_excel
+from app.services.feasibility_history import load_records
+from app.services.feasibility_opportunities import GEOCODING_BATCH_SIZES
+from app.services.feasibility_opportunities import STATUS_ERROR
+from app.services.feasibility_opportunities import STATUS_NOT_FOUND
+from app.services.feasibility_opportunities import geocoding_coverage
+from app.services.feasibility_opportunities import process_geocoding_batch
+from app.services.feasibility_opportunities import synchronize_addresses
 from app.services.map_settings import PROVEDORES_GEOCODING
 from app.services.map_settings import PROVEDORES_SATELITE
 from app.services.map_settings import load_map_config
 from app.services.map_settings import save_map_config
 from app.ui.navigation import mostrar_subnavegacao
 from app.ui.components.tables import primeira_linha_selecionada
+
+
+def mostrar_geocodificacao_viabilidades(usuario_atual):
+    st.markdown("**Geocodificação do histórico de viabilidades**")
+    st.caption(
+        "Transforma os endereços importados em coordenadas para as análises de "
+        "oportunidades por proximidade. O processamento é manual e retomável."
+    )
+    records = load_records()
+    geocoding, added = synchronize_addresses(records)
+    coverage = geocoding_coverage(records, geocoding)
+
+    if added:
+        st.info(f"{added} endereços foram adicionados à fila de geocodificação.")
+
+    columns = st.columns(5)
+    columns[0].metric("Endereços únicos", coverage["Total"])
+    columns[1].metric("Localizados", coverage["Localizado"])
+    columns[2].metric("Pendentes", coverage["Pendente"])
+    columns[3].metric("Não localizados", coverage["Não localizado"])
+    columns[4].metric("Erros", coverage["Erro"])
+    st.caption(
+        f"Cobertura atual: {coverage['Cobertura %']:.1f}%. Endereços já "
+        "localizados não são consultados novamente."
+    )
+
+    last_result = st.session_state.pop("config_mapa_geocoding_resultado", None)
+    if last_result:
+        if last_result.get("Interrompido"):
+            reason = last_result.get("Motivo interrupção") or "Falha no provedor."
+            st.warning(
+                "O lote foi interrompido e os endereços restantes continuam "
+                f"pendentes. Motivo: {reason}"
+            )
+        else:
+            st.success(
+                f"Lote concluído. Localizados: {last_result['Localizados']}; "
+                f"não localizados: {last_result['Não localizados']}; "
+                f"erros: {last_result['Erros']}."
+            )
+
+    controls = st.columns(3)
+    batch_size = controls[0].selectbox(
+        "Limite do lote",
+        GEOCODING_BATCH_SIZES,
+        index=1,
+        key="config_mapa_geocoding_lote",
+    )
+    retry_not_found = controls[1].checkbox(
+        "Reprocessar não localizados",
+        key="config_mapa_geocoding_retry_nao_localizado",
+    )
+    retry_errors = controls[2].checkbox(
+        "Reprocessar erros",
+        key="config_mapa_geocoding_retry_erros",
+    )
+    retry_statuses = set()
+    if retry_not_found:
+        retry_statuses.add(STATUS_NOT_FOUND)
+    if retry_errors:
+        retry_statuses.add(STATUS_ERROR)
+    has_work = coverage["Pendente"] > 0 or (
+        retry_not_found and coverage["Não localizado"] > 0
+    ) or (retry_errors and coverage["Erro"] > 0)
+
+    if st.button(
+        "Processar próximo lote",
+        disabled=not has_work,
+        key="config_mapa_geocoding_processar",
+    ):
+        progress = st.progress(0.0)
+        status = st.empty()
+
+        def update_progress(index, total, entry):
+            progress.progress(index / max(1, total))
+            status.caption(
+                f"Geocodificando {index}/{total}: {entry.get('Endereço', '')}"
+            )
+
+        try:
+            result = process_geocoding_batch(
+                records,
+                limit=batch_size,
+                retry_statuses=retry_statuses,
+                progress_callback=update_progress,
+            )
+            log_status = "erro" if result.get("Interrompido") else "sucesso"
+            registrar_log_sistema(
+                "gestao_viabilidades_geocodificacao",
+                usuario=usuario_atual.get("username"),
+                status=log_status,
+                detalhes=result,
+            )
+            st.session_state["config_mapa_geocoding_resultado"] = result
+            st.rerun()
+        except Exception as error:
+            registrar_log_sistema(
+                "gestao_viabilidades_geocodificacao",
+                usuario=usuario_atual.get("username"),
+                status="erro",
+                detalhes={"erro": str(error)},
+            )
+            st.error(f"Falha ao processar geocodificação: {error}")
+
+    with st.expander("Processar todo o estoque no servidor"):
+        st.markdown("**Ambiente Docker**")
+        st.code(
+            "sudo docker compose exec -T snmpc-dashboard "
+            "python -m scripts.geocode_feasibility_history --all --batch-size 10000",
+            language="bash",
+        )
+        st.markdown("**Execução direta no servidor**")
+        st.code(
+            "cd /opt/SGS\n"
+            "source venv/bin/activate\n"
+            "python -m scripts.geocode_feasibility_history --all --batch-size 10000",
+            language="bash",
+        )
+        st.caption(
+            "O processo pode ser interrompido e retomado. Falhas de autenticação, "
+            "limite ou indisponibilidade preservam os itens restantes como pendentes."
+        )
 
 
 def mostrar_usuarios(
@@ -1223,6 +1352,8 @@ def mostrar_configuracoes(
         )
         st.success("Configurações do mapa salvas.")
         st.rerun()
+
+    mostrar_geocodificacao_viabilidades(usuario_atual)
 
     st.divider()
 

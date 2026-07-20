@@ -1,5 +1,27 @@
 # Histórico de versões
 
+## 1.3.11
+
+- Financeiro passa a ter Conciliação somente para consulta e exportação de vínculos, códigos, vencimentos, valores e acordos inconsistentes.
+- Financeiro passa a oferecer Histórico por Site com realizados, pendências vencidas e futuras e acordos.
+- Gerenciamento de Sites > Resumo Financeiro passa a mostrar valor em atraso e quantidade de parcelas vencidas, respeitando a permissão de custos.
+- Novas permissões específicas controlam o acesso à Conciliação e ao Histórico por Site.
+
+## 1.3.10
+
+- O processamento da geocodificação do histórico de viabilidades passa para Sistema > Configurações, junto às configurações do Mapa e do provedor.
+- Os limites de lote passam a oferecer 100, 500, 1.000 e 10.000 endereços.
+- Oportunidades por Site mantém cobertura e diagnóstico, mas não inicia mais chamadas externas de geocodificação.
+- A subaba Viabilidade passa a ser a primeira opção do módulo, evitando o carregamento automático do Dashboard ao entrar.
+
+## 1.3.9
+
+- Oportunidades por Site passa a inicializar automaticamente a fila de endereços e permite processar a geocodificação em lotes na própria subaba.
+- Solicitações que já indicam o site são exibidas mesmo sem coordenadas; a proximidade acrescenta novas oportunidades sem duplicar registros.
+- Cobertura, pendências, falhas e comandos de processamento completo ficam disponíveis no mesmo painel usado pela Importação.
+- Falhas de autenticação, limite ou indisponibilidade do provedor interrompem o lote com segurança e preservam os endereços restantes como pendentes.
+- Mapa e faixas geográficas consideram somente coordenadas válidas, com diagnóstico explícito quando ainda não houver pontos localizados.
+
 ## 1.3.8
 
 - Valores programados passam a iniciar no mês atual, incluindo obrigações abertas vencidas dentro do próprio mês.

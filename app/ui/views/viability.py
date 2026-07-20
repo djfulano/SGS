@@ -919,12 +919,6 @@ def mostrar_viabilidade(sites, equipamentos=None):
     usuario = usuario_atual()
     subabas = [
         (
-            "gestao_viabilidades_dashboard",
-            "Dashboard",
-            lambda: mostrar_dashboard_viabilidades(sites),
-            "gestao_viabilidades"
-        ),
-        (
             "viabilidade_consulta",
             "Viabilidade",
             lambda: mostrar_viabilidade_endereco(sites),
@@ -941,6 +935,12 @@ def mostrar_viabilidade(sites, equipamentos=None):
             "Oportunidades por Site",
             lambda: mostrar_oportunidades_site(sites),
             "viabilidade"
+        ),
+        (
+            "gestao_viabilidades_dashboard",
+            "Dashboard",
+            lambda: mostrar_dashboard_viabilidades(sites),
+            "gestao_viabilidades"
         ),
         (
             "gestao_viabilidades_consulta",

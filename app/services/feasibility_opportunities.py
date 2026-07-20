@@ -9,6 +9,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import requests
 
 from app.services.feasibility_history import FEASIBILITY_HISTORY_DIR
 from app.services.map_service import carregar_cache_geocoding
@@ -27,6 +28,7 @@ STATUS_PENDING = "Pendente"
 STATUS_LOCATED = "Localizado"
 STATUS_NOT_FOUND = "Não localizado"
 STATUS_ERROR = "Erro"
+GEOCODING_BATCH_SIZES = (100, 500, 1000, 10000)
 
 
 def normalize_address(value):
@@ -142,6 +144,8 @@ def process_geocoding_batch(
     shared_cache = carregar_cache_geocoding()
     geocode = geocode or geocodificar_endereco
     processed = located = not_found = errors = 0
+    interrupted = False
+    interruption_reason = ""
 
     for index, (key, entry) in enumerate(pending, start=1):
         address = entry.get("Endereço", "")
@@ -168,19 +172,38 @@ def process_geocoding_batch(
                 })
                 not_found += 1
         except Exception as error:
-            entry.update({
-                "Latitude": 0.0,
-                "Longitude": 0.0,
-                "Status": STATUS_ERROR,
-                "Erro": str(error),
-            })
-            errors += 1
+            response = getattr(error, "response", None)
+            status_code = getattr(response, "status_code", None)
+            provider_blocked = (
+                status_code in {401, 403, 429}
+                or (isinstance(status_code, int) and status_code >= 500)
+                or isinstance(error, (requests.ConnectionError, requests.Timeout))
+            )
+            if provider_blocked:
+                entry.update({
+                    "Latitude": 0.0,
+                    "Longitude": 0.0,
+                    "Status": STATUS_PENDING,
+                    "Erro": str(error),
+                })
+                interrupted = True
+                interruption_reason = str(error)
+            else:
+                entry.update({
+                    "Latitude": 0.0,
+                    "Longitude": 0.0,
+                    "Status": STATUS_ERROR,
+                    "Erro": str(error),
+                })
+                errors += 1
         processed += 1
         if index % max(1, int(persist_every)) == 0:
             save_geocoding(data, path)
             salvar_cache_geocoding(shared_cache)
         if progress_callback:
             progress_callback(index, len(pending), entry)
+        if interrupted:
+            break
 
     save_geocoding(data, path)
     salvar_cache_geocoding(shared_cache)
@@ -189,6 +212,8 @@ def process_geocoding_batch(
         "Localizados": located,
         "Não localizados": not_found,
         "Erros": errors,
+        "Interrompido": interrupted,
+        "Motivo interrupção": interruption_reason,
         "Restantes": max(0, len([
             entry for entry in entries.values()
             if entry.get("Status", STATUS_PENDING) == STATUS_PENDING
@@ -249,35 +274,54 @@ def _haversine_distances(latitude, longitude, target_latitude, target_longitude)
 
 def opportunities_for_site(df, site, radius_km=5.0, data=None):
     enriched = enrich_with_geocoding(df, data=data)
-    located = enriched[
-        enriched["Status Geocodificação"].eq(STATUS_LOCATED)
-    ].copy()
-    if located.empty:
-        return located
-    located["Distância km"] = _haversine_distances(
-        located["Latitude Viabilidade"],
-        located["Longitude Viabilidade"],
-        getattr(site, "latitude", 0),
-        getattr(site, "longitude", 0),
-    )
-    located = located[located["Distância km"] <= float(radius_km)].copy()
+    if enriched.empty:
+        return enriched
+
     site_name = str(getattr(site, "nome", "") or "")
     pattern = rf"(?:^|;)\s*{re.escape(site_name)}\s*(?:;|$)"
-    already_listed = located.get(
-        "Sites localizados", pd.Series(index=located.index, dtype=str)
+    already_listed = enriched.get(
+        "Sites localizados", pd.Series(index=enriched.index, dtype=str)
     ).fillna("").astype(str).str.contains(pattern, case=False, regex=True, na=False)
-    located["Origem da oportunidade"] = np.where(
-        already_listed,
+    located = enriched["Status Geocodificação"].eq(STATUS_LOCATED)
+    enriched["Distância km"] = np.nan
+    if located.any():
+        enriched.loc[located, "Distância km"] = _haversine_distances(
+            enriched.loc[located, "Latitude Viabilidade"],
+            enriched.loc[located, "Longitude Viabilidade"],
+            getattr(site, "latitude", 0),
+            getattr(site, "longitude", 0),
+        )
+    nearby = located & enriched["Distância km"].le(float(radius_km))
+    result = enriched[already_listed | nearby].copy()
+    if result.empty:
+        return result
+
+    original_index = set(enriched.index[already_listed])
+    result["Origem da oportunidade"] = np.where(
+        result.index.isin(original_index),
         "Já indicado",
         "Somente proximidade",
     )
-    located["Faixa de distância"] = pd.cut(
-        located["Distância km"],
-        bins=[-0.001, 2, 5, 10, 30],
-        labels=["0-2 km", "2-5 km", "5-10 km", "10-30 km"],
-        include_lowest=True,
-    ).astype(str)
-    return located.sort_values(["Distância km", "Data Início", "Projeto"])
+    result["Faixa de distância"] = "Sem coordenada"
+    result_located = result["Status Geocodificação"].eq(STATUS_LOCATED)
+    within_radius = result_located & result["Distância km"].le(float(radius_km))
+    if within_radius.any():
+        result.loc[within_radius, "Faixa de distância"] = pd.cut(
+            result.loc[within_radius, "Distância km"],
+            bins=[-0.001, 2, 5, 10, 30],
+            labels=["0-2 km", "2-5 km", "5-10 km", "10-30 km"],
+            include_lowest=True,
+        ).astype(str)
+    result.loc[
+        result_located & result["Distância km"].gt(float(radius_km)),
+        "Faixa de distância",
+    ] = "Fora do raio"
+    result["_ordem_distância"] = result["Distância km"].fillna(float("inf"))
+    sort_columns = ["_ordem_distância"]
+    sort_columns.extend(
+        column for column in ["Data Início", "Projeto"] if column in result.columns
+    )
+    return result.sort_values(sort_columns).drop(columns=["_ordem_distância"])
 
 
 def opportunity_summary(df):
@@ -288,6 +332,12 @@ def opportunity_summary(df):
         "Projetos distintos": int(df["Projeto"].nunique()) if "Projeto" in df else 0,
         "Já indicadas": int(origins.eq("Já indicado").sum()),
         "Somente proximidade": int(origins.eq("Somente proximidade").sum()),
+        "Com coordenadas": int(
+            df.get(
+                "Status Geocodificação",
+                pd.Series(index=df.index, dtype=str),
+            ).eq(STATUS_LOCATED).sum()
+        ),
         "Viáveis diretas": int(classifications.eq("Viável direto").sum()),
         "Condicionais": int(classifications.eq("Viável condicional").sum()),
         "Não viáveis": int(classifications.eq("Não viável").sum()),
@@ -310,9 +360,19 @@ def aggregate_map_points(df):
     if df is None or df.empty:
         return pd.DataFrame(columns=columns)
     source = df.copy()
+    if "Status Geocodificação" in source.columns:
+        source = source[source["Status Geocodificação"].eq(STATUS_LOCATED)].copy()
     source["Endereço"] = source["Endereço Completo"].fillna("").astype(str)
     source["Latitude"] = pd.to_numeric(source["Latitude Viabilidade"], errors="coerce")
     source["Longitude"] = pd.to_numeric(source["Longitude Viabilidade"], errors="coerce")
+    source = source[
+        source["Latitude"].notna()
+        & source["Longitude"].notna()
+        & source["Latitude"].ne(0)
+        & source["Longitude"].ne(0)
+    ]
+    if source.empty:
+        return pd.DataFrame(columns=columns)
     grouped = source.groupby(
         ["Latitude", "Longitude", "Endereço"], as_index=False
     ).agg(**{

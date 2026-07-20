@@ -12,10 +12,13 @@ from app.services.finance_service import AGREEMENT_COLUMNS
 from app.services.finance_service import AGREEMENT_STATUSES
 from app.services.finance_service import PAYMENT_COLUMNS
 from app.services.finance_service import PAYMENT_STATUSES
+from app.services.finance_service import analisar_conciliacao_financeira
 from app.services.finance_service import carregar_acordos
 from app.services.finance_service import carregar_pagamentos
 from app.services.finance_service import dashboard_financeiro
 from app.services.finance_service import dataframe_para_excel
+from app.services.finance_service import exportar_conciliacao_financeira_excel
+from app.services.finance_service import historico_financeiro_site
 from app.services.finance_service import importar_planilha_financeira
 from app.services.finance_service import preparar_pagamentos_exibicao
 from app.services.finance_service import salvar_acordos
@@ -365,6 +368,181 @@ def mostrar_acordos():
     mostrar_editor_acordos(filtrado)
 
 
+def mostrar_conciliacao_financeira(sites):
+    st.header("Conciliação financeira")
+    st.caption(
+        "Conferência informativa entre pagamentos, acordos e o cadastro atual de "
+        "Sites. Esta tela não altera os dados financeiros."
+    )
+    with st.spinner("Analisando vínculos e dados financeiros..."):
+        problemas = analisar_conciliacao_financeira(sites)
+    if problemas.empty:
+        st.success("Nenhuma inconsistência financeira foi encontrada.")
+        return
+
+    metrics = st.columns(4)
+    metrics[0].metric("Inconsistências", len(problemas))
+    metrics[1].metric("Pagamentos", int(problemas["Origem"].eq("Pagamento").sum()))
+    metrics[2].metric("Acordos", int(problemas["Origem"].eq("Acordo").sum()))
+    metrics[3].metric(
+        "Cadastro de Sites",
+        int(problemas["Origem"].eq("Cadastro de Sites").sum()),
+    )
+
+    row1 = st.columns(3)
+    tipos = row1[0].multiselect(
+        "Tipo do problema",
+        opcoes_coluna(problemas, "Tipo do problema"),
+        key="financeiro_conciliacao_tipo",
+    )
+    origens = row1[1].multiselect(
+        "Origem",
+        opcoes_coluna(problemas, "Origem"),
+        key="financeiro_conciliacao_origem",
+    )
+    status = row1[2].multiselect(
+        "Status",
+        opcoes_coluna(problemas, "Status"),
+        key="financeiro_conciliacao_status",
+    )
+    row2 = st.columns(2)
+    microsigas = row2[0].multiselect(
+        "Código Microsiga",
+        opcoes_coluna(problemas, "Microsiga extraído"),
+        key="financeiro_conciliacao_microsiga",
+    )
+    sites_filtro = row2[1].multiselect(
+        "Vínculo atual",
+        opcoes_coluna(problemas, "Vínculo atual"),
+        key="financeiro_conciliacao_site",
+    )
+    busca = st.text_input(
+        "Buscar",
+        placeholder="Favorecido, ID, descrição ou ação sugerida",
+        key="financeiro_conciliacao_busca",
+    )
+    filtrado = filtrar_dataframe(problemas, {
+        "Tipo do problema": tipos,
+        "Origem": origens,
+        "Status": status,
+        "Microsiga extraído": microsigas,
+        "Vínculo atual": sites_filtro,
+    })
+    filtrado = filtro_texto(
+        filtrado,
+        busca,
+        ["Favorecido", "ID SGS", "Descrição", "Ação sugerida"],
+    )
+
+    st.metric("Inconsistências filtradas", len(filtrado))
+    _mostrar_grid(
+        formatar_tabela_financeira(filtrado),
+        height=560,
+        key="financeiro_conciliacao_grid",
+    )
+    st.download_button(
+        "Baixar conciliação em Excel",
+        data=exportar_conciliacao_financeira_excel(filtrado),
+        file_name=f"sgs_conciliacao_financeira_{datetime.now():%Y%m%d_%H%M%S}.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        disabled=filtrado.empty,
+        key="financeiro_conciliacao_exportar",
+    )
+
+
+def _sites_para_historico(sites):
+    return sorted(
+        (sites or {}).values(),
+        key=lambda site: (
+            str(getattr(site, "nome_cadastro", "") or "").casefold(),
+            str(getattr(site, "nome", "") or "").casefold(),
+        ),
+    )
+
+
+def mostrar_historico_financeiro_site(sites):
+    st.header("Histórico financeiro por Site")
+    opcoes_sites = _sites_para_historico(sites)
+    if not opcoes_sites:
+        st.info("Nenhum site cadastrado foi encontrado.")
+        return
+    site_por_nome = {
+        str(getattr(site, "nome", "") or ""): site for site in opcoes_sites
+    }
+    nome_site = st.selectbox(
+        "Site",
+        list(site_por_nome),
+        format_func=lambda nome: (
+            f"{getattr(site_por_nome[nome], 'nome_cadastro', '') or nome} - "
+            f"{nome} - Microsiga: {getattr(site_por_nome[nome], 'microsiga', '') or 'Não informado'}"
+        ),
+        key="financeiro_historico_site_selecionado",
+    )
+    site = site_por_nome[nome_site]
+    microsiga = getattr(site, "microsiga", "")
+
+    identificacao = st.columns(4)
+    identificacao[0].metric("Nome", getattr(site, "nome_cadastro", "") or "Não informado")
+    identificacao[1].metric("Nome SNMPc", nome_site or "Não informado")
+    identificacao[2].metric("Código Aquiles", getattr(site, "codigo_topos", "") or "Não informado")
+    identificacao[3].metric("Código Microsiga", microsiga or "Não informado")
+    if not str(microsiga or "").strip():
+        st.warning("O site não possui Código Microsiga e não pode ser relacionado à base financeira.")
+        return
+
+    historico = historico_financeiro_site(microsiga)
+    row1 = st.columns(4)
+    row1[0].metric("Valor em atraso", moeda(historico["valor_em_atraso"]))
+    row1[1].metric("Parcelas vencidas", historico["parcelas_vencidas"])
+    row1[2].metric("Valor futuro em aberto", moeda(historico["valor_futuro"]))
+    row1[3].metric("Parcelas futuras", historico["parcelas_futuras"])
+    row2 = st.columns(4)
+    row2[0].metric("Acordos abertos", historico["quantidade_acordos_abertos"])
+    row2[1].metric("Valor dos acordos", moeda(historico["valor_acordos_abertos"]))
+    row2[2].metric("Pagamentos realizados", historico["quantidade_realizada"])
+    row2[3].metric("Valor realizado", moeda(historico["valor_realizado"]))
+
+    secoes = [
+        (
+            "Pagamentos realizados",
+            historico["realizados"],
+            ["Data de vencimento", "Competência", "Favorecido", "Tipo de despesa", "Subtotal", "Status Atual", "Descrição"],
+            False,
+        ),
+        (
+            "Pendências",
+            historico["pendencias"],
+            ["Data de vencimento", "Competência", "Favorecido", "Tipo de despesa", "Subtotal", "Status Atual", "Prioridade", "Descrição"],
+            True,
+        ),
+        (
+            "Acordos",
+            historico["acordos"],
+            ["Data de vencimento", "Competência", "Favorecido", "Valor Acordo", "Status", "Prioridade", "Descrição"],
+            True,
+        ),
+    ]
+    for indice, (titulo, dataframe, colunas, crescente) in enumerate(secoes):
+        st.subheader(titulo)
+        if dataframe.empty:
+            st.info(f"Nenhum registro em {titulo.lower()} para este site.")
+            continue
+        dados = dataframe.copy()
+        if "Data de vencimento" in dados.columns:
+            dados["_ordem_data"] = pd.to_datetime(
+                dados["Data de vencimento"], errors="coerce"
+            )
+            dados = dados.sort_values("_ordem_data", ascending=crescente).drop(
+                columns=["_ordem_data"]
+            )
+        dados = dados[[coluna for coluna in colunas if coluna in dados.columns]]
+        _mostrar_grid(
+            formatar_tabela_financeira(dados),
+            height=min(480, 90 + len(dados) * 31),
+            key=f"financeiro_historico_site_{indice}",
+        )
+
+
 def mostrar_importacao(sites):
     st.header("Importação financeira")
     if not pode("financeiro_importar"):
@@ -511,10 +689,22 @@ def mostrar_financeiro(sites):
     itens = []
     if pode("financeiro_dashboard") or pode("financeiro"):
         itens.append(("financeiro_dashboard", "Dashboard", mostrar_dashboard_financeiro))
+    if pode("financeiro_historico_site") or pode("financeiro"):
+        itens.append((
+            "financeiro_historico_site",
+            "Histórico por Site",
+            lambda: mostrar_historico_financeiro_site(sites),
+        ))
     if pode("financeiro_pagamentos") or pode("financeiro"):
         itens.append(("financeiro_pagamentos", "Pagamentos", mostrar_pagamentos))
     if pode("financeiro_acordos") or pode("financeiro"):
         itens.append(("financeiro_acordos", "Acordos", mostrar_acordos))
+    if pode("financeiro_conciliacao") or pode("financeiro"):
+        itens.append((
+            "financeiro_conciliacao",
+            "Conciliação",
+            lambda: mostrar_conciliacao_financeira(sites),
+        ))
     if pode("financeiro_importar") or pode("financeiro"):
         itens.append(("financeiro_importar", "Importação", lambda: mostrar_importacao(sites)))
     if pode("financeiro_exportacoes") or pode("financeiro"):

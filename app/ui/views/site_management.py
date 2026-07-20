@@ -27,6 +27,7 @@ from app.services.contract_service import delete_archived_contract_file
 from app.services.contract_service import list_site_documents
 from app.services.contract_service import read_contract_file
 from app.services.contract_service import restore_archived_contract_file
+from app.services.finance_service import resumo_atraso_site
 from app.services.site_registry_service import SITE_CODE_COLUMN
 from app.services.site_registry_service import SITE_CONTACT_TYPES
 from app.services.site_registry_service import SITE_TYPE_OPTIONS
@@ -1779,6 +1780,26 @@ def mostrar_financeiro_site_selecionado(site, site_modelo=None):
             if pode_visualizar_custos_site()
             else "Restrito"
         )
+    )
+
+    pode_ver_atraso = pode_visualizar_custos_site()
+    atraso = (
+        resumo_atraso_site(site.get("Microsiga"))
+        if pode_ver_atraso
+        else {"valor_em_atraso": 0.0, "parcelas_vencidas": 0}
+    )
+    col1, col2 = st.columns(2)
+    col1.metric(
+        "Valor em atraso",
+        (
+            _formatar_moeda(atraso["valor_em_atraso"])
+            if pode_ver_atraso
+            else "Restrito"
+        ),
+    )
+    col2.metric(
+        "Parcelas vencidas",
+        atraso["parcelas_vencidas"] if pode_ver_atraso else "Restrito",
     )
 
     st.markdown("**Detalhamento financeiro**")

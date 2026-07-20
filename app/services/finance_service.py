@@ -873,11 +873,14 @@ def status_pagamento_exibicao(row, hoje=None):
     return status
 
 
-def preparar_pagamentos_exibicao(df=None):
+def preparar_pagamentos_exibicao(df=None, hoje=None):
     df = carregar_pagamentos() if df is None else df.copy()
     if df.empty:
         return pd.DataFrame(columns=PAYMENT_COLUMNS)
-    df["Status Atual"] = df.apply(status_pagamento_exibicao, axis=1)
+    df["Status Atual"] = df.apply(
+        lambda row: status_pagamento_exibicao(row, hoje=hoje),
+        axis=1,
+    )
     return df
 
 
@@ -998,9 +1001,9 @@ def _ranking_saldos(abertos):
 
 
 def dashboard_financeiro(hoje=None):
-    pagamentos = preparar_pagamentos_exibicao()
-    acordos = carregar_acordos()
     hoje = hoje or date.today()
+    pagamentos = preparar_pagamentos_exibicao(hoje=hoje)
+    acordos = carregar_acordos()
     abertos = _abertos_pagamentos(pagamentos)
     atrasados = abertos[abertos["Status Atual"].eq("Vencido")].copy() if not abertos.empty else abertos
     acordos_abertos_df = _abertos_acordos(acordos, pagamentos)
@@ -1047,6 +1050,301 @@ def dashboard_financeiro(hoje=None):
         "aging": _aging_atrasados(atrasados, hoje),
         "ranking_saldos": _ranking_saldos(abertos),
     }
+
+
+CONCILIATION_COLUMNS = [
+    "Tipo do problema",
+    "Origem",
+    "ID SGS",
+    "Favorecido",
+    "Microsiga extraído",
+    "Vínculo atual",
+    "Status",
+    "Vencimento",
+    "Valor",
+    "Descrição",
+    "Ação sugerida",
+]
+
+
+def _sites_por_microsiga(sites):
+    indice = {}
+    for site in (sites or {}).values():
+        codigo = normalizar_codigo_microsiga(getattr(site, "microsiga", ""))
+        if codigo:
+            indice.setdefault(codigo, []).append(site)
+    return indice
+
+
+def _linha_conciliacao(
+    problema,
+    origem,
+    registro=None,
+    microsiga="",
+    vinculo="",
+    valor=0.0,
+    acao="",
+):
+    registro = registro or {}
+    return {
+        "Tipo do problema": problema,
+        "Origem": origem,
+        "ID SGS": _texto(registro.get("ID SGS")),
+        "Favorecido": _texto(
+            registro.get("Favorecido")
+            or registro.get("Nome")
+            or registro.get("Fornecedor")
+        ),
+        "Microsiga extraído": microsiga,
+        "Vínculo atual": vinculo or _texto(registro.get("Nome SNMPc")),
+        "Status": _texto(registro.get("Status Atual") or registro.get("Status")),
+        "Vencimento": _texto(registro.get("Data de vencimento")),
+        "Valor": float(valor or 0),
+        "Descrição": _texto(
+            registro.get("Descrição") or registro.get("Informação extra")
+        ),
+        "Ação sugerida": acao,
+    }
+
+
+def analisar_conciliacao_financeira(sites, pagamentos=None, acordos=None):
+    pagamentos = preparar_pagamentos_exibicao(pagamentos)
+    acordos = carregar_acordos() if acordos is None else acordos.copy()
+    indice_sites = _sites_por_microsiga(sites)
+    problemas = []
+
+    for codigo, sites_codigo in indice_sites.items():
+        if len(sites_codigo) <= 1:
+            continue
+        nomes = "; ".join(
+            sorted(_texto(getattr(site, "nome", "")) for site in sites_codigo)
+        )
+        problemas.append(_linha_conciliacao(
+            "Código Microsiga duplicado no cadastro",
+            "Cadastro de Sites",
+            microsiga=codigo,
+            vinculo=nomes,
+            acao="Revisar o Código Microsiga no cadastro dos sites.",
+        ))
+
+    payment_ids = set(
+        pagamentos.get("ID SGS", pd.Series(dtype=str)).astype(str)
+    )
+    fontes = [
+        ("Pagamento", pagamentos, "Subtotal"),
+        ("Acordo", acordos, "Valor Acordo"),
+    ]
+    for origem, dataframe, coluna_valor in fontes:
+        if dataframe is None or dataframe.empty:
+            continue
+        for registro in dataframe.to_dict(orient="records"):
+            favorecido = (
+                registro.get("Favorecido")
+                or registro.get("Nome")
+                or registro.get("Fornecedor")
+            )
+            microsiga = normalizar_codigo_microsiga(registro.get("Microsiga"))
+            if not microsiga:
+                microsiga = extrair_microsiga_favorecido(favorecido)
+            valor = _numero(registro.get(coluna_valor))
+            sites_codigo = indice_sites.get(microsiga, []) if microsiga else []
+            vinculo_atual = _texto(registro.get("Nome SNMPc"))
+
+            if not microsiga:
+                problemas.append(_linha_conciliacao(
+                    "Sem Código Microsiga",
+                    origem,
+                    registro,
+                    valor=valor,
+                    acao="Identificar o Código Microsiga e revisar o cadastro financeiro.",
+                ))
+            elif not sites_codigo:
+                problemas.append(_linha_conciliacao(
+                    "Código Microsiga não encontrado",
+                    origem,
+                    registro,
+                    microsiga=microsiga,
+                    valor=valor,
+                    acao="Cadastrar ou corrigir o Código Microsiga na base de Sites.",
+                ))
+            elif len(sites_codigo) == 1:
+                site_atual = sites_codigo[0]
+                nome_atual = _texto(getattr(site_atual, "nome", ""))
+                codigo_aquiles_atual = _texto(getattr(site_atual, "codigo_topos", ""))
+                registro_aquiles = _texto(registro.get("Código Aquiles"))
+                marcado_vinculado = _texto(registro.get("Site localizado")).casefold() == "sim"
+                if not marcado_vinculado:
+                    problemas.append(_linha_conciliacao(
+                        "Registro não vinculado a site existente",
+                        origem,
+                        registro,
+                        microsiga=microsiga,
+                        valor=valor,
+                        acao=f"Reprocessar o vínculo; o código pertence a {nome_atual}.",
+                    ))
+                divergente = marcado_vinculado and (
+                    (vinculo_atual and vinculo_atual != nome_atual)
+                    or (
+                        registro_aquiles
+                        and codigo_aquiles_atual
+                        and registro_aquiles != codigo_aquiles_atual
+                    )
+                )
+                if divergente:
+                    problemas.append(_linha_conciliacao(
+                        "Vínculo incompatível com o cadastro atual",
+                        origem,
+                        registro,
+                        microsiga=microsiga,
+                        vinculo=vinculo_atual,
+                        valor=valor,
+                        acao=f"Revisar o vínculo; o cadastro atual aponta para {nome_atual}.",
+                    ))
+                status_site = _texto(
+                    getattr(site_atual, "status_cadastro", "")
+                ).casefold()
+                if status_site and status_site != "ativo":
+                    problemas.append(_linha_conciliacao(
+                        "Vínculo com site inativo",
+                        origem,
+                        registro,
+                        microsiga=microsiga,
+                        vinculo=nome_atual,
+                        valor=valor,
+                        acao="Revisar a obrigação e o status cadastral do site.",
+                    ))
+
+            vencimento = pd.to_datetime(
+                registro.get("Data de vencimento"), errors="coerce"
+            )
+            if pd.isna(vencimento):
+                problemas.append(_linha_conciliacao(
+                    "Vencimento ausente ou inválido",
+                    origem,
+                    registro,
+                    microsiga=microsiga,
+                    vinculo=vinculo_atual,
+                    valor=valor,
+                    acao="Revisar a data de vencimento na origem financeira.",
+                ))
+            if valor <= 0:
+                problemas.append(_linha_conciliacao(
+                    "Valor ausente, zero ou inválido",
+                    origem,
+                    registro,
+                    microsiga=microsiga,
+                    vinculo=vinculo_atual,
+                    valor=valor,
+                    acao="Revisar o valor da obrigação na origem financeira.",
+                ))
+            if origem == "Acordo":
+                payment_id = _texto(registro.get("ID Pagamento"))
+                if not payment_id or payment_id not in payment_ids:
+                    problemas.append(_linha_conciliacao(
+                        "Acordo sem pagamento de origem",
+                        origem,
+                        registro,
+                        microsiga=microsiga,
+                        vinculo=vinculo_atual,
+                        valor=valor,
+                        acao="Revisar o ID do pagamento relacionado ao acordo.",
+                    ))
+
+    if not problemas:
+        return pd.DataFrame(columns=CONCILIATION_COLUMNS)
+    return pd.DataFrame(problemas, columns=CONCILIATION_COLUMNS).sort_values(
+        ["Tipo do problema", "Origem", "Favorecido", "ID SGS"],
+        kind="stable",
+    ).reset_index(drop=True)
+
+
+def historico_financeiro_site(
+    microsiga,
+    pagamentos=None,
+    acordos=None,
+    hoje=None,
+):
+    codigo = normalizar_codigo_microsiga(microsiga)
+    hoje = hoje or date.today()
+    pagamentos = preparar_pagamentos_exibicao(pagamentos, hoje=hoje)
+    acordos = carregar_acordos() if acordos is None else acordos.copy()
+
+    def filtrar_codigo(df):
+        if df is None or df.empty or not codigo:
+            return df.iloc[0:0].copy() if df is not None else pd.DataFrame()
+        codigos = df.get("Microsiga", pd.Series(index=df.index, dtype=str)).map(
+            normalizar_codigo_microsiga
+        )
+        return df[codigos.eq(codigo)].copy()
+
+    pagamentos_site = filtrar_codigo(pagamentos)
+    acordos_site = filtrar_codigo(acordos)
+    realizados = pagamentos_site[
+        pagamentos_site.get(
+            "Status Atual", pd.Series(index=pagamentos_site.index, dtype=str)
+        ).eq("Pago")
+    ].copy()
+    pendencias = pagamentos_site[
+        ~pagamentos_site.get(
+            "Status Atual", pd.Series(index=pagamentos_site.index, dtype=str)
+        ).isin(["Pago", "Cancelado"])
+    ].copy()
+    vencidas = pendencias[
+        pendencias.get(
+            "Status Atual", pd.Series(index=pendencias.index, dtype=str)
+        ).eq("Vencido")
+    ].copy()
+    datas_pendencias = pd.to_datetime(
+        pendencias.get(
+            "Data de vencimento", pd.Series(index=pendencias.index, dtype=str)
+        ),
+        errors="coerce",
+    )
+    futuras = pendencias[
+        datas_pendencias.notna() & datas_pendencias.dt.date.ge(hoje)
+    ].copy()
+    acordos_abertos = _abertos_acordos(acordos_site, pagamentos_site)
+
+    def soma(df, coluna):
+        if df is None or df.empty or coluna not in df.columns:
+            return 0.0
+        return float(pd.to_numeric(df[coluna], errors="coerce").fillna(0).sum())
+
+    return {
+        "microsiga": codigo,
+        "pagamentos": pagamentos_site,
+        "realizados": realizados,
+        "pendencias": pendencias,
+        "vencidas": vencidas,
+        "futuras": futuras,
+        "acordos": acordos_site,
+        "acordos_abertos": acordos_abertos,
+        "valor_em_atraso": soma(vencidas, "Subtotal"),
+        "parcelas_vencidas": len(vencidas),
+        "valor_futuro": soma(futuras, "Subtotal"),
+        "parcelas_futuras": len(futuras),
+        "valor_acordos_abertos": soma(acordos_abertos, "Valor Acordo"),
+        "quantidade_acordos_abertos": len(acordos_abertos),
+        "valor_realizado": soma(realizados, "Subtotal"),
+        "quantidade_realizada": len(realizados),
+    }
+
+
+def resumo_atraso_site(microsiga, pagamentos=None, hoje=None):
+    historico = historico_financeiro_site(
+        microsiga,
+        pagamentos=pagamentos,
+        acordos=pd.DataFrame(columns=AGREEMENT_COLUMNS),
+        hoje=hoje,
+    )
+    return {
+        "valor_em_atraso": historico["valor_em_atraso"],
+        "parcelas_vencidas": historico["parcelas_vencidas"],
+    }
+
+
+def exportar_conciliacao_financeira_excel(df):
+    return dataframe_para_excel(df, "Conciliação")
 
 
 def dataframe_para_excel(df, sheet_name="Dados"):
