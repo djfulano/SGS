@@ -44,6 +44,8 @@ from app.services.database_service import sincronizar_banco
 from app.services.contract_service import CONTRACTS_DIR
 from app.services.contract_service import index_contract_folders
 from app.services.contract_service import migrar_pastas_documentos_para_codigo_aquiles
+from app.services.critical_alerts import load_alert_config
+from app.services.critical_alerts import save_alert_config
 from app.services.data_export_service import arquivo_para_download
 from app.services.data_export_service import caminho_exportacao_clientes
 from app.services.data_export_service import caminho_exportacao_sites
@@ -1354,6 +1356,38 @@ def mostrar_configuracoes(
         st.rerun()
 
     mostrar_geocodificacao_viabilidades(usuario_atual)
+
+    st.divider()
+
+    st.subheader("Alertas financeiros")
+    st.caption(
+        "Define com quantos dias de antecedência sites críticos e acordos "
+        "passam a aparecer nos alertas."
+    )
+    config_alertas = load_alert_config()
+    with st.form("form_config_alertas_financeiros"):
+        antecedencia_alertas = st.number_input(
+            "Antecedência dos alertas (dias)",
+            min_value=1,
+            max_value=90,
+            value=int(config_alertas["alert_days"]),
+            step=1,
+        )
+        salvar_alertas = st.form_submit_button(
+            "Salvar configuração dos alertas"
+        )
+    if salvar_alertas:
+        config_alertas = save_alert_config({
+            "alert_days": antecedencia_alertas,
+        })
+        registrar_log_sistema(
+            "alertas_financeiros_configuracao_salva",
+            usuario=usuario_atual["username"],
+            status="sucesso",
+            detalhes=config_alertas,
+        )
+        st.success("Configuração dos alertas salva.")
+        st.rerun()
 
     st.divider()
 

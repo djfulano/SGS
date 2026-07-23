@@ -121,6 +121,10 @@ def aplicar_cadastro_topos(sites, df_topos):
             site.longitude = float(topo.get("Longitude") or 0)
             site.altura = float(topo.get("Altura") or 0)
             site.restricao = topo.get("Restricao") or ""
+            site.site_critico = str(
+                topo.get("Site Critico") or ""
+            ).strip().casefold() in {"sim", "s", "true", "1"}
+            site.dia_vencimento = int(topo.get("Dia Vencimento") or 0)
             site.detalhe = topo.get("Detalhe") or ""
             site.observacao = topo.get("Observacao") or ""
 
@@ -147,6 +151,8 @@ def aplicar_cadastro_topos(sites, df_topos):
             site.longitude = 0.0
             site.altura = 0.0
             site.restricao = ""
+            site.site_critico = False
+            site.dia_vencimento = 0
             site.detalhe = ""
             site.observacao = ""
 

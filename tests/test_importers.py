@@ -194,6 +194,46 @@ class ImportersTest(unittest.TestCase):
             "CLIENTE"
         )
 
+    @unittest.skipIf(carregar_topos is None, "pandas nao instalado")
+    def test_carregar_topos_preserva_alerta_critico(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            caminho = Path(temp_dir) / "Sites.xlsx"
+            pd.DataFrame([{
+                "CÓDIGO AQUILES": "123",
+                "SNMPc": "SITE_CRITICO_123_IP",
+                "TIPO": "POP",
+                "NOME": "Site crítico",
+                "SITE CRÍTICO": "Sim",
+                "DIA VENCIMENTO": 18,
+            }]).to_excel(caminho, index=False)
+
+            df = carregar_topos(caminho)
+
+        self.assertEqual(df.iloc[0]["Site Critico"], "Sim")
+        self.assertEqual(df.iloc[0]["Dia Vencimento"], 18)
+
+    @unittest.skipIf(carregar_topos is None, "pandas nao instalado")
+    def test_carregar_topos_aceita_alias_vencimento_e_descarta_dia_invalido(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            caminho = Path(temp_dir) / "Sites.xlsx"
+            pd.DataFrame([
+                {
+                    "CÓDIGO AQUILES": "123",
+                    "SNMPc": "SITE_A",
+                    "VENCIMENTO": 18,
+                },
+                {
+                    "CÓDIGO AQUILES": "124",
+                    "SNMPc": "SITE_B",
+                    "VENCIMENTO": 29,
+                },
+            ]).to_excel(caminho, index=False)
+
+            df = carregar_topos(caminho)
+
+        self.assertEqual(df.iloc[0]["Dia Vencimento"], 18)
+        self.assertEqual(df.iloc[1]["Dia Vencimento"], 0)
+
     def test_importar_estrutura_minima_com_cliente(self):
         linhas = [
             {

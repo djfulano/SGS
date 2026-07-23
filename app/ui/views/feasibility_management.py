@@ -31,6 +31,8 @@ from app.services.feasibility_opportunities import opportunities_for_site
 from app.services.feasibility_opportunities import opportunity_summary
 from app.services.feasibility_opportunities import synchronize_addresses
 from app.ui.components.tables import primeira_linha_selecionada
+from app.ui.components.site_selector import rotulo_busca_site
+from app.ui.components.site_selector import selecionar_site_pesquisavel
 from app.ui.navigation import mostrar_subnavegacao
 
 
@@ -358,19 +360,20 @@ def mostrar_oportunidades_site(sites):
         st.warning("Nenhum site ativo e apto possui coordenadas válidas.")
         return
     labels = {
-        getattr(site, "nome", ""): (
-            f"{getattr(site, 'nome_cadastro', '') or getattr(site, 'nome', '')} - "
-            f"{getattr(site, 'nome', '')}"
-        )
+        getattr(site, "nome", ""): rotulo_busca_site(site)
         for site in candidates
     }
     site_by_name = {getattr(site, "nome", ""): site for site in candidates}
-    selected_name = st.selectbox(
-        "Site",
+    selected_name = selecionar_site_pesquisavel(
         list(site_by_name),
-        format_func=lambda name: labels.get(name, name),
+        labels,
         key="viabilidade_oportunidades_site_selecionado",
     )
+
+    if selected_name is None:
+        st.info("Pesquise e selecione um site para analisar as oportunidades.")
+        return
+
     selected_site = site_by_name[selected_name]
 
     default_start, default_end = default_dashboard_period()

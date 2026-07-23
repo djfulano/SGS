@@ -39,6 +39,8 @@ SITE_REGISTRY_COLUMNS = [
     "LONGITUDE",
     "ALTURA",
     "RESTRIÇÃO",
+    "SITE CRÍTICO",
+    "DIA VENCIMENTO",
     "Status",
     "Detalhe",
     "OBSERVAÇÃO:"
@@ -77,7 +79,8 @@ SITE_TYPE_OPTIONS = [
 
 NUMERIC_COLUMNS = {
     "QTDO",
-    "ALTURA"
+    "ALTURA",
+    "DIA VENCIMENTO"
 }
 CURRENCY_COLUMNS = {
     "CUSTO"
@@ -117,7 +120,11 @@ COLUMN_ALIASES = {
     "CONDOMINIO": "CÓDIGO CONDOMINIO",
     "ABREVIACAO": "ABREVIAÇÃO",
     "RELACIONAMENTO": "Relacionamento",
-    "FAVORECIDO": "Favorecido"
+    "FAVORECIDO": "Favorecido",
+    "SITE CRITICO": "SITE CRÍTICO",
+    "CRITICO": "SITE CRÍTICO",
+    "DIA DE VENCIMENTO": "DIA VENCIMENTO",
+    "VENCIMENTO": "DIA VENCIMENTO"
 }
 
 CONTACT_COLUMN_ALIASES = {
@@ -169,6 +176,25 @@ def normalize_code(value):
         text = text[:-2]
 
     return text
+
+
+def normalize_site_due_day(value, strict=True):
+    if value is None or pd.isna(value) or str(value).strip() == "":
+        return ""
+
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        if strict:
+            raise ValueError("O dia de vencimento padrão deve estar entre 1 e 28.")
+        return ""
+
+    if not number.is_integer() or not 1 <= int(number) <= 28:
+        if strict:
+            raise ValueError("O dia de vencimento padrão deve estar entre 1 e 28.")
+        return ""
+
+    return int(number)
 
 
 def normalize_column_key(value):
@@ -633,11 +659,15 @@ def prepare_registry_for_save(df):
     df = df[SITE_REGISTRY_COLUMNS].fillna("")
     df["CUSTO"] = df["CUSTO"].astype(str).str.strip()
 
-    for column in NUMERIC_COLUMNS:
+    for column in NUMERIC_COLUMNS - {"DIA VENCIMENTO"}:
         df[column] = pd.to_numeric(
             df[column],
             errors="coerce"
         ).fillna(0)
+
+    df["DIA VENCIMENTO"] = df["DIA VENCIMENTO"].apply(
+        lambda value: normalize_site_due_day(value, strict=False)
+    ).astype(object)
 
     return df
 
@@ -787,7 +817,14 @@ def validate_unique_site_codes(df, record, original_code=None):
 
 
 def upsert_site(record, original_code=None):
-    df = load_site_registry()
+    # Colunas novas podem ser inferidas pelo pandas como string estrita quando
+    # ainda estão vazias. O formulário, porém, entrega campos numéricos como
+    # int/float antes da normalização feita em save_site_registry.
+    df = load_site_registry().astype(object)
+    record = dict(record or {})
+    record["DIA VENCIMENTO"] = normalize_site_due_day(
+        record.get("DIA VENCIMENTO")
+    )
     code = normalize_code(record.get(SITE_CODE_COLUMN))
     original_code = normalize_code(original_code)
 

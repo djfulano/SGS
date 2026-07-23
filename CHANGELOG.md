@@ -1,5 +1,31 @@
 # Histórico de versões
 
+## 1.3.16
+
+- Viabilidade > Oportunidades por Site e Financeiro > Histórico por Site passam a usar a mesma busca pesquisável do Gerenciamento de Sites.
+- Os seletores exibem Nome SNMPc, Código Aquiles, Nome e Código Microsiga e não escolhem automaticamente o primeiro site.
+- O componente compartilhado mantém os conjuntos de sites específicos de cada módulo.
+
+## 1.3.15
+
+- O cadastro de Sites passa a agrupar custo mensal, vencimento padrão e criticidade em uma seção Financeiro.
+- O vencimento mensal torna-se opcional e independente da marcação de site crítico, preservando célula vazia na planilha.
+- Alertas de sites críticos passam a exigir vencimento padrão válido, mesmo quando existem parcelas financeiras abertas.
+
+## 1.3.14
+
+- Clientes passa a oferecer a subaba Custos por Cliente, com busca parcial por nome ou assinatura.
+- A consulta consolida vínculos principais e adicionais, lista assinaturas e sites utilizados e evita duplicar custos de sites compartilhados.
+- O custo direto total respeita a permissão de visualização de custos.
+
+## 1.3.13
+
+- O cadastro de Sites passa a identificar sites críticos e seu dia mensal de vencimento, limitado aos dias 1 a 28.
+- Usuários autorizados recebem aviso global e acessam Financeiro > Alertas com contagem regressiva de sites críticos e acordos.
+- Parcelas financeiras reais têm prioridade sobre o vencimento mensal previsto e itens atrasados permanecem destacados.
+- A antecedência dos alertas pode ser configurada entre 1 e 90 dias em Sistema > Configurações.
+- Datas de vencimento dos acordos passam a ser editadas como datas no controle financeiro.
+
 ## 1.3.12
 
 - O Financeiro passa a vincular obrigações usando o cadastro completo de Sites, mesmo quando o site não está presente na estrutura atual do SNMPc.

@@ -52,6 +52,10 @@ class Site:
 
         self.restricao = ""
 
+        self.site_critico = False
+
+        self.dia_vencimento = 0
+
         self.detalhe = ""
 
         self.observacao = ""

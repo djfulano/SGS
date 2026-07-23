@@ -5,9 +5,11 @@ import pandas as pd
 import streamlit as st
 
 from app.auth import can_view_values
+from app.auth import can_view_cost_values
 from app.auth import has_permission
 from app.services.clients import agrupar_clientes
 from app.services.clients import filtrar_clientes
+from app.services.clients import levantar_custos_sites_cliente
 from app.services.clients import montar_base_consulta_clientes
 from app.services.clients import montar_base_clientes
 from app.services.clients import resumo_clientes
@@ -368,6 +370,57 @@ def mostrar_consulta_clientes(sites, equipamentos):
     mostrar_resumo_cliente(cliente)
 
 
+def mostrar_custos_sites_cliente(sites):
+    st.header("Custos por Cliente")
+    termo = st.text_input(
+        "Buscar cliente ou assinatura",
+        placeholder="Digite parte do nome ou da assinatura",
+        key="clientes_custos_sites_busca"
+    )
+
+    if not str(termo or "").strip():
+        st.info(
+            "Informe parte do nome ou da assinatura para levantar os sites "
+            "utilizados pelo cliente."
+        )
+        return
+
+    with st.spinner("Localizando assinaturas e sites de atendimento..."):
+        resultado = levantar_custos_sites_cliente(sites, termo)
+
+    if resultado["assinaturas"].empty:
+        st.warning("Nenhuma assinatura encontrada para a busca informada.")
+        return
+
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Assinaturas encontradas", resultado["total_assinaturas"])
+    col2.metric("Sites únicos", resultado["total_sites"])
+    col3.metric(
+        "Custo direto total",
+        (
+            _formatar_moeda(resultado["custo_total"])
+            if can_view_cost_values(usuario_atual())
+            else "Restrito"
+        )
+    )
+
+    st.subheader("Assinaturas contempladas")
+    _mostrar_grid(
+        resultado["assinaturas"],
+        height=min(420, max(140, 75 + len(resultado["assinaturas"]) * 35)),
+        key="clientes_custos_sites_assinaturas",
+        mostrar_abrir_site=False
+    )
+
+    st.subheader("Sites utilizados")
+    _mostrar_grid(
+        resultado["sites"],
+        height=min(420, max(140, 75 + len(resultado["sites"]) * 35)),
+        key="clientes_custos_sites_sites",
+        mostrar_abrir_site=False
+    )
+
+
 def mostrar_relatorios_clientes(sites, equipamentos):
     st.header("Relatórios de clientes")
     df_clientes = montar_base_clientes(sites, equipamentos)
@@ -470,6 +523,11 @@ def mostrar_clientes(sites, equipamentos):
             "clientes_relatorios",
             "Relatórios",
             lambda: mostrar_relatorios_clientes(sites, equipamentos)
+        ),
+        (
+            "clientes_custos_sites",
+            "Custos por Cliente",
+            lambda: mostrar_custos_sites_cliente(sites)
         ),
         (
             "clientes_insights",

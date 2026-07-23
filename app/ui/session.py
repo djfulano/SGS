@@ -15,11 +15,13 @@ from app.auth import register_login_failure
 from app.auth import revoke_session
 from app.auth import save_users
 from app.auth import update_password
+from app.auth import has_permission
 from app.logs import registrar_log_sistema
 from app.logs import registrar_log_usuario
 from app.logs import carregar_logs_sistema
 from app.services.backup_service import executar_backup_automatico_se_necessario
 from app.services.import_reminder import status_importacao_mensal
+from app.services.critical_alerts import status_alertas_criticos
 from app.ui.branding import bloco_identidade_sgs
 from app.ui.help import mostrar_ajuda_interativa
 from app.version import get_app_version
@@ -583,6 +585,30 @@ def mostrar_lembrete_importacao_mensal():
     )
 
 
+@st.cache_data(ttl=60, show_spinner=False)
+def carregar_alertas_sites_criticos_cache():
+    return status_alertas_criticos()
+
+
+def mostrar_alertas_sites_criticos():
+    usuario = usuario_logado() or {}
+    if not has_permission(usuario, "financeiro_alertas_criticos"):
+        return
+    try:
+        alertas = carregar_alertas_sites_criticos_cache()
+    except Exception:
+        return
+    if not alertas["total"]:
+        return
+    atrasados = alertas["atrasados"]
+    complemento = f" Destes, {atrasados} estão atrasados." if atrasados else ""
+    st.warning(
+        f"Alertas financeiros: {len(alertas['sites'])} site(s) crítico(s) e "
+        f"{len(alertas['acordos'])} acordo(s) exigem atenção.{complemento} "
+        "Acesse Financeiro > Alertas."
+    )
+
+
 def preparar_sessao_usuario():
 
     sincronizar_token_navegador()
@@ -598,4 +624,5 @@ def preparar_sessao_usuario():
 
     executar_backup_apos_login()
     mostrar_barra_superior_conta()
+    mostrar_alertas_sites_criticos()
     mostrar_lembrete_importacao_mensal()

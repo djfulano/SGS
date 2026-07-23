@@ -111,6 +111,15 @@ def valor_numero(valor):
         return 0.0
 
 
+def valor_dia_vencimento(valor):
+    numero = valor_numero(valor)
+
+    if numero.is_integer() and 1 <= int(numero) <= 28:
+        return int(numero)
+
+    return 0
+
+
 def valor_coordenada(valor, limite=180):
 
     if pd.isna(valor):
@@ -340,6 +349,17 @@ def carregar_topos(caminho=None):
         colunas,
         "RESTRICAO"
     )
+    coluna_site_critico = obter_coluna(
+        colunas,
+        "SITE CRITICO",
+        "CRITICO"
+    )
+    coluna_dia_vencimento = obter_coluna(
+        colunas,
+        "DIA VENCIMENTO",
+        "DIA DE VENCIMENTO",
+        "VENCIMENTO"
+    )
     coluna_detalhe = obter_coluna(
         colunas,
         "DETALHE"
@@ -513,6 +533,16 @@ def carregar_topos(caminho=None):
                 linha.get(coluna_restricao)
                 if coluna_restricao
                 else ""
+            ),
+            "Site Critico": valor_texto(
+                linha.get(coluna_site_critico)
+                if coluna_site_critico
+                else ""
+            ),
+            "Dia Vencimento": valor_dia_vencimento(
+                linha.get(coluna_dia_vencimento)
+                if coluna_dia_vencimento
+                else 0
             ),
             "Detalhe": valor_texto(
                 linha.get(coluna_detalhe)

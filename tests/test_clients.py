@@ -9,6 +9,7 @@ from app.services.clients import agrupar_clientes
 from app.services.clients import equipamentos_cliente
 from app.services.clients import filtrar_clientes
 from app.services.clients import filtrar_clientes_consulta
+from app.services.clients import levantar_custos_sites_cliente
 from app.services.clients import montar_base_consulta_clientes
 from app.services.clients import montar_base_clientes
 from app.ui.views.clients import preparar_busca_clientes
@@ -18,6 +19,89 @@ from app.ui.views.clients import valor_resumo_cliente
 
 
 class ClientsServiceTest(unittest.TestCase):
+
+    def test_custos_cliente_busca_nome_e_consolida_sites_unicos(self):
+        principal = Site("POP_PRINCIPAL", "POP")
+        principal.nome_cadastro = "Principal"
+        principal.status_cadastro = "Ativo"
+        principal.custo = 1000
+        adicional = Site("POP_ADICIONAL", "POP")
+        adicional.nome_cadastro = "Adicional"
+        adicional.status_cadastro = "Ativo"
+        adicional.custo = 500
+
+        cliente_a = Cliente("Barbosa Comércio", 100, "10001")
+        cliente_a.produto = "NeoSoft"
+        cliente_a.gerente_contas = "Maria"
+        principal.adicionar_cliente(cliente_a, setorial="PRI_S1")
+        adicional.adicionar_cliente_adicional(
+            cliente_a,
+            setorial="ADI_S1"
+        )
+
+        cliente_b = Cliente("BARBOSA SERVIÇOS", 200, "10002")
+        principal.adicionar_cliente(cliente_b, setorial="PRI_S2")
+
+        resultado = levantar_custos_sites_cliente(
+            {
+                principal.nome: principal,
+                adicional.nome: adicional
+            },
+            "barbosa"
+        )
+
+        self.assertEqual(resultado["total_assinaturas"], 2)
+        self.assertEqual(resultado["total_sites"], 2)
+        self.assertEqual(resultado["custo_total"], 1500)
+        self.assertEqual(
+            set(resultado["assinaturas"]["Assinatura"]),
+            {"10001", "10002"}
+        )
+        self.assertEqual(
+            resultado["sites"].set_index("Nome SNMPc").loc[
+                "POP_PRINCIPAL",
+                "Quantidade de assinaturas"
+            ],
+            2
+        )
+        self.assertEqual(
+            resultado["sites"].set_index("Nome SNMPc").loc[
+                "POP_ADICIONAL",
+                "Vínculos"
+            ],
+            "Adicional"
+        )
+
+    def test_custos_cliente_busca_ignora_acentos_e_encontra_assinatura_parcial(self):
+        site = Site("POP_A", "POP")
+        site.custo = "R$ 1.234,56"
+        cliente = Cliente("José Barbosa", 100, "15503202")
+        site.adicionar_cliente(cliente)
+
+        por_nome = levantar_custos_sites_cliente({site.nome: site}, "jose")
+        por_assinatura = levantar_custos_sites_cliente(
+            {site.nome: site},
+            "5032"
+        )
+
+        self.assertEqual(por_nome["total_assinaturas"], 1)
+        self.assertEqual(por_assinatura["total_assinaturas"], 1)
+        self.assertAlmostEqual(por_nome["custo_total"], 1234.56)
+
+    def test_custos_cliente_busca_vazia_ou_sem_resultado(self):
+        site = Site("POP_A", "POP")
+        site.adicionar_cliente(Cliente("Cliente A", 100, "123"))
+
+        vazio = levantar_custos_sites_cliente({site.nome: site}, "")
+        inexistente = levantar_custos_sites_cliente(
+            {site.nome: site},
+            "inexistente"
+        )
+
+        self.assertTrue(vazio["assinaturas"].empty)
+        self.assertTrue(inexistente["assinaturas"].empty)
+        self.assertEqual(inexistente["total_sites"], 0)
+        self.assertEqual(inexistente["custo_total"], 0)
 
     def test_consulta_retorna_uma_assinatura_com_todos_os_vinculos(self):
         principal = Site("CPC_POP_1_IP", "POP")

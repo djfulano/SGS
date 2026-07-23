@@ -34,9 +34,11 @@ from app.services.site_registry_service import SITE_TYPE_OPTIONS
 from app.services.site_registry_service import load_site_contacts
 from app.services.site_registry_service import load_site_registry
 from app.services.site_registry_service import normalize_code
+from app.services.site_registry_service import normalize_site_due_day
 from app.services.site_registry_service import normalize_site_contacts
 from app.services.site_registry_service import save_site_contacts
 from app.services.site_registry_service import upsert_site
+from app.ui.components.site_selector import selecionar_site_pesquisavel
 from app.ui.navigation import mostrar_subnavegacao
 
 
@@ -690,6 +692,13 @@ def selectbox_cadastro(rotulo, opcoes, valor_atual, key=None):
     )
 
 
+def opcoes_dia_vencimento_padrao(valor_atual=""):
+    dia_atual = normalize_site_due_day(valor_atual, strict=False)
+    opcoes = [""] + list(range(1, 29))
+
+    return opcoes, opcoes.index(dia_atual) if dia_atual in opcoes else 0
+
+
 def montar_registro_site_formulario(registro, df_cadastro, sufixo):
     contrato_atual = texto_registro_site(registro, "CONTRATO")
     categoria_atual = texto_registro_site(registro, "CATEGORIA")
@@ -699,6 +708,10 @@ def montar_registro_site_formulario(registro, df_cadastro, sufixo):
     relacionamento_atual = texto_registro_site(registro, "Relacionamento")
     favorecido_atual = texto_registro_site(registro, "Favorecido")
     custo_atual = texto_registro_site(registro, "CUSTO")
+    site_critico_atual = texto_registro_site(
+        registro,
+        "SITE CRÍTICO"
+    ).casefold() in {"sim", "s", "true", "1"}
 
     opcoes_contrato = opcoes_cadastradas_site(df_cadastro, "CONTRATO", contrato_atual)
     opcoes_categoria = opcoes_cadastradas_site(df_cadastro, "CATEGORIA", categoria_atual)
@@ -736,7 +749,7 @@ def montar_registro_site_formulario(registro, df_cadastro, sufixo):
         extras=SITE_TYPE_OPTIONS
     )
 
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col2 = st.columns(2)
 
     with col1:
         codigo = st.text_input(
@@ -799,7 +812,7 @@ def montar_registro_site_formulario(registro, df_cadastro, sufixo):
             key=chave_campo_site(sufixo, "status")
         )
 
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col2, col3 = st.columns(3)
 
     with col1:
         contrato = selectbox_cadastro(
@@ -823,22 +836,6 @@ def montar_registro_site_formulario(registro, df_cadastro, sufixo):
             value=favorecido_atual,
             key=chave_campo_site(sufixo, "favorecido")
         )
-
-    with col4:
-        if pode_visualizar_custos_site():
-            custo = st.text_input(
-                "Custo",
-                value=custo_atual,
-                key=chave_campo_site(sufixo, "custo")
-            )
-        else:
-            st.text_input(
-                "Custo",
-                value="Restrito",
-                disabled=True,
-                key=chave_campo_site(sufixo, "custo_restrito")
-            )
-            custo = custo_atual
 
     st.markdown("**Contrato e perfil**")
     col1, col2, col3, col4 = st.columns(4)
@@ -873,6 +870,49 @@ def montar_registro_site_formulario(registro, df_cadastro, sufixo):
             "Ativação",
             value=texto_registro_site(registro, "ATIVAÇÃO"),
             key=chave_campo_site(sufixo, "ativacao")
+        )
+
+    st.markdown("**Financeiro**")
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        if pode_visualizar_custos_site():
+            custo = st.text_input(
+                "Custo mensal",
+                value=custo_atual,
+                key=chave_campo_site(sufixo, "custo")
+            )
+        else:
+            st.text_input(
+                "Custo mensal",
+                value="Restrito",
+                disabled=True,
+                key=chave_campo_site(sufixo, "custo_restrito")
+            )
+            custo = custo_atual
+
+    with col2:
+        opcoes_vencimento, indice_vencimento = opcoes_dia_vencimento_padrao(
+            texto_registro_site(registro, "DIA VENCIMENTO")
+        )
+        dia_vencimento = st.selectbox(
+            "Dia de vencimento padrão",
+            opcoes_vencimento,
+            index=indice_vencimento,
+            format_func=lambda value: str(value) if value else "",
+            key=chave_campo_site(sufixo, "dia_vencimento"),
+            help="Dia mensal opcional, limitado ao intervalo de 1 a 28."
+        )
+
+    with col3:
+        site_critico = st.checkbox(
+            "Site crítico",
+            value=site_critico_atual,
+            key=chave_campo_site(sufixo, "site_critico"),
+            help=(
+                "O alerta só será ativado quando o site também possuir um "
+                "dia de vencimento padrão."
+            )
         )
 
     st.markdown("**Localização**")
@@ -1071,6 +1111,8 @@ def montar_registro_site_formulario(registro, df_cadastro, sufixo):
         "LONGITUDE": longitude.strip(),
         "ALTURA": altura,
         "RESTRIÇÃO": restricao.strip(),
+        "SITE CRÍTICO": "Sim" if site_critico else "Não",
+        "DIA VENCIMENTO": dia_vencimento,
         "Status": status,
         "Detalhe": detalhe.strip(),
         "OBSERVAÇÃO:": observacao.strip()
@@ -2757,6 +2799,8 @@ def mostrar_cadastro_site_selecionado(site):
             "LONGITUDE": site.get("Longitude") or "",
             "ALTURA": site.get("Altura") or 0,
             "RESTRIÇÃO": site.get("Restricao") or "",
+            "SITE CRÍTICO": "Sim" if site.get("Site Critico") else "Não",
+            "DIA VENCIMENTO": site.get("Dia Vencimento") or "",
             "Status": site.get("Status Cadastro") or "",
             "Detalhe": site.get("Detalhe") or "",
             "OBSERVAÇÃO:": site.get("Observacao") or ""
@@ -2852,6 +2896,8 @@ def montar_site_vazio_para_cadastro():
         "Longitude": "",
         "Altura": 0,
         "Restricao": "",
+        "Site Critico": False,
+        "Dia Vencimento": "",
         "Status Cadastro": "",
         "Detalhe": "",
         "Observacao": ""
@@ -2992,13 +3038,13 @@ def mostrar_gerenciamento_sites_unificado(
                 st.rerun()
 
     else:
-        indice = st.selectbox(
-            "Site",
+        indice = selecionar_site_pesquisavel(
             opcoes,
-            index=None,
-            placeholder="Digite para pesquisar e selecione um site",
-            format_func=lambda idx: df_detalhes.loc[idx, "Busca"],
-            key="gerenciamento_sites_site"
+            {
+                idx: df_detalhes.loc[idx, "Busca"]
+                for idx in opcoes
+            },
+            key="gerenciamento_sites_site",
         )
 
         if indice is None:

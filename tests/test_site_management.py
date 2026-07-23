@@ -4,9 +4,12 @@ from unittest.mock import patch
 import pandas as pd
 
 from app.services.site_registry_service import normalize_site_contacts
+from app.services.site_registry_service import normalize_site_due_day
+from app.services.site_registry_service import prepare_registry_for_save
 from app.services.site_registry_service import SITE_TYPE_OPTIONS
 from app.services.site_registry_service import duplicated_site_codes
 from app.services.site_registry_service import validate_unique_site_codes
+from app.services.site_registry_service import upsert_site
 from app.ui.views.site_management import contatos_arquivados
 from app.ui.views.site_management import contatos_ativos
 from app.ui.views.site_management import contatos_para_exibicao
@@ -16,11 +19,83 @@ from app.ui.views.site_management import nome_destaque_site
 from app.ui.views.site_management import opcoes_tipo_contato
 from app.ui.views.site_management import opcoes_contatos_com_indices
 from app.ui.views.site_management import opcoes_cadastradas_site
+from app.ui.views.site_management import opcoes_dia_vencimento_padrao
 from app.ui.views.site_management import pode_visualizar_custos_site
 from app.ui.views.site_management import valor_custo_site
 
 
 class SiteManagementTest(unittest.TestCase):
+
+    def test_vencimento_padrao_e_opcional_e_limitado(self):
+        opcoes, indice_vazio = opcoes_dia_vencimento_padrao("")
+        _opcoes, indice_atual = opcoes_dia_vencimento_padrao("18")
+
+        self.assertEqual(opcoes[0], "")
+        self.assertEqual(opcoes[-1], 28)
+        self.assertEqual(indice_vazio, 0)
+        self.assertEqual(opcoes[indice_atual], 18)
+        self.assertEqual(normalize_site_due_day(1), 1)
+        self.assertEqual(normalize_site_due_day(28), 28)
+
+        with self.assertRaisesRegex(ValueError, "entre 1 e 28"):
+            normalize_site_due_day(29)
+
+    def test_prepara_planilha_preserva_vencimento_vazio(self):
+        preparado = prepare_registry_for_save(pd.DataFrame([{
+            "CÓDIGO AQUILES": "100",
+            "CUSTO": "1000",
+            "DIA VENCIMENTO": "",
+        }]))
+
+        self.assertEqual(preparado.iloc[0]["DIA VENCIMENTO"], "")
+
+    def test_salva_vencimento_vazio_independente_de_site_critico(self):
+        cadastro = pd.DataFrame({
+            "CÓDIGO AQUILES": pd.Series(["100"], dtype="str"),
+            "DIA VENCIMENTO": pd.Series(["18"], dtype="str"),
+        })
+        with patch(
+            "app.services.site_registry_service.load_site_registry",
+            return_value=cadastro,
+        ), patch(
+            "app.services.site_registry_service.save_site_registry",
+            return_value=None,
+        ) as salvar:
+            upsert_site(
+                {
+                    "CÓDIGO AQUILES": "100",
+                    "SITE CRÍTICO": "Não",
+                    "DIA VENCIMENTO": "",
+                },
+                original_code="100",
+            )
+
+        dataframe_salvo = salvar.call_args.args[0]
+        self.assertEqual(dataframe_salvo.iloc[0]["DIA VENCIMENTO"], "")
+
+    def test_atualiza_dia_vencimento_em_coluna_textual(self):
+        cadastro = pd.DataFrame({
+            "CÓDIGO AQUILES": pd.Series(["100"], dtype="str"),
+            "DIA VENCIMENTO": pd.Series([""], dtype="str"),
+        })
+        with patch(
+            "app.services.site_registry_service.load_site_registry",
+            return_value=cadastro,
+        ), patch(
+            "app.services.site_registry_service.save_site_registry",
+            return_value=None,
+        ) as salvar:
+            upsert_site(
+                {
+                    "CÓDIGO AQUILES": "100",
+                    "SITE CRÍTICO": "Sim",
+                    "DIA VENCIMENTO": 18,
+                },
+                original_code="100",
+            )
+
+        dataframe_salvo = salvar.call_args.args[0]
+        self.assertEqual(dataframe_salvo.iloc[0]["DIA VENCIMENTO"], 18)
 
     def test_nome_destaque_prioriza_nome_cadastro(self):
         self.assertEqual(

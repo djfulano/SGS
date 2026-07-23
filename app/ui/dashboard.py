@@ -54,6 +54,7 @@ from app.ui.components.tables import configurar_componentes_tabela
 from app.ui.components.tables import mostrar_botao_copiar_texto
 from app.ui.components.tables import mostrar_dataframe_nativo
 from app.ui.components.tables import mostrar_grid
+from app.ui.components.site_selector import rotulo_busca_site
 from app.ui.navigation import mostrar_subnavegacao
 from app.ui.navigation import preparar_navegacao_mapa_endereco
 from app.ui.session import preparar_sessao_usuario
@@ -844,25 +845,7 @@ def valor_exibicao_site(valor):
 
 
 def rotulo_site_gerenciamento(linha):
-
-    nome_snmpc = (
-        valor_exibicao_site(linha.get("Site SNMPc"))
-        or valor_exibicao_site(linha.get("SNMPc"))
-    )
-    codigo = valor_exibicao_site(
-        linha.get("Codigo")
-    )
-    nome = valor_exibicao_site(
-        linha.get("Nome Cadastro")
-    )
-    microsiga = valor_exibicao_site(
-        linha.get("Microsiga")
-    )
-
-    return (
-        f"{nome_snmpc or '-'} - {codigo or '-'} / "
-        f"{nome or '-'} - {microsiga or '-'}"
-    )
+    return rotulo_busca_site(linha)
 
 
 def rotulos_sites_por_nome(sites):
@@ -1662,6 +1645,7 @@ def permissao_aba(aba):
             for permissao_financeiro in [
                 "financeiro",
                 "financeiro_dashboard",
+                "financeiro_alertas_criticos",
                 "financeiro_historico_site",
                 "financeiro_pagamentos",
                 "financeiro_acordos",
@@ -1703,6 +1687,7 @@ def permissao_aba(aba):
                 )
                 for permissao_clientes in [
                     "clientes_consulta",
+                    "clientes_custos_sites",
                     "clientes_relatorios",
                     "clientes_insights"
                 ]

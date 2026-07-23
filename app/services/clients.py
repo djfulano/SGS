@@ -1,4 +1,5 @@
 import pandas as pd
+import unicodedata
 
 from app.config import CLIENTES_FILE
 from app.importers.excel_importer import ler_clientes_base
@@ -7,6 +8,219 @@ from app.services.equipment_catalog import load_equipment_catalog
 from app.services.map_service import endereco_cliente
 from app.services.product_catalog import enrich_products_with_catalog
 from app.services.products import montar_indice_clientes_vinculados
+
+
+COLUNAS_ASSINATURAS_CUSTOS_CLIENTE = [
+    "Assinatura",
+    "Cliente",
+    "Produto",
+    "Gerente de contas",
+    "Site principal",
+    "Sites de atendimento",
+    "Quantidade de sites"
+]
+
+COLUNAS_SITES_CUSTOS_CLIENTE = [
+    "Nome",
+    "Nome SNMPc",
+    "Tipo",
+    "Status",
+    "Assinaturas",
+    "Quantidade de assinaturas",
+    "Vínculos",
+    "Custo"
+]
+
+
+def normalizar_busca_custos_cliente(valor):
+    texto = unicodedata.normalize(
+        "NFKD",
+        str(valor or "")
+    )
+
+    return "".join(
+        caractere
+        for caractere in texto
+        if not unicodedata.combining(caractere)
+    ).casefold().strip()
+
+
+def _numero_custo_site(valor):
+    if valor is None or valor == "":
+        return 0.0
+
+    try:
+        return float(valor)
+    except (TypeError, ValueError):
+        texto = str(valor).strip().replace("R$", "").replace(" ", "")
+
+        if "," in texto:
+            texto = texto.replace(".", "").replace(",", ".")
+
+        try:
+            return float(texto)
+        except (TypeError, ValueError):
+            return 0.0
+
+
+def levantar_custos_sites_cliente(sites, termo):
+    colunas_assinaturas = COLUNAS_ASSINATURAS_CUSTOS_CLIENTE
+    colunas_sites = COLUNAS_SITES_CUSTOS_CLIENTE
+    termo_normalizado = normalizar_busca_custos_cliente(termo)
+
+    resultado_vazio = {
+        "assinaturas": pd.DataFrame(columns=colunas_assinaturas),
+        "sites": pd.DataFrame(columns=colunas_sites),
+        "total_assinaturas": 0,
+        "total_sites": 0,
+        "custo_total": 0.0
+    }
+
+    if not termo_normalizado:
+        return resultado_vazio
+
+    sites_iteraveis = (
+        sites.values()
+        if isinstance(sites, dict)
+        else (sites or [])
+    )
+    assinaturas_encontradas = {}
+    sites_encontrados = {}
+
+    for site_principal in sites_iteraveis:
+        for cliente in getattr(site_principal, "clientes", []):
+            assinatura = str(
+                getattr(cliente, "num_assinatura", "") or ""
+            ).strip()
+            nome_cliente = str(
+                getattr(cliente, "nome", "") or ""
+            ).strip()
+
+            if (
+                termo_normalizado not in normalizar_busca_custos_cliente(
+                    assinatura
+                )
+                and termo_normalizado not in normalizar_busca_custos_cliente(
+                    nome_cliente
+                )
+            ):
+                continue
+
+            vinculos = list(
+                getattr(cliente, "vinculos_atendimento", []) or []
+            )
+
+            if not vinculos:
+                vinculos = [{
+                    "site": site_principal,
+                    "tipo": "Principal",
+                    "setorial": getattr(cliente, "setorial", None)
+                }]
+
+            sites_da_assinatura = {}
+
+            for vinculo in vinculos:
+                site_vinculado = vinculo.get("site")
+
+                if site_vinculado is None:
+                    continue
+
+                nome_snmpc = str(
+                    getattr(site_vinculado, "nome", "") or ""
+                ).strip()
+
+                if not nome_snmpc:
+                    continue
+
+                tipo_vinculo = str(
+                    vinculo.get("tipo") or "Principal"
+                ).strip()
+                sites_da_assinatura.setdefault(nome_snmpc, site_vinculado)
+                agregado_site = sites_encontrados.setdefault(
+                    nome_snmpc,
+                    {
+                        "site": site_vinculado,
+                        "assinaturas": set(),
+                        "vinculos": set()
+                    }
+                )
+                agregado_site["assinaturas"].add(assinatura)
+                agregado_site["vinculos"].add(tipo_vinculo)
+
+            registro_assinatura = assinaturas_encontradas.setdefault(
+                assinatura,
+                {
+                    "Assinatura": assinatura,
+                    "Cliente": nome_cliente,
+                    "Produto": str(
+                        getattr(cliente, "produto", "") or ""
+                    ).strip(),
+                    "Gerente de contas": str(
+                        getattr(cliente, "gerente_contas", "") or ""
+                    ).strip(),
+                    "Site principal": str(
+                        getattr(site_principal, "nome", "") or ""
+                    ).strip(),
+                    "sites": {}
+                }
+            )
+            registro_assinatura["sites"].update(sites_da_assinatura)
+
+    if not assinaturas_encontradas:
+        return resultado_vazio
+
+    linhas_assinaturas = []
+
+    for registro in assinaturas_encontradas.values():
+        nomes_sites = sorted(registro.pop("sites"))
+        linhas_assinaturas.append({
+            **registro,
+            "Sites de atendimento": ", ".join(nomes_sites),
+            "Quantidade de sites": len(nomes_sites)
+        })
+
+    linhas_sites = []
+
+    for nome_snmpc, agregado in sites_encontrados.items():
+        site = agregado["site"]
+        assinaturas = sorted(agregado["assinaturas"])
+        linhas_sites.append({
+            "Nome": str(
+                getattr(site, "nome_cadastro", "") or ""
+            ).strip(),
+            "Nome SNMPc": nome_snmpc,
+            "Tipo": str(getattr(site, "tipo", "") or "").strip(),
+            "Status": str(
+                getattr(site, "status_cadastro", "") or ""
+            ).strip(),
+            "Assinaturas": ", ".join(assinaturas),
+            "Quantidade de assinaturas": len(assinaturas),
+            "Vínculos": ", ".join(sorted(agregado["vinculos"])),
+            "Custo": _numero_custo_site(getattr(site, "custo", 0))
+        })
+
+    df_assinaturas = pd.DataFrame(
+        linhas_assinaturas,
+        columns=colunas_assinaturas
+    ).sort_values(
+        by=["Cliente", "Assinatura"],
+        kind="stable"
+    ).reset_index(drop=True)
+    df_sites = pd.DataFrame(
+        linhas_sites,
+        columns=colunas_sites
+    ).sort_values(
+        by=["Nome", "Nome SNMPc"],
+        kind="stable"
+    ).reset_index(drop=True)
+
+    return {
+        "assinaturas": df_assinaturas,
+        "sites": df_sites,
+        "total_assinaturas": int(df_assinaturas["Assinatura"].nunique()),
+        "total_sites": int(df_sites["Nome SNMPc"].nunique()),
+        "custo_total": float(df_sites["Custo"].sum())
+    }
 
 
 def valor_site(site, atributo, padrao=""):

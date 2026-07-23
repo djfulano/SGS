@@ -25,6 +25,9 @@ from app.services.finance_service import preparar_pagamentos_exibicao
 from app.services.finance_service import salvar_acordos
 from app.services.finance_service import salvar_pagamentos
 from app.services.finance_service import sites_financeiros_cadastrados
+from app.services.critical_alerts import status_alertas_criticos
+from app.ui.components.site_selector import rotulo_busca_site
+from app.ui.components.site_selector import selecionar_site_pesquisavel
 from app.ui.navigation import mostrar_subnavegacao
 
 
@@ -315,6 +318,11 @@ def mostrar_editor_acordos(df):
 
     colunas = ["ID SGS", "ID Pagamento", "Status", "Competência", "Data de vencimento", "Data programada pagamento", "Prioridade", "Favorecido", "Microsiga", "Nome SNMPc", "Valor Acordo", "Descrição", "Observação interna"]
     dados = df[[col for col in colunas if col in df.columns]].copy()
+    if "Data de vencimento" in dados.columns:
+        dados["Data de vencimento"] = pd.to_datetime(
+            dados["Data de vencimento"],
+            errors="coerce",
+        ).dt.date
     editado = st.data_editor(
         dados,
         use_container_width=True,
@@ -322,6 +330,10 @@ def mostrar_editor_acordos(df):
         height=650,
         column_config={
             "Status": st.column_config.SelectboxColumn("Status", options=AGREEMENT_STATUSES),
+            "Data de vencimento": st.column_config.DateColumn(
+                "Data de vencimento",
+                format="DD/MM/YYYY",
+            ),
             "Valor Acordo": st.column_config.NumberColumn("Valor Acordo", step=0.01, format="R$ %.2f"),
         },
         disabled=["ID SGS", "ID Pagamento", "Nome SNMPc"],
@@ -340,8 +352,15 @@ def mostrar_editor_acordos(df):
             for coluna in editado.columns:
                 if coluna == "ID SGS":
                     continue
-                if coluna in base.columns and str(base.at[idx_base, coluna]) != str(row.get(coluna, "")):
-                    base.at[idx_base, coluna] = row.get(coluna, "")
+                valor = row.get(coluna, "")
+                if coluna == "Data de vencimento":
+                    valor = (
+                        valor.isoformat()
+                        if not pd.isna(valor) and hasattr(valor, "isoformat")
+                        else ""
+                    )
+                if coluna in base.columns and str(base.at[idx_base, coluna]) != str(valor):
+                    base.at[idx_base, coluna] = valor
                     alterados += 1
             base.at[idx_base, "Atualizado em"] = agora
         salvar_acordos(base)
@@ -471,15 +490,20 @@ def mostrar_historico_financeiro_site(sites):
     site_por_nome = {
         str(site.get("nome") or ""): site for site in opcoes_sites
     }
-    nome_site = st.selectbox(
-        "Site",
+    rotulos = {
+        nome: rotulo_busca_site(site)
+        for nome, site in site_por_nome.items()
+    }
+    nome_site = selecionar_site_pesquisavel(
         list(site_por_nome),
-        format_func=lambda nome: (
-            f"{site_por_nome[nome].get('nome_cadastro') or nome} - "
-            f"{nome} - Microsiga: {site_por_nome[nome].get('microsiga') or 'Não informado'}"
-        ),
+        rotulos,
         key="financeiro_historico_site_selecionado",
     )
+
+    if nome_site is None:
+        st.info("Pesquise e selecione um site para abrir o histórico financeiro.")
+        return
+
     site = site_por_nome[nome_site]
     microsiga = site.get("microsiga", "")
 
@@ -687,10 +711,67 @@ def mostrar_exportacoes():
         )
 
 
+def mostrar_alertas_financeiros():
+    st.header("Alertas financeiros")
+    st.caption(
+        "Vencimentos de sites críticos e acordos dentro da janela configurada."
+    )
+    with st.spinner("Calculando vencimentos..."):
+        dados = status_alertas_criticos()
+
+    metricas = st.columns(4)
+    metricas[0].metric("Sites críticos", len(dados["sites"]))
+    metricas[1].metric("Acordos", len(dados["acordos"]))
+    metricas[2].metric("Atrasados", dados["atrasados"])
+    metricas[3].metric("Total de alertas", dados["total"])
+
+    pode_ver_valores = pode("visualizar_valores_custos")
+
+    st.subheader("Sites críticos")
+    sites_alerta = dados["sites"].copy()
+    if not pode_ver_valores and "Valor" in sites_alerta.columns:
+        sites_alerta = sites_alerta.drop(columns=["Valor"])
+    if sites_alerta.empty:
+        st.info("Nenhum site crítico está dentro da janela de alerta.")
+    else:
+        _mostrar_grid(
+            formatar_tabela_financeira(sites_alerta),
+            height=min(560, max(140, 70 + len(sites_alerta) * 34)),
+            key="financeiro_alertas_sites_grid",
+        )
+
+    st.subheader("Acordos")
+    acordos_alerta = dados["acordos"].copy()
+    if not pode_ver_valores and "Valor" in acordos_alerta.columns:
+        acordos_alerta = acordos_alerta.drop(columns=["Valor"])
+    if acordos_alerta.empty:
+        st.info("Nenhum acordo está dentro da janela de alerta.")
+    else:
+        _mostrar_grid(
+            formatar_tabela_financeira(acordos_alerta),
+            height=min(560, max(140, 70 + len(acordos_alerta) * 34)),
+            key="financeiro_alertas_acordos_grid",
+        )
+
+    diagnosticos = pd.concat(
+        [dados["diagnosticos_sites"], dados["diagnosticos_acordos"]],
+        ignore_index=True,
+    )
+    if not diagnosticos.empty:
+        with st.expander("Pendências de cadastro", expanded=False):
+            st.dataframe(diagnosticos, use_container_width=True, hide_index=True)
+
+
 def mostrar_financeiro(sites):
     itens = []
     if pode("financeiro_dashboard") or pode("financeiro"):
         itens.append(("financeiro_dashboard", "Dashboard", mostrar_dashboard_financeiro))
+    if pode("financeiro_alertas_criticos"):
+        itens.append((
+            "financeiro_alertas_criticos",
+            "Alertas",
+            mostrar_alertas_financeiros,
+        ))
     if pode("financeiro_historico_site") or pode("financeiro"):
         itens.append((
             "financeiro_historico_site",
