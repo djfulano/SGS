@@ -25,6 +25,7 @@ from app.services.finance_service import preparar_pagamentos_exibicao
 from app.services.finance_service import salvar_acordos
 from app.services.finance_service import salvar_pagamentos
 from app.services.finance_service import sites_financeiros_cadastrados
+from app.services.critical_alerts import assinatura_fontes_alertas
 from app.services.critical_alerts import status_alertas_criticos
 from app.ui.components.site_selector import rotulo_busca_site
 from app.ui.components.site_selector import selecionar_site_pesquisavel
@@ -711,13 +712,20 @@ def mostrar_exportacoes():
         )
 
 
+@st.cache_data(show_spinner=False)
+def carregar_alertas_financeiros_cache(assinatura):
+    return status_alertas_criticos()
+
+
 def mostrar_alertas_financeiros():
     st.header("Alertas financeiros")
     st.caption(
         "Vencimentos de sites críticos e acordos dentro da janela configurada."
     )
     with st.spinner("Calculando vencimentos..."):
-        dados = status_alertas_criticos()
+        dados = carregar_alertas_financeiros_cache(
+            assinatura_fontes_alertas()
+        )
 
     metricas = st.columns(4)
     metricas[0].metric("Sites críticos", len(dados["sites"]))

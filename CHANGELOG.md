@@ -1,5 +1,12 @@
 # Histórico de versões
 
+## 1.3.18
+
+- O aviso financeiro global foi removido do topo da aplicação.
+- Alertas de sites críticos e acordos passam a ser carregados somente na subaba Financeiro > Alertas.
+- A tela dedicada mantém o cache baseado nas alterações reais das fontes financeiras.
+- GitPython, Pillow, python-multipart e Starlette foram atualizados para versões sem as vulnerabilidades identificadas pelo Dependabot.
+
 ## 1.3.17
 
 - O alerta financeiro global passa a ser calculado somente após o carregamento do conteúdo principal da página.
