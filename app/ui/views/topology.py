@@ -366,6 +366,7 @@ def montar_clientes_sites_usados(selecionados, usados):
             dados.append({
                 "Cliente": cliente.nome,
                 "Assinatura": cliente.num_assinatura,
+                "Gerente de Contas": getattr(cliente, "gerente_contas", ""),
                 "Receita": cliente.receita,
                 "Vínculo": vinculo.get("tipo") or "Principal",
                 "Tipo Vinculo": (
@@ -405,6 +406,7 @@ def montar_clientes_data(clientes):
         dados.append({
             "Cliente": cliente.nome,
             "Assinatura": cliente.num_assinatura,
+            "Gerente de Contas": getattr(cliente, "gerente_contas", ""),
             "Receita": cliente.receita,
             "Setorial": getattr(cliente, "setorial", None) or "Direto"
         })
@@ -438,6 +440,7 @@ def montar_clientes_completos_site(site):
             dados.append({
                 "Cliente": cliente.nome,
                 "Assinatura": cliente.num_assinatura,
+                "Gerente de Contas": getattr(cliente, "gerente_contas", ""),
                 "Receita": cliente.receita,
                 "Vínculo": vinculo.get("tipo") or "Principal",
                 "Tipo Vinculo": tipo_vinculo,
@@ -1138,6 +1141,11 @@ def mostrar_detalhe_site(site):
                     "Vínculo": vinculo.get("tipo") or "Principal",
                     "Cliente": vinculo["cliente"].nome,
                     "Assinatura": vinculo["cliente"].num_assinatura,
+                    "Gerente de Contas": getattr(
+                        vinculo["cliente"],
+                        "gerente_contas",
+                        ""
+                    ),
                     "Receita": vinculo["cliente"].receita,
                     "Setorial": "Direto"
                 }
@@ -1183,6 +1191,7 @@ def mostrar_detalhe_site(site):
                     "Setorial": nome_setorial,
                     "Cliente": cliente.nome,
                     "Assinatura": cliente.num_assinatura,
+                    "Gerente de Contas": getattr(cliente, "gerente_contas", ""),
                     "Receita": cliente.receita,
                     "Predio": vinculo.get("predio") or ""
                 })

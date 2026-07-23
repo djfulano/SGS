@@ -41,6 +41,7 @@ COLUNAS_BUSCA_SITES = [
 COLUNAS_BUSCA_CLIENTES = [
     "Cliente",
     "Assinatura",
+    "Gerente de Contas",
     "Produto",
     "Endereco",
     "Cidade",
@@ -52,6 +53,7 @@ COLUNAS_BUSCA_LINKS_CLIENTES = [
     "Site",
     "Cliente",
     "Assinatura",
+    "Gerente de Contas",
     "Setorial",
     "Produto"
 ]

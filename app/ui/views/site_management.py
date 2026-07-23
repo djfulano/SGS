@@ -1145,6 +1145,7 @@ def dados_cliente_financeiro(cliente, site_cliente, vinculo):
         "Setorial": getattr(cliente, "setorial", None) or "Direto",
         "Cliente": cliente.nome,
         "Assinatura": cliente.num_assinatura,
+        "Gerente de Contas": getattr(cliente, "gerente_contas", ""),
         "Produto": getattr(cliente, "produto", ""),
         "Mensalidade": cliente.receita,
         "Predio": getattr(cliente, "predio_estrutura", None) or "",

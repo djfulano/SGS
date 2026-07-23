@@ -686,6 +686,7 @@ def montar_clientes_mapa_sites(sites_usados, limite_clientes):
             dados.append({
                 "Cliente": cliente.nome,
                 "Assinatura": assinatura,
+                "Gerente de Contas": getattr(cliente, "gerente_contas", ""),
                 "Site": site_atual.nome,
                 "Setorial": setorial,
                 "Vínculo": tipo_vinculo,
@@ -1018,6 +1019,7 @@ def montar_clientes_mapa(site, incluir_filhos=True):
             dados.append({
                 "Cliente": cliente.nome,
                 "Assinatura": assinatura,
+                "Gerente de Contas": getattr(cliente, "gerente_contas", ""),
                 "Site": site_atual.nome,
                 "Setorial": setorial,
                 "Vínculo": tipo_vinculo,
@@ -1457,6 +1459,10 @@ def compilar_dados_mapa(
                         "Site": registro.get("Site"),
                         "Cliente": registro.get("Cliente"),
                         "Assinatura": registro.get("Assinatura", ""),
+                        "Gerente de Contas": registro.get(
+                            "Gerente de Contas",
+                            ""
+                        ),
                         "Setorial": registro.get("Setorial", "Direto"),
                         "Vínculo": registro.get("Vínculo", "Principal"),
                         "Produto": registro.get("Produto", ""),

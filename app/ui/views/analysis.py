@@ -538,6 +538,7 @@ def montar_clientes_custos_receita(sites, nomes_sites, incluir_filhos=False):
                     "Tipo Site": site_consulta.tipo,
                     "Cliente": cliente.nome,
                     "Assinatura": cliente.num_assinatura,
+                    "Gerente de Contas": getattr(cliente, "gerente_contas", ""),
                     "Produto": getattr(cliente, "produto", ""),
                     "Receita": cliente.receita,
                     "Setorial": getattr(cliente, "setorial", "") or "Direto",
@@ -555,6 +556,7 @@ def montar_clientes_custos_receita(sites, nomes_sites, incluir_filhos=False):
             "Tipo Site",
             "Cliente",
             "Assinatura",
+            "Gerente de Contas",
             "Produto",
             "Receita",
             "Setorial",
@@ -1850,6 +1852,12 @@ def mostrar_clientes_sem_vinculo(clientes_sem_site):
             registros.append({
                 "Cliente": cliente.get("Cliente") or cliente.get("nome") or "",
                 "Assinatura": cliente.get("Assinatura") or cliente.get("num_assinatura") or "",
+                "Gerente de Contas": (
+                    cliente.get("Gerente Contas")
+                    or cliente.get("Gerente de Contas")
+                    or cliente.get("gerente_contas")
+                    or ""
+                ),
                 "Produto": cliente.get("Produto") or cliente.get("produto") or "",
                 "Mensalidade": cliente.get("Mensalidade") or cliente.get("receita") or 0
             })
@@ -1858,6 +1866,7 @@ def mostrar_clientes_sem_vinculo(clientes_sem_site):
             registros.append({
                 "Cliente": nome,
                 "Assinatura": assinatura,
+                "Gerente de Contas": "",
                 "Produto": "",
                 "Mensalidade": 0
             })
@@ -1867,6 +1876,7 @@ def mostrar_clientes_sem_vinculo(clientes_sem_site):
         columns=[
             "Cliente",
             "Assinatura",
+            "Gerente de Contas",
             "Produto",
             "Mensalidade"
         ]

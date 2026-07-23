@@ -32,6 +32,7 @@ def montar_clientes_produtos(sites):
             dados.append({
                 "Cliente": cliente.nome,
                 "Assinatura": cliente.num_assinatura,
+                "Gerente de Contas": getattr(cliente, "gerente_contas", ""),
                 "Produto": getattr(cliente, "produto", ""),
                 "Receita": cliente.receita,
                 "Site": site.nome,
@@ -160,6 +161,13 @@ def carregar_clientes_excel_sva(caminho_arquivo=CLIENTES_FILE, versao_cache=None
         dados.append({
             "Cliente": nome,
             "Assinatura": assinatura,
+            "Gerente de Contas": valor_texto(
+                linha,
+                "GERENTE CONTAS"
+            ) or valor_texto(
+                linha,
+                "GERENTE DE CONTAS"
+            ),
             "Produto": valor_texto(
                 linha,
                 "PRODUTO"
@@ -274,6 +282,7 @@ def montar_sva_clientes(sites, equipamentos):
             dados.append({
                 "Cliente": cliente["Cliente"],
                 "Assinatura": assinatura,
+                "Gerente de Contas": cliente.get("Gerente de Contas", ""),
                 "Produto": cliente["Produto"],
                 "Receita": cliente["Receita"],
                 "Status Vinculo": "Nao aparece no SNMPc",
@@ -296,6 +305,7 @@ def montar_sva_clientes(sites, equipamentos):
             dados.append({
                 "Cliente": cliente["Cliente"],
                 "Assinatura": assinatura,
+                "Gerente de Contas": cliente.get("Gerente de Contas", ""),
                 "Produto": cliente["Produto"],
                 "Receita": cliente["Receita"],
                 "Status Vinculo": (

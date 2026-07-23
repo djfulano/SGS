@@ -1,5 +1,11 @@
 # Histórico de versões
 
+## 1.3.19
+
+- As listas de clientes da Topologia passam a oferecer a coluna Gerente de Contas.
+- O campo também foi propagado para listas de clientes em Gerenciamento de Sites, Análises, Produtos, Histórico e Mapa.
+- Clientes sem vínculo preservam o Gerente de Contas informado na base importada.
+
 ## 1.3.18
 
 - O aviso financeiro global foi removido do topo da aplicação.

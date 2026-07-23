@@ -35,6 +35,7 @@ def cliente_info(cliente, site):
     return {
         "Cliente": cliente.nome,
         "Assinatura": cliente.num_assinatura,
+        "Gerente de Contas": getattr(cliente, "gerente_contas", ""),
         "Receita": cliente.receita,
         "Produto": getattr(cliente, "produto", ""),
         "Site": site.nome,

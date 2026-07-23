@@ -282,6 +282,7 @@ def importar_clientes(
                     {
                         "Cliente": cliente.nome,
                         "Assinatura": num_assinatura,
+                        "Gerente de Contas": cliente.gerente_contas,
                         "Produto": cliente.produto,
                         "Mensalidade": cliente.receita
                     }
