@@ -21,6 +21,7 @@ from app.logs import registrar_log_usuario
 from app.logs import carregar_logs_sistema
 from app.services.backup_service import executar_backup_automatico_se_necessario
 from app.services.import_reminder import status_importacao_mensal
+from app.services.critical_alerts import assinatura_fontes_alertas
 from app.services.critical_alerts import status_alertas_criticos
 from app.ui.branding import bloco_identidade_sgs
 from app.ui.help import mostrar_ajuda_interativa
@@ -585,24 +586,38 @@ def mostrar_lembrete_importacao_mensal():
     )
 
 
-@st.cache_data(ttl=60, show_spinner=False)
-def carregar_alertas_sites_criticos_cache():
+@st.cache_data(show_spinner=False)
+def carregar_alertas_sites_criticos_cache(assinatura):
     return status_alertas_criticos()
 
 
-def mostrar_alertas_sites_criticos():
+def reservar_alertas_sites_criticos():
+    usuario = usuario_logado() or {}
+    if not has_permission(usuario, "financeiro_alertas_criticos"):
+        return None
+    return st.empty()
+
+
+def mostrar_alertas_sites_criticos(destino=None):
     usuario = usuario_logado() or {}
     if not has_permission(usuario, "financeiro_alertas_criticos"):
         return
     try:
-        alertas = carregar_alertas_sites_criticos_cache()
+        alertas = carregar_alertas_sites_criticos_cache(
+            assinatura_fontes_alertas()
+        )
     except Exception:
+        if destino is not None:
+            destino.empty()
         return
     if not alertas["total"]:
+        if destino is not None:
+            destino.empty()
         return
     atrasados = alertas["atrasados"]
     complemento = f" Destes, {atrasados} estão atrasados." if atrasados else ""
-    st.warning(
+    alvo = destino if destino is not None else st
+    alvo.warning(
         f"Alertas financeiros: {len(alertas['sites'])} site(s) crítico(s) e "
         f"{len(alertas['acordos'])} acordo(s) exigem atenção.{complemento} "
         "Acesse Financeiro > Alertas."
@@ -624,5 +639,6 @@ def preparar_sessao_usuario():
 
     executar_backup_apos_login()
     mostrar_barra_superior_conta()
-    mostrar_alertas_sites_criticos()
+    destino_alertas_financeiros = reservar_alertas_sites_criticos()
     mostrar_lembrete_importacao_mensal()
+    return destino_alertas_financeiros

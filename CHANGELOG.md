@@ -1,5 +1,11 @@
 # Histórico de versões
 
+## 1.3.17
+
+- O alerta financeiro global passa a ser calculado somente após o carregamento do conteúdo principal da página.
+- O resultado dos alertas é reutilizado até que pagamentos, acordos, cadastro de Sites, configuração ou data sejam alterados.
+- Pagamentos, acordos e Sites são preparados uma única vez por cálculo dos alertas críticos.
+
 ## 1.3.16
 
 - Viabilidade > Oportunidades por Site e Financeiro > Histórico por Site passam a usar a mesma busca pesquisável do Gerenciamento de Sites.

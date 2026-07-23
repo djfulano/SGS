@@ -57,6 +57,7 @@ from app.ui.components.tables import mostrar_grid
 from app.ui.components.site_selector import rotulo_busca_site
 from app.ui.navigation import mostrar_subnavegacao
 from app.ui.navigation import preparar_navegacao_mapa_endereco
+from app.ui.session import mostrar_alertas_sites_criticos
 from app.ui.session import preparar_sessao_usuario
 from app.ui.session import usuario_logado
 from app.ui.theme import aplicar_tema_visual
@@ -444,7 +445,7 @@ if sistema_precisa_inicializacao():
     st.stop()
 
 
-preparar_sessao_usuario()
+destino_alertas_financeiros = preparar_sessao_usuario()
 
 
 def consumir_links_navegacao_cliente():
@@ -1890,3 +1891,5 @@ st.markdown(
     """,
     unsafe_allow_html=True
 )
+
+mostrar_alertas_sites_criticos(destino_alertas_financeiros)

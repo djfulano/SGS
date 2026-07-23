@@ -2,6 +2,7 @@ import tempfile
 import unittest
 from datetime import date
 from pathlib import Path
+from unittest.mock import patch
 
 import pandas as pd
 
@@ -158,6 +159,68 @@ class CriticalAlertsTest(unittest.TestCase):
             path = Path(temp_dir) / "alerts.json"
             alerts.save_alert_config({"alert_days": 999}, path)
             self.assertEqual(alerts.load_alert_config(path)["alert_days"], 90)
+
+    def test_assinatura_muda_com_arquivo_ou_data(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            pagamentos = Path(temp_dir) / "payments.json"
+            acordos = Path(temp_dir) / "agreements.json"
+            pagamentos.write_text("[]", encoding="utf-8")
+            acordos.write_text("[]", encoding="utf-8")
+            caminhos = [pagamentos, acordos]
+
+            inicial = alerts.assinatura_fontes_alertas(
+                date(2026, 7, 21),
+                caminhos,
+            )
+            self.assertEqual(
+                inicial,
+                alerts.assinatura_fontes_alertas(
+                    date(2026, 7, 21),
+                    caminhos,
+                ),
+            )
+
+            pagamentos.write_text('[{"novo": true}]', encoding="utf-8")
+            alterada = alerts.assinatura_fontes_alertas(
+                date(2026, 7, 21),
+                caminhos,
+            )
+            self.assertNotEqual(inicial, alterada)
+            self.assertNotEqual(
+                alterada,
+                alerts.assinatura_fontes_alertas(
+                    date(2026, 7, 22),
+                    caminhos,
+                ),
+            )
+
+    def test_status_prepara_bases_financeiras_uma_vez(self):
+        pagamentos = pd.DataFrame([self.pagamento()])
+        acordos = pd.DataFrame([self.acordo()])
+
+        with (
+            patch.object(
+                alerts,
+                "preparar_pagamentos_exibicao",
+                wraps=alerts.preparar_pagamentos_exibicao,
+            ) as preparar_pagamentos,
+            patch.object(
+                alerts,
+                "preparar_acordos_exibicao",
+                wraps=alerts.preparar_acordos_exibicao,
+            ) as preparar_acordos,
+        ):
+            resultado = alerts.status_alertas_criticos(
+                self.cadastro(),
+                pagamentos,
+                acordos,
+                hoje=date(2026, 7, 21),
+                antecedencia=15,
+            )
+
+        self.assertEqual(preparar_pagamentos.call_count, 1)
+        self.assertEqual(preparar_acordos.call_count, 1)
+        self.assertEqual(resultado["total"], 2)
 
 
 if __name__ == "__main__":

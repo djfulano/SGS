@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 from datetime import date
+from pathlib import Path
 
 import pandas as pd
 
 from app.config import CONFIG_DIR
+from app.importers.topos_importer import caminho_sites_excel
+from app.services.finance_service import AGREEMENTS_FILE
+from app.services.finance_service import PAYMENTS_FILE
 from app.services.finance_service import normalizar_codigo_microsiga
 from app.services.finance_service import preparar_acordos_exibicao
 from app.services.finance_service import preparar_pagamentos_exibicao
@@ -65,6 +69,29 @@ def save_alert_config(config, path=None):
     resultado = {"alert_days": max(1, min(90, dias))}
     write_json_atomic(path or ALERT_CONFIG_FILE, resultado)
     return resultado
+
+
+def _assinatura_arquivo(caminho):
+    caminho = Path(caminho)
+    try:
+        estado = caminho.stat()
+        return str(caminho), estado.st_size, estado.st_mtime_ns
+    except OSError:
+        return str(caminho), 0, 0
+
+
+def assinatura_fontes_alertas(hoje=None, caminhos=None):
+    hoje = hoje or date.today()
+    fontes = caminhos or (
+        PAYMENTS_FILE,
+        AGREEMENTS_FILE,
+        caminho_sites_excel(),
+        ALERT_CONFIG_FILE,
+    )
+    return (
+        hoje.isoformat(),
+        tuple(_assinatura_arquivo(caminho) for caminho in fontes),
+    )
 
 
 def _texto(valor):
@@ -139,20 +166,12 @@ def _pagamentos_regulares_abertos(pagamentos):
     ].copy()
 
 
-def montar_alertas_sites_criticos(
-    cadastro_sites=None,
-    pagamentos=None,
-    hoje=None,
-    antecedencia=None,
+def _montar_alertas_sites_criticos_preparados(
+    cadastro,
+    pagamentos,
+    hoje,
+    antecedencia,
 ):
-    hoje = hoje or date.today()
-    antecedencia = int(
-        antecedencia
-        if antecedencia is not None
-        else load_alert_config()["alert_days"]
-    )
-    cadastro = load_site_registry() if cadastro_sites is None else cadastro_sites.copy()
-    pagamentos = preparar_pagamentos_exibicao(pagamentos, hoje=hoje)
     abertos = _pagamentos_regulares_abertos(pagamentos)
     alertas = []
     diagnosticos = []
@@ -229,8 +248,8 @@ def montar_alertas_sites_criticos(
     return resultado, pd.DataFrame(diagnosticos)
 
 
-def montar_alertas_acordos(
-    acordos=None,
+def montar_alertas_sites_criticos(
+    cadastro_sites=None,
     pagamentos=None,
     hoje=None,
     antecedencia=None,
@@ -241,8 +260,26 @@ def montar_alertas_acordos(
         if antecedencia is not None
         else load_alert_config()["alert_days"]
     )
-    acordos = preparar_acordos_exibicao(acordos)
-    pagamentos = preparar_pagamentos_exibicao(pagamentos, hoje=hoje)
+    cadastro = load_site_registry() if cadastro_sites is None else cadastro_sites.copy()
+    pagamentos = preparar_pagamentos_exibicao(
+        pagamentos,
+        hoje=hoje,
+        cadastro_sites=cadastro,
+    )
+    return _montar_alertas_sites_criticos_preparados(
+        cadastro,
+        pagamentos,
+        hoje,
+        antecedencia,
+    )
+
+
+def _montar_alertas_acordos_preparados(
+    acordos,
+    pagamentos,
+    hoje,
+    antecedencia,
+):
     if acordos.empty:
         return pd.DataFrame(columns=AGREEMENT_ALERT_COLUMNS), pd.DataFrame()
 
@@ -298,6 +335,36 @@ def montar_alertas_acordos(
     return resultado, pd.DataFrame(diagnosticos)
 
 
+def montar_alertas_acordos(
+    acordos=None,
+    pagamentos=None,
+    hoje=None,
+    antecedencia=None,
+):
+    hoje = hoje or date.today()
+    antecedencia = int(
+        antecedencia
+        if antecedencia is not None
+        else load_alert_config()["alert_days"]
+    )
+    cadastro = load_site_registry()
+    acordos = preparar_acordos_exibicao(
+        acordos,
+        cadastro_sites=cadastro,
+    )
+    pagamentos = preparar_pagamentos_exibicao(
+        pagamentos,
+        hoje=hoje,
+        cadastro_sites=cadastro,
+    )
+    return _montar_alertas_acordos_preparados(
+        acordos,
+        pagamentos,
+        hoje,
+        antecedencia,
+    )
+
+
 def status_alertas_criticos(
     cadastro_sites=None,
     pagamentos=None,
@@ -305,15 +372,31 @@ def status_alertas_criticos(
     hoje=None,
     antecedencia=None,
 ):
-    sites, diagnosticos_sites = montar_alertas_sites_criticos(
-        cadastro_sites,
+    hoje = hoje or date.today()
+    antecedencia = int(
+        antecedencia
+        if antecedencia is not None
+        else load_alert_config()["alert_days"]
+    )
+    cadastro = load_site_registry() if cadastro_sites is None else cadastro_sites.copy()
+    pagamentos_preparados = preparar_pagamentos_exibicao(
         pagamentos,
+        hoje=hoje,
+        cadastro_sites=cadastro,
+    )
+    acordos_preparados = preparar_acordos_exibicao(
+        acordos,
+        cadastro_sites=cadastro,
+    )
+    sites, diagnosticos_sites = _montar_alertas_sites_criticos_preparados(
+        cadastro,
+        pagamentos_preparados,
         hoje,
         antecedencia,
     )
-    alertas_acordos, diagnosticos_acordos = montar_alertas_acordos(
-        acordos,
-        pagamentos,
+    alertas_acordos, diagnosticos_acordos = _montar_alertas_acordos_preparados(
+        acordos_preparados,
+        pagamentos_preparados,
         hoje,
         antecedencia,
     )
