@@ -1,6 +1,6 @@
 import tempfile
 import unittest
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -432,6 +432,172 @@ class FinanceServiceTest(unittest.TestCase):
         self.assertEqual(fs.normalizar_codigo_microsiga("91187"), "091187")
         self.assertEqual(fs.normalizar_codigo_microsiga("091187"), "091187")
         self.assertEqual(fs.normalizar_codigo_microsiga(91187.0), "091187")
+
+    def test_relatorio_financeiro_consolida_sites_sem_duplicidade(self):
+        cliente_pai = SimpleNamespace(
+            num_assinatura="1001",
+            nome="Cliente Pai",
+            receita=100.0,
+        )
+        cliente_filho = SimpleNamespace(
+            num_assinatura="1002",
+            nome="Cliente Filho",
+            receita=200.0,
+        )
+        cliente_neto = SimpleNamespace(
+            num_assinatura="1003",
+            nome="Cliente Neto",
+            receita=300.0,
+        )
+        neto = SimpleNamespace(
+            nome="NETO_SNMP",
+            nome_cadastro="Neto",
+            codigo_topos="3",
+            microsiga="3",
+            clientes=[cliente_neto],
+            filhos=[],
+        )
+        filho = SimpleNamespace(
+            nome="FILHO_SNMP",
+            nome_cadastro="Filho",
+            codigo_topos="2",
+            microsiga="2",
+            clientes=[cliente_filho],
+            filhos=[neto],
+        )
+        pai = SimpleNamespace(
+            nome="PAI_SNMP",
+            nome_cadastro="Pai",
+            codigo_topos="1",
+            microsiga="1",
+            clientes=[cliente_pai],
+            filhos=[filho],
+        )
+        pagamentos = pd.DataFrame([
+            {
+                **{coluna: "" for coluna in fs.PAYMENT_COLUMNS},
+                "ID SGS": "MENSALIDADE-PAI",
+                "Status": "Pendente",
+                "Microsiga": "1",
+                "Data de vencimento": "2026-06-01",
+                "Subtotal": 100.0,
+                "Tipo de despesa": "RECORRENTE",
+            },
+            {
+                **{coluna: "" for coluna in fs.PAYMENT_COLUMNS},
+                "ID SGS": "ACORDO-FILHO",
+                "Status": "Pendente",
+                "Microsiga": "2",
+                "Data de vencimento": "2026-06-02",
+                "Subtotal": 200.0,
+                "Tipo de despesa": "ACORDO/PARCELAMENTO",
+            },
+            {
+                **{coluna: "" for coluna in fs.PAYMENT_COLUMNS},
+                "ID SGS": "NETO-NAO-SELECIONADO",
+                "Status": "Pendente",
+                "Microsiga": "3",
+                "Data de vencimento": "2026-06-03",
+                "Subtotal": 300.0,
+                "Tipo de despesa": "RECORRENTE",
+            },
+            {
+                **{coluna: "" for coluna in fs.PAYMENT_COLUMNS},
+                "ID SGS": "FUTURA",
+                "Status": "Pendente",
+                "Microsiga": "1",
+                "Data de vencimento": "2026-08-01",
+                "Subtotal": 400.0,
+                "Tipo de despesa": "RECORRENTE",
+            },
+            {
+                **{coluna: "" for coluna in fs.PAYMENT_COLUMNS},
+                "ID SGS": "PAGA",
+                "Status": "Pago",
+                "Microsiga": "1",
+                "Data de vencimento": "2026-05-01",
+                "Subtotal": 500.0,
+                "Tipo de despesa": "RECORRENTE",
+            },
+        ])
+
+        relatorio = fs.montar_relatorio_financeiro_sites(
+            [pai, filho],
+            pagamentos=pagamentos,
+            hoje=date(2026, 7, 20),
+            cadastro_sites=pd.DataFrame(),
+        )
+
+        self.assertEqual(relatorio["resumo"]["clientes_total"], 3)
+        self.assertEqual(relatorio["resumo"]["receita_total"], 600.0)
+        self.assertEqual(relatorio["resumo"]["parcelas_atrasadas"], 2)
+        self.assertEqual(relatorio["resumo"]["valor_em_atraso"], 300.0)
+        self.assertEqual(
+            set(relatorio["parcelas"]["ID SGS"]),
+            {"MENSALIDADE-PAI", "ACORDO-FILHO"},
+        )
+        self.assertEqual(
+            set(relatorio["parcelas"]["Tipo"]),
+            {"Mensalidade", "Acordo"},
+        )
+        resumo_por_site = relatorio["sites"].set_index("Nome SNMPc")
+        self.assertEqual(resumo_por_site.loc["PAI_SNMP", "Clientes Totais"], 3)
+        self.assertEqual(resumo_por_site.loc["PAI_SNMP", "Receita Total"], 600.0)
+        self.assertEqual(
+            resumo_por_site.loc["PAI_SNMP", "Parcelas Atrasadas"],
+            1,
+        )
+        self.assertEqual(
+            resumo_por_site.loc["FILHO_SNMP", "Clientes Totais"],
+            2,
+        )
+
+    def test_texto_relatorio_financeiro_respeita_restricoes(self):
+        relatorio = {
+            "resumo": {
+                "clientes_total": 1,
+                "receita_total": 1000.0,
+                "parcelas_atrasadas": 1,
+                "valor_em_atraso": 250.0,
+            },
+            "sites": pd.DataFrame([{
+                "Nome": "Site Teste",
+                "Nome SNMPc": "SITE_TESTE",
+                "Código Aquiles": "10",
+                "Código Microsiga": "000010",
+                "Clientes Totais": 1,
+                "Receita Total": 1000.0,
+                "Parcelas Atrasadas": 1,
+                "Valor em Atraso": 250.0,
+            }]),
+            "parcelas": pd.DataFrame([{
+                "Nome SNMPc": "SITE_TESTE",
+                "Tipo": "Mensalidade",
+                "Favorecido": "Fornecedor",
+                "Vencimento": "2026-06-01",
+                "Dias em Atraso": 49,
+                "Valor": 250.0,
+            }]),
+        }
+        texto = fs.texto_relatorio_financeiro_sites(
+            relatorio,
+            mostrar_receita=True,
+            mostrar_valores_atraso=True,
+            gerado_em=datetime(2026, 7, 20, 10, 30),
+        )
+        restrito = fs.texto_relatorio_financeiro_sites(
+            relatorio,
+            mostrar_receita=False,
+            mostrar_valores_atraso=False,
+            gerado_em=datetime(2026, 7, 20, 10, 30),
+        )
+
+        self.assertIn("RELATÓRIO FINANCEIRO POR SITES", texto)
+        self.assertIn("R$ 1.000,00", texto)
+        self.assertIn("01/06/2026", texto)
+        self.assertIn("SITE_TESTE", texto)
+        self.assertIn("Receita total: Restrito", restrito)
+        self.assertIn("Valor total em atraso: Restrito", restrito)
 
     def test_exporta_conciliacao_excel(self):
         dados = pd.DataFrame([{

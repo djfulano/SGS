@@ -1,3 +1,4 @@
+import hashlib
 import tempfile
 from datetime import datetime
 from pathlib import Path
@@ -20,15 +21,18 @@ from app.services.finance_service import dataframe_para_excel
 from app.services.finance_service import exportar_conciliacao_financeira_excel
 from app.services.finance_service import historico_financeiro_site
 from app.services.finance_service import importar_planilha_financeira
+from app.services.finance_service import montar_relatorio_financeiro_sites
 from app.services.finance_service import preparar_acordos_exibicao
 from app.services.finance_service import preparar_pagamentos_exibicao
 from app.services.finance_service import salvar_acordos
 from app.services.finance_service import salvar_pagamentos
 from app.services.finance_service import sites_financeiros_cadastrados
+from app.services.finance_service import texto_relatorio_financeiro_sites
 from app.services.critical_alerts import assinatura_fontes_alertas
 from app.services.critical_alerts import status_alertas_criticos
 from app.ui.components.site_selector import rotulo_busca_site
 from app.ui.components.site_selector import selecionar_site_pesquisavel
+from app.ui.components.tables import mostrar_botao_copiar_texto
 from app.ui.navigation import mostrar_subnavegacao
 
 
@@ -57,6 +61,8 @@ COLUNAS_MONETARIAS_FINANCEIRO = {
     "Valor",
     "Valor acumulado",
     "Saldo em aberto",
+    "Receita Total",
+    "Valor em Atraso",
 }
 
 
@@ -570,6 +576,187 @@ def mostrar_historico_financeiro_site(sites):
         )
 
 
+def _sites_para_relatorio(sites):
+    return {
+        nome: site
+        for nome, site in sorted(
+            (sites or {}).items(),
+            key=lambda item: rotulo_busca_site(item[1]).casefold(),
+        )
+        if str(nome or "").strip()
+    }
+
+
+def _selecionar_sites_relatorio(sites):
+    sites_por_nome = _sites_para_relatorio(sites)
+    if not sites_por_nome:
+        st.info("Nenhum site cadastrado foi encontrado.")
+        return []
+
+    chave_selecao = "financeiro_relatorio_sites_selecionados"
+    chave_versao = "financeiro_relatorio_site_adicionar_versao"
+    selecionados = [
+        nome
+        for nome in st.session_state.get(chave_selecao, [])
+        if nome in sites_por_nome
+    ]
+    st.session_state[chave_selecao] = selecionados
+    st.session_state.setdefault(chave_versao, 0)
+
+    rotulos = {
+        nome: rotulo_busca_site(site)
+        for nome, site in sites_por_nome.items()
+    }
+    disponiveis = [
+        nome for nome in sites_por_nome
+        if nome not in selecionados
+    ]
+    site_adicionado = selecionar_site_pesquisavel(
+        disponiveis,
+        rotulos,
+        key=(
+            "financeiro_relatorio_site_adicionar_"
+            f"{st.session_state[chave_versao]}"
+        ),
+        rotulo="Sites",
+    )
+    if site_adicionado:
+        st.session_state[chave_selecao] = selecionados + [site_adicionado]
+        st.session_state[chave_versao] += 1
+        st.rerun()
+
+    if not selecionados:
+        return []
+
+    cabecalho, limpar = st.columns(
+        [0.84, 0.16],
+        vertical_alignment="center",
+    )
+    cabecalho.caption(f"{len(selecionados)} site(s) selecionado(s)")
+    if limpar.button(
+        "Limpar",
+        key="financeiro_relatorio_limpar_sites",
+        type="secondary",
+        use_container_width=True,
+    ):
+        st.session_state[chave_selecao] = []
+        st.session_state[chave_versao] += 1
+        st.rerun()
+
+    for indice, nome in enumerate(selecionados):
+        descricao, remover = st.columns(
+            [0.84, 0.16],
+            vertical_alignment="center",
+        )
+        descricao.markdown(f"- {rotulos[nome]}")
+        identificador = hashlib.md5(nome.encode("utf-8")).hexdigest()
+        if remover.button(
+            "Remover",
+            key=f"financeiro_relatorio_remover_{indice}_{identificador}",
+            type="secondary",
+            use_container_width=True,
+        ):
+            st.session_state[chave_selecao] = [
+                atual for atual in selecionados if atual != nome
+            ]
+            st.rerun()
+
+    return [sites_por_nome[nome] for nome in selecionados]
+
+
+def mostrar_relatorio_financeiro_sites(sites):
+    st.header("Relatório financeiro")
+    sites_selecionados = _selecionar_sites_relatorio(sites)
+    if not sites_selecionados:
+        st.info(
+            "Pesquise e adicione um ou mais sites para gerar o relatório."
+        )
+        return
+
+    with st.spinner("Consolidando clientes, receitas e parcelas..."):
+        relatorio = montar_relatorio_financeiro_sites(sites_selecionados)
+
+    pode_ver_receita = pode("visualizar_valores_clientes")
+    pode_ver_atraso = pode("visualizar_valores_custos")
+    resumo = relatorio["resumo"]
+
+    metricas = st.columns(4)
+    metricas[0].metric("Clientes totais", resumo["clientes_total"])
+    metricas[1].metric(
+        "Receita total",
+        moeda(resumo["receita_total"]) if pode_ver_receita else "Restrito",
+    )
+    metricas[2].metric(
+        "Parcelas atrasadas",
+        resumo["parcelas_atrasadas"],
+    )
+    metricas[3].metric(
+        "Valor total em atraso",
+        moeda(resumo["valor_em_atraso"]) if pode_ver_atraso else "Restrito",
+    )
+
+    sites_sem_microsiga = relatorio["sites_sem_microsiga"]
+    if sites_sem_microsiga:
+        st.warning(
+            "Sites sem Código Microsiga não possuem parcelas vinculadas: "
+            + ", ".join(sites_sem_microsiga)
+        )
+
+    st.subheader("Resumo por Site")
+    resumo_sites = relatorio["sites"].copy()
+    if not pode_ver_receita:
+        resumo_sites = resumo_sites.drop(
+            columns=["Receita Total"],
+            errors="ignore",
+        )
+    if not pode_ver_atraso:
+        resumo_sites = resumo_sites.drop(
+            columns=["Valor em Atraso"],
+            errors="ignore",
+        )
+    _mostrar_grid(
+        formatar_tabela_financeira(resumo_sites),
+        height=min(560, max(130, 70 + len(resumo_sites) * 34)),
+        key="financeiro_relatorio_resumo_sites",
+    )
+
+    st.subheader("Parcelas atrasadas")
+    parcelas = relatorio["parcelas"].copy()
+    if parcelas.empty:
+        st.info("Não há parcelas atrasadas para os sites selecionados.")
+    else:
+        parcelas["Vencimento"] = pd.to_datetime(
+            parcelas["Vencimento"],
+            errors="coerce",
+        ).dt.strftime("%d/%m/%Y").fillna("")
+        if not pode_ver_atraso:
+            parcelas = parcelas.drop(columns=["Valor"], errors="ignore")
+        _mostrar_grid(
+            formatar_tabela_financeira(parcelas),
+            height=min(620, max(160, 70 + len(parcelas) * 34)),
+            key="financeiro_relatorio_parcelas",
+        )
+
+    st.subheader("Versão para email")
+    texto_email = texto_relatorio_financeiro_sites(
+        relatorio,
+        mostrar_receita=pode_ver_receita,
+        mostrar_valores_atraso=pode_ver_atraso,
+    )
+    with st.expander("Pré-visualizar texto", expanded=False):
+        st.text_area(
+            "Corpo do email",
+            value=texto_email,
+            height=420,
+            disabled=True,
+            key="financeiro_relatorio_email_previa",
+        )
+    mostrar_botao_copiar_texto(
+        texto_email,
+        rotulo="Copiar relatório para email",
+    )
+
+
 def mostrar_importacao(sites):
     st.header("Importação financeira")
     if not pode("financeiro_importar"):
@@ -785,6 +972,12 @@ def mostrar_financeiro(sites):
             "financeiro_historico_site",
             "Histórico por Site",
             lambda: mostrar_historico_financeiro_site(sites),
+        ))
+    if pode("financeiro_relatorio") or pode("financeiro"):
+        itens.append((
+            "financeiro_relatorio",
+            "Relatório",
+            lambda: mostrar_relatorio_financeiro_sites(sites),
         ))
     if pode("financeiro_pagamentos") or pode("financeiro"):
         itens.append(("financeiro_pagamentos", "Pagamentos", mostrar_pagamentos))

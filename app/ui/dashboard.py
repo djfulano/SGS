@@ -1647,6 +1647,7 @@ def permissao_aba(aba):
                 "financeiro_dashboard",
                 "financeiro_alertas_criticos",
                 "financeiro_historico_site",
+                "financeiro_relatorio",
                 "financeiro_pagamentos",
                 "financeiro_acordos",
                 "financeiro_conciliacao",

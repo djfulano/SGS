@@ -12,6 +12,7 @@ import pandas as pd
 from app.config import CONFIG_DIR
 from app.logs import registrar_log_sistema
 from app.services.site_registry_service import load_site_registry
+from app.services.site_metrics import sites_descendentes
 from app.storage import read_json
 from app.storage import write_json_atomic
 
@@ -1490,6 +1491,364 @@ def resumo_atraso_site(microsiga, pagamentos=None, hoje=None):
         "valor_em_atraso": historico["valor_em_atraso"],
         "parcelas_vencidas": historico["parcelas_vencidas"],
     }
+
+
+def _clientes_unicos_sites(sites):
+    clientes = {}
+    for site in sites:
+        for cliente in getattr(site, "clientes", []) or []:
+            assinatura = _texto(getattr(cliente, "num_assinatura", ""))
+            chave = assinatura or (
+                f"{getattr(site, 'nome', '')}|"
+                f"{_texto(getattr(cliente, 'nome', ''))}"
+            )
+            clientes.setdefault(chave, cliente)
+    return clientes
+
+
+def _resumo_clientes_sites(sites):
+    clientes = _clientes_unicos_sites(sites)
+    return {
+        "clientes": len(clientes),
+        "receita": sum(
+            _numero(getattr(cliente, "receita", 0))
+            for cliente in clientes.values()
+        ),
+    }
+
+
+def _tipo_parcela_relatorio(valor):
+    tipo = _tipo_despesa(valor)
+    if tipo == TOPO_AGREEMENT_TYPE:
+        return "Acordo"
+    if tipo == TOPO_RECURRING_TYPE:
+        return "Mensalidade"
+    return _texto(valor) or "Não informado"
+
+
+def montar_relatorio_financeiro_sites(
+    sites_selecionados,
+    pagamentos=None,
+    hoje=None,
+    cadastro_sites=None,
+):
+    hoje = hoje or date.today()
+    selecionados = []
+    nomes_vistos = set()
+    for site in sites_selecionados or []:
+        nome = _texto(getattr(site, "nome", ""))
+        if not nome or nome in nomes_vistos:
+            continue
+        selecionados.append(site)
+        nomes_vistos.add(nome)
+
+    colunas_resumo = [
+        "Nome",
+        "Nome SNMPc",
+        "Código Aquiles",
+        "Código Microsiga",
+        "Clientes Totais",
+        "Receita Total",
+        "Parcelas Atrasadas",
+        "Valor em Atraso",
+    ]
+    colunas_parcelas = [
+        "ID SGS",
+        "Site",
+        "Nome SNMPc",
+        "Código Microsiga",
+        "Favorecido",
+        "Tipo",
+        "Competência",
+        "Vencimento",
+        "Dias em Atraso",
+        "Valor",
+        "Prioridade",
+        "OC",
+        "Descrição",
+        "Status",
+    ]
+    if not selecionados:
+        return {
+            "resumo": {
+                "clientes_total": 0,
+                "receita_total": 0.0,
+                "parcelas_atrasadas": 0,
+                "valor_em_atraso": 0.0,
+            },
+            "sites": pd.DataFrame(columns=colunas_resumo),
+            "parcelas": pd.DataFrame(columns=colunas_parcelas),
+            "sites_sem_microsiga": [],
+        }
+
+    pagamentos = preparar_pagamentos_exibicao(
+        pagamentos,
+        hoje=hoje,
+        cadastro_sites=cadastro_sites,
+    )
+    atrasadas = pagamentos[
+        pagamentos.get(
+            "Status Atual",
+            pd.Series(index=pagamentos.index, dtype=str),
+        ).eq("Vencido")
+    ].copy()
+    if not atrasadas.empty:
+        atrasadas["_microsiga"] = atrasadas.get(
+            "Microsiga",
+            pd.Series(index=atrasadas.index, dtype=str),
+        ).map(normalizar_codigo_microsiga)
+        atrasadas["_vencimento"] = pd.to_datetime(
+            atrasadas.get("Data de vencimento"),
+            errors="coerce",
+        )
+        atrasadas["_id_relatorio"] = [
+            _texto(valor) or f"linha-{indice}"
+            for indice, valor in zip(
+                atrasadas.index,
+                atrasadas.get(
+                    "ID SGS",
+                    pd.Series(index=atrasadas.index, dtype=str),
+                ),
+            )
+        ]
+
+    sites_escopo = {}
+    for site in selecionados:
+        for site_escopo in sites_descendentes(site):
+            sites_escopo.setdefault(
+                _texto(getattr(site_escopo, "nome", "")),
+                site_escopo,
+            )
+    resumo_geral_clientes = _resumo_clientes_sites(sites_escopo.values())
+
+    codigos_selecionados = {
+        normalizar_codigo_microsiga(getattr(site, "microsiga", ""))
+        for site in selecionados
+        if normalizar_codigo_microsiga(getattr(site, "microsiga", ""))
+    }
+    atrasadas_selecionadas = (
+        atrasadas[atrasadas["_microsiga"].isin(codigos_selecionados)].copy()
+        if not atrasadas.empty
+        else atrasadas
+    )
+    if not atrasadas_selecionadas.empty:
+        atrasadas_selecionadas = atrasadas_selecionadas.drop_duplicates(
+            "_id_relatorio",
+            keep="first",
+        )
+
+    linhas_sites = []
+    site_por_microsiga = {}
+    sites_sem_microsiga = []
+    for site in selecionados:
+        microsiga = normalizar_codigo_microsiga(
+            getattr(site, "microsiga", "")
+        )
+        if microsiga:
+            site_por_microsiga.setdefault(microsiga, site)
+        else:
+            sites_sem_microsiga.append(
+                _texto(getattr(site, "nome", ""))
+            )
+        parcelas_site = (
+            atrasadas[atrasadas["_microsiga"].eq(microsiga)].copy()
+            if microsiga and not atrasadas.empty
+            else pd.DataFrame()
+        )
+        if not parcelas_site.empty:
+            parcelas_site = parcelas_site.drop_duplicates(
+                "_id_relatorio",
+                keep="first",
+            )
+        resumo_clientes = _resumo_clientes_sites(
+            sites_descendentes(site)
+        )
+        linhas_sites.append({
+            "Nome": _texto(getattr(site, "nome_cadastro", "")),
+            "Nome SNMPc": _texto(getattr(site, "nome", "")),
+            "Código Aquiles": _texto(getattr(site, "codigo_topos", "")),
+            "Código Microsiga": microsiga,
+            "Clientes Totais": resumo_clientes["clientes"],
+            "Receita Total": resumo_clientes["receita"],
+            "Parcelas Atrasadas": len(parcelas_site),
+            "Valor em Atraso": (
+                float(
+                    pd.to_numeric(
+                        parcelas_site.get("Subtotal", 0),
+                        errors="coerce",
+                    ).fillna(0).sum()
+                )
+                if not parcelas_site.empty
+                else 0.0
+            ),
+        })
+
+    linhas_parcelas = []
+    for _indice, parcela in atrasadas_selecionadas.sort_values(
+        "_vencimento",
+        kind="stable",
+    ).iterrows():
+        microsiga = parcela.get("_microsiga", "")
+        site = site_por_microsiga.get(microsiga)
+        vencimento = parcela.get("_vencimento")
+        data_vencimento = None if pd.isna(vencimento) else vencimento.date()
+        linhas_parcelas.append({
+            "ID SGS": _texto(parcela.get("ID SGS")),
+            "Site": (
+                _texto(getattr(site, "nome_cadastro", ""))
+                if site is not None
+                else _texto(parcela.get("Nome Site"))
+            ),
+            "Nome SNMPc": (
+                _texto(getattr(site, "nome", ""))
+                if site is not None
+                else _texto(parcela.get("Nome SNMPc"))
+            ),
+            "Código Microsiga": microsiga,
+            "Favorecido": _texto(
+                parcela.get("Favorecido")
+                or parcela.get("Fornecedor")
+                or parcela.get("Nome")
+            ),
+            "Tipo": _tipo_parcela_relatorio(
+                parcela.get("Tipo de despesa")
+            ),
+            "Competência": _texto(parcela.get("Competência")),
+            "Vencimento": (
+                data_vencimento.isoformat()
+                if data_vencimento is not None
+                else ""
+            ),
+            "Dias em Atraso": (
+                (hoje - data_vencimento).days
+                if data_vencimento is not None
+                else ""
+            ),
+            "Valor": _numero(parcela.get("Subtotal")),
+            "Prioridade": _texto(parcela.get("Prioridade")),
+            "OC": _texto(
+                parcela.get("OC / Conta Contábil")
+                or parcela.get("OC NOVA")
+                or parcela.get("OC Primário")
+            ),
+            "Descrição": _texto(parcela.get("Descrição")),
+            "Status": _texto(parcela.get("Status Atual")),
+        })
+
+    valor_em_atraso = (
+        float(
+            pd.to_numeric(
+                atrasadas_selecionadas.get("Subtotal", 0),
+                errors="coerce",
+            ).fillna(0).sum()
+        )
+        if not atrasadas_selecionadas.empty
+        else 0.0
+    )
+    return {
+        "resumo": {
+            "clientes_total": resumo_geral_clientes["clientes"],
+            "receita_total": resumo_geral_clientes["receita"],
+            "parcelas_atrasadas": len(atrasadas_selecionadas),
+            "valor_em_atraso": valor_em_atraso,
+        },
+        "sites": pd.DataFrame(linhas_sites, columns=colunas_resumo),
+        "parcelas": pd.DataFrame(linhas_parcelas, columns=colunas_parcelas),
+        "sites_sem_microsiga": sites_sem_microsiga,
+    }
+
+
+def _moeda_relatorio_texto(valor):
+    texto = f"{_numero(valor):,.2f}"
+    return f"R$ {texto.replace(',', 'X').replace('.', ',').replace('X', '.')}"
+
+
+def _data_relatorio_texto(valor):
+    data = pd.to_datetime(valor, errors="coerce")
+    return "" if pd.isna(data) else data.strftime("%d/%m/%Y")
+
+
+def texto_relatorio_financeiro_sites(
+    relatorio,
+    mostrar_receita=True,
+    mostrar_valores_atraso=True,
+    gerado_em=None,
+):
+    gerado_em = gerado_em or datetime.now()
+    resumo = relatorio.get("resumo", {})
+    linhas = [
+        "RELATÓRIO FINANCEIRO POR SITES",
+        f"Gerado em: {gerado_em:%d/%m/%Y %H:%M}",
+        "",
+        "RESUMO CONSOLIDADO",
+        f"Clientes totais: {int(resumo.get('clientes_total', 0))}",
+        (
+            "Receita total: "
+            + (
+                _moeda_relatorio_texto(resumo.get("receita_total", 0))
+                if mostrar_receita
+                else "Restrito"
+            )
+        ),
+        f"Parcelas atrasadas: {int(resumo.get('parcelas_atrasadas', 0))}",
+        (
+            "Valor total em atraso: "
+            + (
+                _moeda_relatorio_texto(resumo.get("valor_em_atraso", 0))
+                if mostrar_valores_atraso
+                else "Restrito"
+            )
+        ),
+        "",
+        "RESUMO POR SITE",
+    ]
+    for site in relatorio.get("sites", pd.DataFrame()).to_dict(orient="records"):
+        linhas.extend([
+            (
+                f"- {site.get('Nome SNMPc') or '-'} - "
+                f"{site.get('Código Aquiles') or '-'} / "
+                f"{site.get('Nome') or '-'} - "
+                f"{site.get('Código Microsiga') or '-'}"
+            ),
+            f"  Clientes totais: {int(site.get('Clientes Totais', 0))}",
+            (
+                "  Receita total: "
+                + (
+                    _moeda_relatorio_texto(site.get("Receita Total", 0))
+                    if mostrar_receita
+                    else "Restrito"
+                )
+            ),
+            f"  Parcelas atrasadas: {int(site.get('Parcelas Atrasadas', 0))}",
+            (
+                "  Valor em atraso: "
+                + (
+                    _moeda_relatorio_texto(site.get("Valor em Atraso", 0))
+                    if mostrar_valores_atraso
+                    else "Restrito"
+                )
+            ),
+        ])
+
+    linhas.extend(["", "PARCELAS ATRASADAS"])
+    parcelas = relatorio.get("parcelas", pd.DataFrame())
+    if parcelas.empty:
+        linhas.append("Nenhuma parcela atrasada para os sites selecionados.")
+    else:
+        for parcela in parcelas.to_dict(orient="records"):
+            valor = (
+                _moeda_relatorio_texto(parcela.get("Valor", 0))
+                if mostrar_valores_atraso
+                else "Restrito"
+            )
+            linhas.append(
+                f"- {_data_relatorio_texto(parcela.get('Vencimento'))} | "
+                f"{parcela.get('Nome SNMPc') or parcela.get('Site') or '-'} | "
+                f"{parcela.get('Tipo') or '-'} | "
+                f"{parcela.get('Favorecido') or '-'} | "
+                f"{valor} | {parcela.get('Dias em Atraso') or 0} dia(s)"
+            )
+    return "\n".join(linhas)
 
 
 def exportar_conciliacao_financeira_excel(df):

@@ -174,6 +174,10 @@ class ProfilePermissionsGridTest(unittest.TestCase):
             "Financeiro"
         )
         self.assertEqual(
+            grupos_por_chave["financeiro_relatorio"],
+            "Financeiro"
+        )
+        self.assertEqual(
             grupos_por_chave["financeiro_conciliacao"],
             "Financeiro"
         )

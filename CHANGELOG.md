@@ -1,5 +1,12 @@
 # Histórico de versões
 
+## 1.3.21
+
+- Financeiro ganha a subaba Relatório com seleção pesquisável de múltiplos sites.
+- O relatório consolida clientes e receita com descendentes, sem duplicidade, e parcelas vencidas somente dos sites selecionados.
+- A tela apresenta resumo por site, detalhamento das parcelas atrasadas e texto pronto para copiar no corpo de email.
+- A nova permissão `financeiro_relatorio` controla o acesso à subaba.
+
 ## 1.3.20
 
 - A busca de sites da Topologia passa a usar o mesmo seletor pesquisável do Gerenciamento de Sites.
