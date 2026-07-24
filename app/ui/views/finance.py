@@ -744,12 +744,15 @@ def mostrar_relatorio_financeiro_sites(sites):
         mostrar_valores_atraso=pode_ver_atraso,
     )
     with st.expander("Pré-visualizar texto", expanded=False):
+        chave_previa = hashlib.md5(
+            texto_email.encode("utf-8")
+        ).hexdigest()
         st.text_area(
             "Corpo do email",
             value=texto_email,
             height=420,
             disabled=True,
-            key="financeiro_relatorio_email_previa",
+            key=f"financeiro_relatorio_email_previa_{chave_previa}",
         )
     mostrar_botao_copiar_texto(
         texto_email,

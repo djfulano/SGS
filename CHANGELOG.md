@@ -1,5 +1,15 @@
 # Histórico de versões
 
+## 1.3.23
+
+- A pré-visualização do relatório financeiro usa uma chave vinculada ao conteúdo para refletir imediatamente a seleção atual.
+- O texto para email passa a separar os resumos dos sites com uma linha em branco.
+
+## 1.3.22
+
+- A pré-visualização do relatório financeiro para email passa a ser atualizada imediatamente ao adicionar, remover ou limpar sites.
+- O texto exibido e o conteúdo do botão de cópia passam a usar sempre o mesmo relatório recalculado.
+
 ## 1.3.21
 
 - Financeiro ganha a subaba Relatório com seleção pesquisável de múltiplos sites.

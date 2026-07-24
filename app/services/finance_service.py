@@ -1828,9 +1828,10 @@ def texto_relatorio_financeiro_sites(
                     else "Restrito"
                 )
             ),
+            "",
         ])
 
-    linhas.extend(["", "PARCELAS ATRASADAS"])
+    linhas.extend(["PARCELAS ATRASADAS"])
     parcelas = relatorio.get("parcelas", pd.DataFrame())
     if parcelas.empty:
         linhas.append("Nenhuma parcela atrasada para os sites selecionados.")

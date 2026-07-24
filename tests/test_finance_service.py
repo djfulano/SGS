@@ -560,16 +560,28 @@ class FinanceServiceTest(unittest.TestCase):
                 "parcelas_atrasadas": 1,
                 "valor_em_atraso": 250.0,
             },
-            "sites": pd.DataFrame([{
-                "Nome": "Site Teste",
-                "Nome SNMPc": "SITE_TESTE",
-                "Código Aquiles": "10",
-                "Código Microsiga": "000010",
-                "Clientes Totais": 1,
-                "Receita Total": 1000.0,
-                "Parcelas Atrasadas": 1,
-                "Valor em Atraso": 250.0,
-            }]),
+            "sites": pd.DataFrame([
+                {
+                    "Nome": "Site Teste",
+                    "Nome SNMPc": "SITE_TESTE",
+                    "Código Aquiles": "10",
+                    "Código Microsiga": "000010",
+                    "Clientes Totais": 1,
+                    "Receita Total": 1000.0,
+                    "Parcelas Atrasadas": 1,
+                    "Valor em Atraso": 250.0,
+                },
+                {
+                    "Nome": "Site Dois",
+                    "Nome SNMPc": "SITE_DOIS",
+                    "Código Aquiles": "20",
+                    "Código Microsiga": "000020",
+                    "Clientes Totais": 2,
+                    "Receita Total": 2000.0,
+                    "Parcelas Atrasadas": 0,
+                    "Valor em Atraso": 0.0,
+                },
+            ]),
             "parcelas": pd.DataFrame([{
                 "Nome SNMPc": "SITE_TESTE",
                 "Tipo": "Mensalidade",
@@ -596,6 +608,10 @@ class FinanceServiceTest(unittest.TestCase):
         self.assertIn("R$ 1.000,00", texto)
         self.assertIn("01/06/2026", texto)
         self.assertIn("SITE_TESTE", texto)
+        self.assertIn(
+            "Valor em atraso: R$ 250,00\n\n- SITE_DOIS",
+            texto,
+        )
         self.assertIn("Receita total: Restrito", restrito)
         self.assertIn("Valor total em atraso: Restrito", restrito)
 
