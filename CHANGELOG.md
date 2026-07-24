@@ -1,5 +1,10 @@
 # Histórico de versões
 
+## 1.3.20
+
+- A busca de sites da Topologia passa a usar o mesmo seletor pesquisável do Gerenciamento de Sites.
+- As opções e os sites selecionados exibem Nome SNMPc, Código Aquiles, Nome e Código Microsiga.
+
 ## 1.3.19
 
 - As listas de clientes da Topologia passam a oferecer a coluna Gerente de Contas.

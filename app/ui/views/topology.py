@@ -21,6 +21,8 @@ from app.services.site_metrics import receita_indireta_site
 from app.services.site_metrics import receita_site
 from app.services.site_metrics import receita_total_site
 from app.services.site_metrics import sites_descendentes
+from app.ui.components.site_selector import rotulo_busca_site
+from app.ui.components.site_selector import selecionar_site_pesquisavel
 from app.ui.components.tables import primeira_linha_selecionada
 
 
@@ -546,6 +548,10 @@ def mostrar_sites_receitas(sites, df_sites):
     nomes_sites = sorted(
         sites.keys()
     )
+    rotulos_sites = {
+        nome_site: rotulo_busca_site(site)
+        for nome_site, site in sites.items()
+    }
 
     st.markdown("**Filtros**")
 
@@ -612,12 +618,11 @@ def mostrar_sites_receitas(sites, df_sites):
         "topologia_site_para_adicionar_"
         f"{st.session_state['topologia_site_para_adicionar_versao']}"
     )
-    site_para_adicionar = st.selectbox(
-        "Sites",
+    site_para_adicionar = selecionar_site_pesquisavel(
         opcoes_site,
-        index=None,
-        placeholder="Digite para pesquisar e selecione um site",
-        key=chave_adicionar_site
+        rotulos_sites,
+        key=chave_adicionar_site,
+        rotulo="Sites",
     )
 
     if site_para_adicionar:
@@ -646,7 +651,7 @@ def mostrar_sites_receitas(sites, df_sites):
             )
 
             with col_site:
-                st.markdown(f"- {nome_site}")
+                st.markdown(f"- {rotulos_sites.get(nome_site, nome_site)}")
 
             with col_remover:
                 chave_remover = hashlib.md5(nome_site.encode()).hexdigest()

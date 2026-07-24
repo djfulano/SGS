@@ -15,6 +15,7 @@ from app.ui.views.topology import montar_resumo_sites
 from app.ui.views.topology import montar_clientes_sites_usados
 from app.ui.views.topology import normalizar_velocidade_mbps
 from app.ui.views.topology import velocidade_telecom_produto_mbps
+from app.ui.components.site_selector import rotulo_busca_site
 from app.services.site_metrics import custo_indireto_site
 from app.services.site_metrics import custo_site
 from app.services.site_metrics import custo_total_site
@@ -23,6 +24,18 @@ from app.services.site_metrics import montar_resumo_selecao_sites
 
 
 class TopologyBandwidthTest(unittest.TestCase):
+
+    def test_rotulo_busca_topologia_exibe_identificadores_do_site(self):
+        site = Site("ALPES_D_ITALIA_BH_104708_IP", "BH")
+        site.codigo_topos = "104708"
+        site.nome_cadastro = "ALPES D' ITALIA"
+        site.microsiga = "91687"
+
+        self.assertEqual(
+            rotulo_busca_site(site),
+            "ALPES_D_ITALIA_BH_104708_IP - 104708 / "
+            "ALPES D' ITALIA - 91687",
+        )
 
     def test_cliente_adicional_aparece_sem_duplicar_financeiro(self):
         principal = Site("BEL_POP_1_IP", "POP")
