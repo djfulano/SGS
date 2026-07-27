@@ -1,4 +1,4 @@
-﻿altair==6.1.0
+altair==6.1.0
 anyio==4.13.0
 asttokens==3.0.1
 attrs==26.1.0
@@ -68,7 +68,7 @@ traitlets==5.15.0
 typing_extensions==4.15.0
 tzdata==2026.2
 urllib3==2.7.0
-uvicorn==0.47.0
+uvicorn==0.51.0
 watchdog==6.0.0
 wcwidth==0.7.0
 websockets==16.0
