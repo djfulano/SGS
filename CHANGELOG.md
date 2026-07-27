@@ -1,5 +1,11 @@
 # Histórico de versões
 
+## 1.3.29
+
+- Corrigido o fluxo em que um cookie de sessão antigo removia a nova sessão logo após o primeiro login.
+- A autenticação válida agora cancela qualquer limpeza de cookie pendente antes de registrar o novo token.
+- O token passa a ser enviado ao navegador na mesma execução do login, antes de carregar o conteúdo principal e sem um `rerun` intermediário.
+
 ## 1.3.28
 
 - Clientes ganha a subaba Resumo de Clientes, com seleção pesquisável de múltiplas assinaturas.

@@ -22,9 +22,28 @@ from app.auth import validate_password
 from app.auth import verify_bootstrap_token
 from app.storage import read_json
 from app.storage import write_json_atomic
+from app.ui.session import registrar_sessao_autenticada
 
 
 class AuthSessionsTest(unittest.TestCase):
+
+    def test_novo_login_cancela_limpeza_pendente_do_cookie_antigo(self):
+        estado = {
+            "limpar_auth_cookie": True,
+            "usuario": {"username": "antigo"},
+            "auth_token": "token-antigo",
+        }
+        usuario = {"username": "ana", "profile": "Master"}
+
+        registrar_sessao_autenticada(
+            usuario,
+            "token-novo",
+            estado,
+        )
+
+        self.assertNotIn("limpar_auth_cookie", estado)
+        self.assertEqual(estado["usuario"], usuario)
+        self.assertEqual(estado["auth_token"], "token-novo")
 
     def test_create_session_expires_in_12_hours_and_tracks_inactivity(self):
         with tempfile.TemporaryDirectory() as temp_dir:

@@ -50,6 +50,13 @@ def token_cookie():
         return ""
 
 
+def registrar_sessao_autenticada(usuario, token, estado=None):
+    estado = st.session_state if estado is None else estado
+    estado.pop("limpar_auth_cookie", None)
+    estado["usuario"] = usuario
+    estado["auth_token"] = token
+
+
 def script_limpar_cookie_auth():
 
     return f"""
@@ -212,80 +219,93 @@ def configurar_primeiro_master():
 
 def mostrar_login():
 
-    st.markdown(
-        bloco_identidade_sgs("sgt-login-hero"),
-        unsafe_allow_html=True
-    )
+    area_login = st.empty()
+    login_autenticado = False
 
-    st.subheader("Login")
-
-    with st.form("login"):
-
-        usuario = st.text_input("Usuário")
-        senha = st.text_input(
-            "Senha",
-            type="password"
-        )
-        entrar = st.form_submit_button("Entrar")
-
-    if entrar:
-
-        bloqueado, segundos_restantes = login_lock_status(
-            usuario
+    with area_login.container():
+        st.markdown(
+            bloco_identidade_sgs("sgt-login-hero"),
+            unsafe_allow_html=True
         )
 
-        if bloqueado:
-            minutos = max(
-                1,
-                int((segundos_restantes + 59) / 60)
-            )
-            registrar_log_usuario(
-                "login_bloqueado",
-                usuario=usuario,
-                status="falha",
-                detalhes={
-                    "minutos_restantes": minutos
-                }
-            )
-            st.error(
-                f"Muitas tentativas inválidas. Tente novamente em {minutos} minuto(s)."
-            )
-            return False
+        st.subheader("Login")
 
-        autenticado = authenticate(
-            usuario,
-            senha
-        )
+        with st.form("login"):
 
-        if autenticado:
+            usuario = st.text_input("Usuário")
+            senha = st.text_input(
+                "Senha",
+                type="password"
+            )
+            entrar = st.form_submit_button("Entrar")
 
-            clear_login_failures(
+        if entrar:
+
+            bloqueado, segundos_restantes = login_lock_status(
                 usuario
             )
-            st.session_state["usuario"] = autenticado
 
-            token = create_session(usuario)
-            st.session_state["auth_token"] = token
+            if bloqueado:
+                minutos = max(
+                    1,
+                    int((segundos_restantes + 59) / 60)
+                )
+                registrar_log_usuario(
+                    "login_bloqueado",
+                    usuario=usuario,
+                    status="falha",
+                    detalhes={
+                        "minutos_restantes": minutos
+                    }
+                )
+                st.error(
+                    "Muitas tentativas inválidas. "
+                    f"Tente novamente em {minutos} minuto(s)."
+                )
+                return False
 
-            registrar_log_usuario(
-                "login",
-                usuario=usuario,
-                status="sucesso"
+            autenticado = authenticate(
+                usuario,
+                senha
             )
-            st.rerun()
 
-        falhas = register_login_failure(
-            usuario
-        )
-        registrar_log_usuario(
-            "login",
-            usuario=usuario,
-            status="falha",
-            detalhes={
-                "falhas_consecutivas": falhas
-            }
-        )
-        st.error("Usuário ou senha inválidos.")
+            if autenticado:
+
+                clear_login_failures(
+                    usuario
+                )
+
+                token = create_session(usuario)
+                registrar_sessao_autenticada(
+                    autenticado,
+                    token,
+                )
+
+                registrar_log_usuario(
+                    "login",
+                    usuario=usuario,
+                    status="sucesso"
+                )
+                login_autenticado = True
+
+            else:
+                falhas = register_login_failure(
+                    usuario
+                )
+                registrar_log_usuario(
+                    "login",
+                    usuario=usuario,
+                    status="falha",
+                    detalhes={
+                        "falhas_consecutivas": falhas
+                    }
+                )
+                st.error("Usuário ou senha inválidos.")
+
+    if login_autenticado:
+        area_login.empty()
+        sincronizar_token_navegador()
+        return True
 
     return False
 
