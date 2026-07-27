@@ -1,4 +1,4 @@
-﻿altair==6.1.0
+altair==6.1.0
 anyio==4.13.0
 asttokens==3.0.1
 attrs==26.1.0
@@ -71,4 +71,4 @@ urllib3==2.7.0
 uvicorn==0.47.0
 watchdog==6.0.0
 wcwidth==0.7.0
-websockets==16.0
+websockets==16.1.1
