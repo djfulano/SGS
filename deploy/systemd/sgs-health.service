@@ -1,0 +1,12 @@
+[Unit]
+Description=Diagnóstico periódico do SGS
+
+[Service]
+Type=oneshot
+User=sgs
+Group=sgs
+WorkingDirectory=/opt/SGS
+EnvironmentFile=-/opt/SGS/.env
+ExecStart=/opt/SGS/venv/bin/python -m scripts.system_diagnostics
+NoNewPrivileges=true
+PrivateTmp=true

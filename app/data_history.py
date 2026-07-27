@@ -1,7 +1,7 @@
 from datetime import datetime
 
 from app.config import HISTORY_FILE
-from app.storage import read_json
+from app.storage import read_json_authoritative
 from app.storage import write_json_atomic
 
 
@@ -11,7 +11,7 @@ def hoje():
 
 
 def load_history():
-    return read_json(
+    return read_json_authoritative(
         HISTORY_FILE,
         {
             "active_sites": {},
@@ -26,7 +26,8 @@ def load_history():
 def save_history(history):
     write_json_atomic(
         HISTORY_FILE,
-        history
+        history,
+        backup_previous=True,
     )
 
 

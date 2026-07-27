@@ -1,12 +1,13 @@
 from datetime import datetime
 
 from app.config import CLIENT_VIABILITY_FILE
-from app.storage import read_json
+from app.storage import read_json_authoritative
+from app.storage import update_json_atomic
 from app.storage import write_json_atomic
 
 
 def carregar_clientes_viabilidade(path=None):
-    dados = read_json(
+    dados = read_json_authoritative(
         path or CLIENT_VIABILITY_FILE,
         {}
     )
@@ -16,7 +17,8 @@ def carregar_clientes_viabilidade(path=None):
 def salvar_clientes_viabilidade(dados, path=None):
     write_json_atomic(
         path or CLIENT_VIABILITY_FILE,
-        dados or {}
+        dados or {},
+        backup_previous=True,
     )
 
 
@@ -39,8 +41,7 @@ def salvar_dados_cliente_viabilidade(
     if not assinatura:
         raise ValueError("Assinatura não informada.")
 
-    dados = carregar_clientes_viabilidade(path)
-    dados[assinatura] = {
+    record = {
         "latitude": float(latitude or 0),
         "longitude": float(longitude or 0),
         "altitude": float(altitude or 0),
@@ -48,9 +49,17 @@ def salvar_dados_cliente_viabilidade(
         "updated_at": datetime.now().isoformat(timespec="seconds"),
         "updated_by": usuario or ""
     }
-    salvar_clientes_viabilidade(
-        dados,
-        path=path
+
+    def update_client(data):
+        data[assinatura] = record
+        return data
+
+    update_json_atomic(
+        path or CLIENT_VIABILITY_FILE,
+        {},
+        update_client,
+        authoritative=True,
+        backup_previous=True,
     )
 
-    return dados[assinatura]
+    return record

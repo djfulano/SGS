@@ -1,0 +1,23 @@
+[Unit]
+Description=SGS Streamlit
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=sgs
+Group=sgs
+WorkingDirectory=/opt/SGS
+EnvironmentFile=-/opt/SGS/.env
+ExecStart=/opt/SGS/venv/bin/streamlit run app/ui/dashboard.py --server.address=0.0.0.0 --server.port=8501
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/opt/SGS/imports /opt/SGS/config /opt/SGS/contracts /opt/SGS/cache /opt/SGS/backups /opt/SGS/rede.db
+
+[Install]
+WantedBy=multi-user.target

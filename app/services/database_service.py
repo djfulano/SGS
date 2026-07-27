@@ -1,16 +1,24 @@
+from pathlib import Path
+
 from app.database.database import Base
 from app.database.database import SessionLocal
 from app.database.database import engine
 from app.logs import registrar_log_sistema
+from app.storage import file_lock
 
 from app.models.site_model import SiteModel
 from app.models.cliente_model import ClienteModel
 
 
 def sincronizar_banco(sites):
+    database_path = Path(engine.url.database or "rede.db")
 
+    with file_lock(database_path, timeout=30):
+        _sincronizar_banco_bloqueado(sites)
+
+
+def _sincronizar_banco_bloqueado(sites):
     Base.metadata.create_all(bind=engine)
-
     session = SessionLocal()
 
     try:

@@ -13,7 +13,8 @@ from app.config import CONFIG_DIR
 from app.logs import registrar_log_sistema
 from app.services.site_registry_service import load_site_registry
 from app.services.site_metrics import sites_descendentes
-from app.storage import read_json
+from app.storage import read_json_authoritative
+from app.storage import update_json_atomic
 from app.storage import write_json_atomic
 
 FINANCE_DIR = CONFIG_DIR / "finance"
@@ -517,7 +518,10 @@ def enriquecer_vinculos_financeiros(
 def _id_estavel(prefixo, registro, campos):
     partes = [prefixo]
     partes.extend(_texto(registro.get(campo)) for campo in campos)
-    digest = hashlib.sha1("|".join(partes).encode("utf-8")).hexdigest()[:16]
+    digest = hashlib.sha1(  # IDs financeiros persistidos precisam ser compatíveis.
+        "|".join(partes).encode("utf-8"),
+        usedforsecurity=False,
+    ).hexdigest()[:16]
     return f"{prefixo.upper()}-{digest}"
 
 
@@ -806,24 +810,32 @@ def ler_acordos_excel(arquivo):
 
 
 def carregar_pagamentos():
-    return pd.DataFrame(read_json(PAYMENTS_FILE, []), columns=PAYMENT_COLUMNS)
+    return pd.DataFrame(
+        read_json_authoritative(PAYMENTS_FILE, []),
+        columns=PAYMENT_COLUMNS,
+    )
 
 
 def carregar_acordos():
-    return pd.DataFrame(read_json(AGREEMENTS_FILE, []), columns=AGREEMENT_COLUMNS)
+    return pd.DataFrame(
+        read_json_authoritative(AGREEMENTS_FILE, []),
+        columns=AGREEMENT_COLUMNS,
+    )
 
 
 def salvar_pagamentos(df):
     write_json_atomic(
         PAYMENTS_FILE,
-        _records(df, PAYMENT_COLUMNS)
+        _records(df, PAYMENT_COLUMNS),
+        backup_previous=True,
     )
 
 
 def salvar_acordos(df):
     write_json_atomic(
         AGREEMENTS_FILE,
-        _records(df, AGREEMENT_COLUMNS)
+        _records(df, AGREEMENT_COLUMNS),
+        backup_previous=True,
     )
 
 
@@ -836,6 +848,52 @@ def _records(df, columns):
             data[coluna] = ""
     data = data[columns]
     return data.where(pd.notna(data), "").to_dict(orient="records")
+
+
+def aplicar_edicoes_financeiras(df_editado, origem):
+    if origem not in {"pagamentos", "acordos"}:
+        raise ValueError("Origem financeira inválida.")
+
+    path = PAYMENTS_FILE if origem == "pagamentos" else AGREEMENTS_FILE
+    columns = PAYMENT_COLUMNS if origem == "pagamentos" else AGREEMENT_COLUMNS
+    edits = {}
+
+    for row in _records(df_editado, list(df_editado.columns)):
+        record_id = _texto(row.get("ID SGS"))
+        if record_id:
+            edits[record_id] = row
+
+    changed = 0
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    def apply(current):
+        nonlocal changed
+        result = []
+        for record in current:
+            current_record = dict(record)
+            edit = edits.get(_texto(current_record.get("ID SGS")))
+            if edit:
+                for column, value in edit.items():
+                    if (
+                        column == "ID SGS"
+                        or column not in columns
+                    ):
+                        continue
+                    if str(current_record.get(column, "")) != str(value):
+                        current_record[column] = value
+                        changed += 1
+                current_record["Atualizado em"] = now
+            result.append(current_record)
+        return result
+
+    update_json_atomic(
+        path,
+        [],
+        apply,
+        authoritative=True,
+        backup_previous=True,
+    )
+    return changed
 
 
 def _mesclar_por_id(df_atual, df_novo, colunas, preservar_edicao=True):
@@ -959,8 +1017,38 @@ def importar_planilha_financeira(
         },
     }
     if salvar:
-        salvar_pagamentos(pagamentos_mesclados)
-        salvar_acordos(acordos_mesclados)
+        if primeira_importacao_topos and substituir_base_antiga:
+            salvar_pagamentos(pagamentos_mesclados)
+            salvar_acordos(acordos_mesclados)
+        else:
+            update_json_atomic(
+                PAYMENTS_FILE,
+                [],
+                lambda current: _records(
+                    _mesclar_por_id(
+                        pd.DataFrame(current, columns=PAYMENT_COLUMNS),
+                        pagamentos,
+                        PAYMENT_COLUMNS,
+                    )[0],
+                    PAYMENT_COLUMNS,
+                ),
+                authoritative=True,
+                backup_previous=True,
+            )
+            update_json_atomic(
+                AGREEMENTS_FILE,
+                [],
+                lambda current: _records(
+                    _mesclar_por_id(
+                        pd.DataFrame(current, columns=AGREEMENT_COLUMNS),
+                        acordos,
+                        AGREEMENT_COLUMNS,
+                    )[0],
+                    AGREEMENT_COLUMNS,
+                ),
+                authoritative=True,
+                backup_previous=True,
+            )
         registrar_log_sistema(
             "financeiro_importacao",
             usuario=usuario,

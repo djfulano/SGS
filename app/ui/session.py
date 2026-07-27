@@ -6,6 +6,7 @@ from app.auth import UsersFileError
 from app.auth import account_display_label
 from app.auth import authenticate
 from app.auth import authenticate_session
+from app.auth import bootstrap_token_configured
 from app.auth import clear_login_failures
 from app.auth import create_session
 from app.auth import create_user
@@ -15,6 +16,8 @@ from app.auth import register_login_failure
 from app.auth import revoke_session
 from app.auth import save_users
 from app.auth import update_password
+from app.auth import validate_password
+from app.auth import verify_bootstrap_token
 from app.auth import has_permission
 from app.logs import registrar_log_sistema
 from app.logs import registrar_log_usuario
@@ -28,7 +31,7 @@ from app.version import get_app_version
 
 APP_VERSION = get_app_version()
 AUTH_COOKIE_NAME = "sgs_auth_token"
-AUTH_COOKIE_MAX_AGE = 24 * 60 * 60
+AUTH_COOKIE_MAX_AGE = 12 * 60 * 60
 
 
 def usuario_logado():
@@ -53,7 +56,7 @@ def script_limpar_cookie_auth():
     <script>
         const cookieName = {json.dumps(AUTH_COOKIE_NAME)};
         const secure = window.parent.location.protocol === "https:" ? "; Secure" : "";
-        window.parent.document.cookie = `${{cookieName}}=; Max-Age=0; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/; SameSite=Lax${{secure}}`;
+        window.parent.document.cookie = `${{cookieName}}=; Max-Age=0; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/; SameSite=Strict${{secure}}`;
         const url = new URL(window.parent.location.href);
         url.searchParams.delete("logout");
         window.parent.location.replace(url.toString());
@@ -98,12 +101,40 @@ def sincronizar_token_navegador():
                 const token = {json.dumps(token)};
                 const maxAge = {AUTH_COOKIE_MAX_AGE};
                 const secure = window.parent.location.protocol === "https:" ? "; Secure" : "";
-                const cookieValue = `${{cookieName}}=${{encodeURIComponent(token)}}; Max-Age=${{maxAge}}; path=/; SameSite=Lax${{secure}}`;
+                const cookieValue = `${{cookieName}}=${{encodeURIComponent(token)}}; Max-Age=${{maxAge}}; path=/; SameSite=Strict${{secure}}`;
                 window.parent.document.cookie = cookieValue;
             </script>
             """,
             unsafe_allow_javascript=True
         )
+
+
+def exigir_token_bootstrap():
+    if st.session_state.get("bootstrap_autorizado"):
+        return True
+
+    if not bootstrap_token_configured():
+        st.error(
+            "A inicialização está bloqueada. Configure SGS_BOOTSTRAP_TOKEN "
+            "no ambiente e reinicie o SGS."
+        )
+        return False
+
+    with st.form("autorizar_bootstrap"):
+        token = st.text_input(
+            "Token de inicialização",
+            type="password"
+        )
+        autorizar = st.form_submit_button("Autorizar inicialização")
+
+    if autorizar:
+        if verify_bootstrap_token(token):
+            st.session_state["bootstrap_autorizado"] = True
+            st.rerun()
+        else:
+            st.error("Token de inicialização inválido.")
+
+    return False
 
 
 def configurar_primeiro_master():
@@ -116,6 +147,9 @@ def configurar_primeiro_master():
     st.warning(
         "Nenhum usuário cadastrado. Crie o primeiro usuário Master."
     )
+
+    if not exigir_token_bootstrap():
+        return False
 
     with st.form("primeiro_master"):
 
@@ -142,6 +176,12 @@ def configurar_primeiro_master():
 
             st.error("As senhas não conferem.")
 
+            return False
+
+        valid, message = validate_password(senha, usuario)
+
+        if not valid:
+            st.error(message)
             return False
 
         users = {
@@ -252,11 +292,10 @@ def mostrar_login():
 
 def exigir_login():
 
-    if usuario_logado():
-
-        return True
-
-    token = token_cookie()
+    token = (
+        st.session_state.get("auth_token")
+        or token_cookie()
+    )
 
     if token:
 
@@ -270,14 +309,16 @@ def exigir_login():
             st.stop()
 
         if autenticado:
-
+            usuario_anterior = usuario_logado() or {}
             st.session_state["usuario"] = autenticado
             st.session_state["auth_token"] = token
-            registrar_log_usuario(
-                "login_token",
-                usuario=autenticado["username"],
-                status="sucesso"
-            )
+
+            if not usuario_anterior:
+                registrar_log_usuario(
+                    "login_token",
+                    usuario=autenticado["username"],
+                    status="sucesso"
+                )
 
             return True
 
@@ -289,6 +330,7 @@ def exigir_login():
             "auth_token",
             None
         )
+        st.session_state["limpar_auth_cookie"] = True
 
     try:
 
@@ -353,20 +395,6 @@ def mostrar_troca_senha_obrigatoria():
         )
 
         if sucesso:
-
-            users = load_users()
-            usuario_atualizado = users.get(
-                usuario["username"],
-                usuario
-            )
-            st.session_state["usuario"] = {
-                key: value
-                for key, value in usuario_atualizado.items()
-                if key not in {
-                    "salt",
-                    "hash"
-                }
-            }
             registrar_log_usuario(
                 "senha_alterada",
                 usuario=usuario["username"],
@@ -376,6 +404,9 @@ def mostrar_troca_senha_obrigatoria():
                 }
             )
             st.success(mensagem)
+            st.session_state.pop("usuario", None)
+            st.session_state.pop("auth_token", None)
+            st.session_state["limpar_auth_cookie"] = True
             st.rerun()
 
         registrar_log_usuario(
@@ -499,20 +530,6 @@ def mostrar_barra_superior_conta():
                         )
 
                         if sucesso:
-
-                            users = load_users()
-                            usuario_atualizado = users.get(
-                                usuario["username"],
-                                usuario
-                            )
-                            st.session_state["usuario"] = {
-                                key: value
-                                for key, value in usuario_atualizado.items()
-                                if key not in {
-                                    "salt",
-                                    "hash"
-                                }
-                            }
                             st.session_state["mostrar_troca_senha"] = False
                             registrar_log_usuario(
                                 "senha_alterada",
@@ -523,6 +540,10 @@ def mostrar_barra_superior_conta():
                                 }
                             )
                             st.success(mensagem)
+                            st.session_state.pop("usuario", None)
+                            st.session_state.pop("auth_token", None)
+                            st.session_state["limpar_auth_cookie"] = True
+                            st.rerun()
 
                         else:
 

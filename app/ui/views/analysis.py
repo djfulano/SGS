@@ -4,7 +4,7 @@ import unicodedata
 from datetime import datetime
 from io import BytesIO
 from pathlib import Path
-from xml.sax.saxutils import escape
+from xml.sax.saxutils import escape  # nosec B406
 
 import pandas as pd
 import streamlit as st

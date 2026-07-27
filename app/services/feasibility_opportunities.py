@@ -18,7 +18,7 @@ from app.services.map_service import geocodificar_endereco
 from app.services.map_service import salvar_cache_geocoding
 from app.services.site_registry_service import site_pode_atender_outros_enderecos
 from app.storage import read_json
-from app.storage import write_json_atomic
+from app.storage import update_json_atomic
 
 
 GEOCODING_FILE = FEASIBILITY_HISTORY_DIR / "geocoding.json"
@@ -41,7 +41,10 @@ def address_key(value):
     normalized = normalize_address(value)
     if not normalized:
         return ""
-    return hashlib.sha1(normalized.encode("utf-8")).hexdigest()
+    return hashlib.sha1(
+        normalized.encode("utf-8"),
+        usedforsecurity=False,
+    ).hexdigest()
 
 
 def load_geocoding(path=None):
@@ -56,7 +59,43 @@ def load_geocoding(path=None):
 
 
 def save_geocoding(data, path=None):
-    write_json_atomic(path or GEOCODING_FILE, data)
+    incoming = dict((data or {}).get("registros", {}))
+
+    def merge(current):
+        current.setdefault("versao", GEOCODING_VERSION)
+        entries = current.setdefault("registros", {})
+        for key, value in incoming.items():
+            existing = entries.get(key)
+            if not existing:
+                entries[key] = value
+                continue
+            incoming_date = str(value.get("Geocodificado em") or "")
+            existing_date = str(existing.get("Geocodificado em") or "")
+            incoming_attempts = int(value.get("Tentativas") or 0)
+            existing_attempts = int(existing.get("Tentativas") or 0)
+            if (
+                incoming_date > existing_date
+                or incoming_attempts > existing_attempts
+                or (
+                    incoming_date == existing_date
+                    and incoming_attempts == existing_attempts
+                    and existing.get("Status") == STATUS_PENDING
+                )
+            ):
+                entries[key] = value
+        current["versao"] = max(
+            int(current.get("versao") or 0),
+            int((data or {}).get("versao") or GEOCODING_VERSION),
+        )
+        return current
+
+    return update_json_atomic(
+        path or GEOCODING_FILE,
+        {"versao": GEOCODING_VERSION, "registros": {}},
+        merge,
+        authoritative=False,
+        backup_previous=False,
+    )
 
 
 def synchronize_addresses(records, data=None, path=None, persist=True):
@@ -112,14 +151,25 @@ def geocoding_coverage(records, data=None):
 
 
 def reset_geocoding_statuses(statuses, path=None):
-    data = load_geocoding(path)
+    statuses = set(statuses or [])
     changed = 0
-    for entry in data.get("registros", {}).values():
-        if entry.get("Status") in set(statuses or []):
-            entry["Status"] = STATUS_PENDING
-            changed += 1
-    if changed:
-        save_geocoding(data, path)
+
+    def reset(current):
+        nonlocal changed
+        for entry in current.get("registros", {}).values():
+            if entry.get("Status") in statuses:
+                entry["Status"] = STATUS_PENDING
+                entry["Erro"] = ""
+                changed += 1
+        return current
+
+    update_json_atomic(
+        path or GEOCODING_FILE,
+        {"versao": GEOCODING_VERSION, "registros": {}},
+        reset,
+        authoritative=False,
+        backup_previous=False,
+    )
     return changed
 
 

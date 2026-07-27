@@ -26,6 +26,7 @@ from app.services.finance_service import preparar_acordos_exibicao
 from app.services.finance_service import preparar_pagamentos_exibicao
 from app.services.finance_service import salvar_acordos
 from app.services.finance_service import salvar_pagamentos
+from app.services.finance_service import aplicar_edicoes_financeiras
 from app.services.finance_service import sites_financeiros_cadastrados
 from app.services.finance_service import texto_relatorio_financeiro_sites
 from app.services.critical_alerts import assinatura_fontes_alertas
@@ -272,23 +273,10 @@ def mostrar_editor_pagamentos(df):
         key="financeiro_pagamentos_editor",
     )
     if st.button("Salvar alterações", type="primary", key="financeiro_pagamentos_salvar"):
-        base = carregar_pagamentos()
-        por_id = {row["ID SGS"]: idx for idx, row in base.iterrows()}
-        agora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        alterados = 0
-        for _idx, row in editado.iterrows():
-            chave = row.get("ID SGS")
-            if chave not in por_id:
-                continue
-            idx_base = por_id[chave]
-            for coluna in editado.columns:
-                if coluna == "ID SGS":
-                    continue
-                if coluna in base.columns and str(base.at[idx_base, coluna]) != str(row.get(coluna, "")):
-                    base.at[idx_base, coluna] = row.get(coluna, "")
-                    alterados += 1
-            base.at[idx_base, "Atualizado em"] = agora
-        salvar_pagamentos(base)
+        alterados = aplicar_edicoes_financeiras(
+            editado,
+            "pagamentos",
+        )
         registrar_log_sistema("financeiro_pagamentos_editados", usuario=usuario_atual().get("username"), status="sucesso", detalhes={"alteracoes": alterados})
         st.success("Alterações salvas.")
         st.rerun()
@@ -347,30 +335,18 @@ def mostrar_editor_acordos(df):
         key="financeiro_acordos_editor",
     )
     if st.button("Salvar alterações", type="primary", key="financeiro_acordos_salvar"):
-        base = carregar_acordos()
-        por_id = {row["ID SGS"]: idx for idx, row in base.iterrows()}
-        agora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        alterados = 0
         for _idx, row in editado.iterrows():
-            chave = row.get("ID SGS")
-            if chave not in por_id:
-                continue
-            idx_base = por_id[chave]
-            for coluna in editado.columns:
-                if coluna == "ID SGS":
-                    continue
-                valor = row.get(coluna, "")
-                if coluna == "Data de vencimento":
-                    valor = (
-                        valor.isoformat()
-                        if not pd.isna(valor) and hasattr(valor, "isoformat")
-                        else ""
-                    )
-                if coluna in base.columns and str(base.at[idx_base, coluna]) != str(valor):
-                    base.at[idx_base, coluna] = valor
-                    alterados += 1
-            base.at[idx_base, "Atualizado em"] = agora
-        salvar_acordos(base)
+            valor = row.get("Data de vencimento", "")
+            if "Data de vencimento" in editado.columns:
+                editado.at[_idx, "Data de vencimento"] = (
+                    valor.isoformat()
+                    if not pd.isna(valor) and hasattr(valor, "isoformat")
+                    else ""
+                )
+        alterados = aplicar_edicoes_financeiras(
+            editado,
+            "acordos",
+        )
         registrar_log_sistema("financeiro_acordos_editados", usuario=usuario_atual().get("username"), status="sucesso", detalhes={"alteracoes": alterados})
         st.success("Alterações salvas.")
         st.rerun()
@@ -649,7 +625,7 @@ def _selecionar_sites_relatorio(sites):
             vertical_alignment="center",
         )
         descricao.markdown(f"- {rotulos[nome]}")
-        identificador = hashlib.md5(nome.encode("utf-8")).hexdigest()
+        identificador = hashlib.sha256(nome.encode("utf-8")).hexdigest()
         if remover.button(
             "Remover",
             key=f"financeiro_relatorio_remover_{indice}_{identificador}",
@@ -744,7 +720,7 @@ def mostrar_relatorio_financeiro_sites(sites):
         mostrar_valores_atraso=pode_ver_atraso,
     )
     with st.expander("Pré-visualizar texto", expanded=False):
-        chave_previa = hashlib.md5(
+        chave_previa = hashlib.sha256(
             texto_email.encode("utf-8")
         ).hexdigest()
         st.text_area(

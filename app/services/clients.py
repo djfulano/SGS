@@ -629,6 +629,121 @@ def montar_base_consulta_clientes(sites, equipamentos, clientes_base=None):
     ).reset_index(drop=True)
 
 
+COLUNAS_RESUMO_ASSINATURAS_CLIENTES = [
+    "Assinatura",
+    "Nome",
+    "Produto",
+    "Receita",
+    "Site",
+    "Gerente de Contas",
+]
+
+
+def normalizar_selecao_assinaturas(assinaturas, assinaturas_validas):
+    validas = {
+        str(assinatura or "").strip()
+        for assinatura in (assinaturas_validas or [])
+        if str(assinatura or "").strip()
+    }
+    resultado = []
+    vistos = set()
+
+    for assinatura in assinaturas or []:
+        assinatura = str(assinatura or "").strip()
+        if not assinatura or assinatura not in validas or assinatura in vistos:
+            continue
+        resultado.append(assinatura)
+        vistos.add(assinatura)
+
+    return resultado
+
+
+def sites_atendimento_registro_cliente(registro):
+    sites = []
+
+    for vinculo in registro.get("Vínculos de atendimento") or []:
+        if not isinstance(vinculo, dict):
+            continue
+        site = str(vinculo.get("Site") or "").strip()
+        if site and site not in sites:
+            sites.append(site)
+
+    for site in str(registro.get("Sites de atendimento") or "").split(","):
+        site = site.strip()
+        if site and site not in sites:
+            sites.append(site)
+
+    site_principal = str(registro.get("Site") or "").strip()
+    if (
+        site_principal
+        and site_principal.casefold() != "sem vínculo".casefold()
+        and site_principal not in sites
+    ):
+        sites.insert(0, site_principal)
+
+    return sites
+
+
+def montar_resumo_assinaturas_clientes(df_clientes, assinaturas):
+    resultado_vazio = {
+        "clientes": 0,
+        "receita": 0.0,
+        "sites": 0,
+        "tabela": pd.DataFrame(columns=COLUNAS_RESUMO_ASSINATURAS_CLIENTES),
+    }
+
+    if df_clientes is None or df_clientes.empty:
+        return resultado_vazio
+
+    base = df_clientes.copy()
+    base["Assinatura"] = base["Assinatura"].astype(str).str.strip()
+    base = base.drop_duplicates(subset=["Assinatura"], keep="first")
+    selecionadas = normalizar_selecao_assinaturas(
+        assinaturas,
+        base["Assinatura"].tolist(),
+    )
+    if not selecionadas:
+        return resultado_vazio
+
+    registros = {
+        str(linha["Assinatura"]): linha.to_dict()
+        for _indice, linha in base.iterrows()
+    }
+    linhas = []
+    sites_unicos = set()
+    receita_total = 0.0
+
+    for assinatura in selecionadas:
+        registro = registros[assinatura]
+        sites = sites_atendimento_registro_cliente(registro)
+        sites_unicos.update(sites)
+        receita = pd.to_numeric(
+            pd.Series([registro.get("Receita")]),
+            errors="coerce",
+        ).fillna(0).iloc[0]
+        receita_total += float(receita)
+        linhas.append({
+            "Assinatura": assinatura,
+            "Nome": str(registro.get("Cliente") or "").strip(),
+            "Produto": str(registro.get("Produto") or "").strip(),
+            "Receita": float(receita),
+            "Site": ", ".join(sites) if sites else "Sem vínculo",
+            "Gerente de Contas": str(
+                registro.get("Gerente de contas") or ""
+            ).strip(),
+        })
+
+    return {
+        "clientes": len(linhas),
+        "receita": receita_total,
+        "sites": len(sites_unicos),
+        "tabela": pd.DataFrame(
+            linhas,
+            columns=COLUNAS_RESUMO_ASSINATURAS_CLIENTES,
+        ),
+    }
+
+
 def equipamentos_cliente(assinatura, equipamentos):
     catalogo = montar_catalogo_por_icone()
     indice = montar_indice_equipamentos(equipamentos)

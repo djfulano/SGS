@@ -25,10 +25,11 @@ from app.storage import read_json
 from app.storage import write_json_atomic
 
 
-MAPA_SCHEMA_VERSION = 12
+MAPA_SCHEMA_VERSION = 13
 COR_LINHA_SITE = [210, 30, 30, 145]
-COR_LINHA_CLIENTE = [20, 150, 70, 125]
-COR_LINHA_POP_POP = [35, 110, 255, 180]
+COR_LINHA_CLIENTE = [35, 110, 255, 180]
+COR_LINHA_POP_POP = [20, 150, 70, 220]
+COR_LINHA_INTERMEDIARIA = [245, 210, 45, 220]
 COR_LINHA_POP_DC = [115, 95, 255, 175]
 COR_LINHA_SNPMC_SITE = [70, 95, 135, 150]
 
@@ -54,7 +55,7 @@ def limites_mapa():
 
 def cor_site(nome_site):
 
-    digest = hashlib.md5(
+    digest = hashlib.sha256(
         nome_site.encode("utf-8")
     ).hexdigest()
 
@@ -98,7 +99,7 @@ def cor_setorial(nome_site, setorial):
         return cores_tipo[tipo]
 
     chave = f"{nome_site or ''}|{setorial or 'Direto'}"
-    digest = hashlib.md5(
+    digest = hashlib.sha256(
         chave.encode("utf-8")
     ).hexdigest()
 
@@ -153,17 +154,85 @@ def cor_suave_de_cor(cor):
 
 
 def cor_linha_cliente_por_site(cor_site):
-    cor = cor_rgba_mapa(
-        cor_site,
-        COR_LINHA_CLIENTE
+    return list(COR_LINHA_CLIENTE)
+
+
+def tipo_site_enlace(site_ou_tipo):
+    if hasattr(site_ou_tipo, "tipo"):
+        tipo = str(getattr(site_ou_tipo, "tipo", "") or "").strip().upper()
+        nome = str(getattr(site_ou_tipo, "nome", "") or "")
+    else:
+        tipo = str(site_ou_tipo or "").strip().upper()
+        nome = tipo
+
+    for valor in ("POP", "BH", "REP", "DC", "CLIENTE", "SITE"):
+        if tipo == valor or tipo.startswith(f"{valor} "):
+            return valor
+
+    return tipo_cor_mapa(nome, "")
+
+
+def cor_enlace_entre_sites(origem, destino, fallback=None):
+    tipo_origem = tipo_site_enlace(origem)
+    tipo_destino = tipo_site_enlace(destino)
+    tipos = frozenset((tipo_origem, tipo_destino))
+
+    if tipo_origem == "POP" and tipo_destino == "POP":
+        return list(COR_LINHA_POP_POP)
+
+    if tipos in {
+        frozenset(("POP", "BH")),
+        frozenset(("POP", "REP")),
+        frozenset(("BH", "REP")),
+    }:
+        return list(COR_LINHA_INTERMEDIARIA)
+
+    return cor_rgba_mapa(
+        fallback,
+        COR_LINHA_SNPMC_SITE,
     )
 
-    return [
-        cor[0],
-        cor[1],
-        cor[2],
-        COR_LINHA_CLIENTE[3]
-    ]
+
+def tipos_enlace_registro(registro):
+    descricao = " ".join(
+        str(registro.get(campo) or "")
+        for campo in ("Tipo Vínculo", "Tipo Enlace")
+    ).upper()
+    correspondencia = re.search(
+        r"\b(POP|BH|REP|DC|SITE|CLIENTE)\s*X\s*"
+        r"(POP|BH|REP|DC|SITE|CLIENTE)\b",
+        descricao,
+    )
+
+    if correspondencia:
+        return correspondencia.group(1), correspondencia.group(2)
+
+    return (
+        tipo_site_enlace(registro.get("Site Pai")),
+        tipo_site_enlace(registro.get("Site Filho")),
+    )
+
+
+def aplicar_cores_enlaces_mapa(df_links_clientes, df_links_sites):
+    links_clientes = df_links_clientes.copy()
+    links_sites = df_links_sites.copy()
+
+    if not links_clientes.empty:
+        links_clientes["Cor"] = [
+            list(COR_LINHA_CLIENTE)
+            for _indice in range(len(links_clientes))
+        ]
+
+    if not links_sites.empty:
+        links_sites["Cor"] = links_sites.apply(
+            lambda registro: cor_enlace_entre_sites(
+                *tipos_enlace_registro(registro),
+                fallback=registro.get("Cor"),
+            ),
+            axis=1,
+        )
+
+    return links_clientes, links_sites
 
 
 def cor_rgba_mapa(cor, fallback):
@@ -1279,7 +1348,11 @@ def compilar_dados_mapa(
                 f"Setorial: {texto_html(info_setorial['setorial'])}<br/>"
                 f"Distância: {distancia:.2f} km"
             ),
-            "Cor": COR_LINHA_SITE
+            "Cor": cor_enlace_entre_sites(
+                pai,
+                site,
+                fallback=COR_LINHA_SITE,
+            )
         })
 
     chaves_enlaces_snmpc = set()
@@ -1339,12 +1412,16 @@ def compilar_dados_mapa(
         )
         tipo_enlace = enlace.get("Tipo Enlace") or "Site x Site"
 
-        if tipo_enlace == "POP x POP":
-            cor = COR_LINHA_POP_POP
-        elif tipo_enlace == "POP x DC":
-            cor = COR_LINHA_POP_DC
-        else:
-            cor = COR_LINHA_SNPMC_SITE
+        cor_fallback = (
+            COR_LINHA_POP_DC
+            if tipo_enlace == "POP x DC"
+            else COR_LINHA_SNPMC_SITE
+        )
+        cor = cor_enlace_entre_sites(
+            sites_usados.get(site_origem_nome) or site_origem_nome,
+            sites_usados.get(site_destino_nome) or site_destino_nome,
+            fallback=cor_fallback,
+        )
 
         links_sites.append({
             "Site Pai": site_origem_nome,
@@ -1531,12 +1608,16 @@ def compilar_dados_mapa(
 
 
 def dataframes_mapa(pacote):
+    links_clientes, links_sites = aplicar_cores_enlaces_mapa(
+        pd.DataFrame(pacote.get("links_clientes", [])),
+        pd.DataFrame(pacote.get("links_sites", [])),
+    )
 
     return (
         pd.DataFrame(pacote.get("sites", [])),
         pd.DataFrame(pacote.get("clientes", [])),
-        pd.DataFrame(pacote.get("links_clientes", [])),
-        pd.DataFrame(pacote.get("links_sites", [])),
+        links_clientes,
+        links_sites,
         pd.DataFrame(pacote.get("nao_plotados", []))
     )
 

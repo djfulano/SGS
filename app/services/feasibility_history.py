@@ -14,8 +14,8 @@ from types import SimpleNamespace
 import pandas as pd
 
 from app.config import CONFIG_DIR
-from app.storage import read_json
-from app.storage import write_json_atomic
+from app.storage import read_json_authoritative
+from app.storage import update_json_atomic
 
 
 FEASIBILITY_HISTORY_DIR = CONFIG_DIR / "feasibility_history"
@@ -317,7 +317,10 @@ def _identity_key(record):
 
 
 def _stable_id(identity, occurrence):
-    digest = hashlib.sha1(f"{identity}|{occurrence}".encode("utf-8")).hexdigest()[:18]
+    digest = hashlib.sha1(  # IDs históricos precisam permanecer estáveis.
+        f"{identity}|{occurrence}".encode("utf-8"),
+        usedforsecurity=False,
+    ).hexdigest()[:18]
     return f"VIA-{digest}"
 
 
@@ -412,7 +415,7 @@ def records_version():
 
 @lru_cache(maxsize=1)
 def _load_records_cached(version):
-    return read_json(Path(version[0]), [])
+    return read_json_authoritative(Path(version[0]), [])
 
 
 def load_records():
@@ -420,11 +423,11 @@ def load_records():
 
 
 def load_imports():
-    return read_json(IMPORTS_FILE, [])
+    return read_json_authoritative(IMPORTS_FILE, [])
 
 
 def load_revisions():
-    return read_json(REVISIONS_FILE, [])
+    return read_json_authoritative(REVISIONS_FILE, [])
 
 
 def _comparable(record):
@@ -446,7 +449,7 @@ def preview_import(source, sites=None, filename="", user=""):
     digest = hashlib.sha256(content).hexdigest() if content is not None else ""
     batch_id = (
         f"IMP-VIA-{datetime.now():%Y%m%d%H%M%S%f}-"
-        f"{digest[:8] or hashlib.sha1(now.encode()).hexdigest()[:8]}"
+        f"{digest[:8] or hashlib.sha256(now.encode()).hexdigest()[:8]}"
     )
     new_count = updated_count = unchanged_count = 0
     revisions = []
@@ -527,7 +530,28 @@ def preview_import(source, sites=None, filename="", user=""):
 
 
 def save_import(preview):
-    write_json_atomic(RECORDS_FILE, preview["merged_records"])
+    incoming_by_id = {
+        record.get("ID SGS"): record
+        for record in preview["records"]
+        if record.get("ID SGS")
+    }
+
+    def merge_records(current):
+        merged = {
+            record.get("ID SGS"): record
+            for record in current
+            if record.get("ID SGS")
+        }
+        merged.update(incoming_by_id)
+        return list(merged.values())
+
+    update_json_atomic(
+        RECORDS_FILE,
+        [],
+        merge_records,
+        authoritative=True,
+        backup_previous=True,
+    )
     _load_records_cached.cache_clear()
     _records_dataframe_cached.cache_clear()
     from app.services.feasibility_opportunities import synchronize_addresses
@@ -535,14 +559,31 @@ def save_import(preview):
         preview["merged_records"],
         path=RECORDS_FILE.parent / "geocoding.json",
     )
-    imports = load_imports()
     batch_id = preview["batch"].get("ID")
-    imports = [item for item in imports if item.get("ID") != batch_id]
-    imports.append(preview["batch"])
-    write_json_atomic(IMPORTS_FILE, imports)
-    revisions = load_revisions()
-    revisions.extend(preview.get("revisions", []))
-    write_json_atomic(REVISIONS_FILE, revisions)
+
+    def append_import(current):
+        current = [
+            item
+            for item in current
+            if item.get("ID") != batch_id
+        ]
+        current.append(preview["batch"])
+        return current
+
+    update_json_atomic(
+        IMPORTS_FILE,
+        [],
+        append_import,
+        authoritative=True,
+        backup_previous=True,
+    )
+    update_json_atomic(
+        REVISIONS_FILE,
+        [],
+        lambda current: current + preview.get("revisions", []),
+        authoritative=True,
+        backup_previous=True,
+    )
     return preview["batch"]
 
 

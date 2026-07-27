@@ -569,7 +569,7 @@ def mostrar_consulta(sites):
             _show_record_detail(detail)
 
     ids = filtered.get("ID SGS", pd.Series(dtype=str)).fillna("").astype(str)
-    export_signature = hashlib.sha1(
+    export_signature = hashlib.sha256(
         ("\0".join(ids.tolist()) + f"|{can_view_values(usuario_atual())}").encode("utf-8")
     ).hexdigest()
     prepared = st.session_state.get("gestao_via_consulta_exportacao")

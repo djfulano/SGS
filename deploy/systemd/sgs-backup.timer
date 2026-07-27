@@ -1,0 +1,10 @@
+[Unit]
+Description=Agenda o backup diário do SGS
+
+[Timer]
+OnCalendar=*-*-* 02:00:00
+Persistent=true
+RandomizedDelaySec=10m
+
+[Install]
+WantedBy=timers.target

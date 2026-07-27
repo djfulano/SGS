@@ -296,7 +296,7 @@ def mostrar_botao_copiar_texto(texto, rotulo="Copiar", discreto=False):
     if not usuario_pode_copiar_tabelas():
         return
 
-    chave = hashlib.md5(
+    chave = hashlib.sha256(
         texto.encode("utf-8")
     ).hexdigest()
 
@@ -482,7 +482,7 @@ def selecionar_colunas_dataframe(df, key=None):
         else "grid_colunas_"
         f"{origem_funcao}_"
         f"{origem_linha}_"
-        f"{hashlib.md5('|'.join(colunas_disponiveis).encode('utf-8')).hexdigest()}"
+        f"{hashlib.sha256('|'.join(colunas_disponiveis).encode('utf-8')).hexdigest()}"
     )
     chave_widget = chave_colunas
     preferencia_colunas = load_user_preference(
@@ -551,7 +551,7 @@ def selecionar_colunas_dataframe(df, key=None):
 
 def chave_renderizacao_tabela(chave_base, colunas):
 
-    assinatura_colunas = hashlib.md5(
+    assinatura_colunas = hashlib.sha256(
         "|".join(
             str(coluna)
             for coluna in colunas

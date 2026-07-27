@@ -304,7 +304,7 @@ def montar_kml_mapa(
                     valor_texto(registro, "Cliente") or "Cliente",
                     registro,
                     campos["clientes"],
-                    [130, 130, 130, 220],
+                    [255, 255, 255, 255],
                     escala=0.9
                 )
                 for registro in dataframe_registros(df_clientes)
@@ -322,7 +322,7 @@ def montar_kml_mapa(
                     ),
                     registro,
                     campos["links"],
-                    registro.get("Cor") or [20, 150, 70, 160],
+                    registro.get("Cor") or [35, 110, 255, 180],
                     3
                 )
                 for registro in dataframe_registros(df_links_clientes)

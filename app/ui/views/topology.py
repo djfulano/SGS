@@ -392,7 +392,7 @@ def montar_clientes_sites_usados(selecionados, usados):
 
 def chave_site(prefixo, site):
 
-    digest = hashlib.md5(
+    digest = hashlib.sha256(
         site.nome.encode("utf-8")
     ).hexdigest()
 
@@ -654,7 +654,7 @@ def mostrar_sites_receitas(sites, df_sites):
                 st.markdown(f"- {rotulos_sites.get(nome_site, nome_site)}")
 
             with col_remover:
-                chave_remover = hashlib.md5(nome_site.encode()).hexdigest()
+                chave_remover = hashlib.sha256(nome_site.encode()).hexdigest()
 
                 if st.button(
                     "Remover",

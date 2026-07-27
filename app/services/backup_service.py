@@ -1,5 +1,7 @@
 import json
+import os
 import shutil
+import sqlite3
 import tempfile
 from datetime import datetime
 from datetime import timedelta
@@ -14,10 +16,22 @@ from app.config import CACHE_DIR
 from app.config import CONFIG_DIR
 from app.config import CONTRACTS_DIR
 from app.config import IMPORTS_DIR
-from app.storage import read_json
+from app.storage import read_json_authoritative
+from app.storage import file_lock
 from app.storage import write_json_atomic
 from app.version import get_app_version
 
+
+MAX_ZIP_ENTRIES = int(os.getenv("SGS_BACKUP_MAX_ENTRIES", "100000"))
+MAX_ZIP_TOTAL_SIZE = int(
+    os.getenv("SGS_BACKUP_MAX_TOTAL_BYTES", str(20 * 1024 ** 3))
+)
+MAX_ZIP_ENTRY_SIZE = int(
+    os.getenv("SGS_BACKUP_MAX_ENTRY_BYTES", str(5 * 1024 ** 3))
+)
+MAX_ZIP_COMPRESSION_RATIO = float(
+    os.getenv("SGS_BACKUP_MAX_COMPRESSION_RATIO", "1000")
+)
 
 FREQUENCIAS_BACKUP = {
     "Diário": timedelta(days=1),
@@ -96,7 +110,7 @@ def _normalizar_backup_config(config=None):
 
 def load_backup_config(path=None):
     path = path or BACKUP_CONFIG_FILE
-    config = read_json(
+    config = read_json_authoritative(
         path,
         {}
     )
@@ -110,7 +124,8 @@ def save_backup_config(config, path=None):
 
     write_json_atomic(
         path,
-        config_save
+        config_save,
+        backup_previous=True,
     )
 
     return config_save
@@ -126,6 +141,15 @@ def _caminho_relativo(caminho, base):
 
 
 def _deve_ignorar(caminho, destino_backup):
+    caminho = Path(caminho)
+
+    if (
+        caminho.name.endswith(".lock")
+        or caminho.name.endswith(".tmp")
+        or ".tmp." in caminho.name
+    ):
+        return True
+
     try:
         caminho.resolve().relative_to(destino_backup.resolve())
         return True
@@ -146,6 +170,38 @@ def _adicionar_arquivo(zip_file, caminho, base, destino_backup):
             base
         )
     )
+
+    return 1
+
+
+def _adicionar_banco_sqlite(zip_file, caminho):
+    caminho = Path(caminho)
+
+    if not caminho.exists() or not caminho.is_file():
+        return 0
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        snapshot = Path(temp_dir) / "rede.db"
+
+        with file_lock(caminho, timeout=30):
+            origem = sqlite3.connect(
+                f"file:{caminho.resolve()}?mode=ro",
+                uri=True,
+                timeout=30,
+            )
+            destino = sqlite3.connect(snapshot)
+            try:
+                origem.backup(destino)
+                resultado = destino.execute("PRAGMA quick_check").fetchone()
+                if not resultado or str(resultado[0]).lower() != "ok":
+                    raise ValueError(
+                        "A cópia do banco SQLite falhou na verificação de integridade."
+                    )
+            finally:
+                destino.close()
+                origem.close()
+
+        zip_file.write(snapshot, "rede.db")
 
     return 1
 
@@ -420,6 +476,77 @@ def _fonte_por_entrada(nome):
     return None
 
 
+def _validar_conteudo_zip(
+    zip_file,
+    destino_temp=None,
+    validar_caminhos=True,
+):
+    infos = zip_file.infolist()
+
+    if len(infos) > MAX_ZIP_ENTRIES:
+        raise ValueError(
+            f"Backup excede o limite de {MAX_ZIP_ENTRIES} entradas."
+        )
+
+    total_size = 0
+
+    for info in infos:
+        if validar_caminhos and not _entrada_zip_segura(info.filename):
+            raise ValueError(
+                f"Entrada insegura no backup: {info.filename}"
+            )
+
+        if info.flag_bits & 0x1:
+            raise ValueError("Backups ZIP criptografados não são aceitos.")
+
+        if info.is_dir():
+            continue
+
+        file_size = int(info.file_size or 0)
+        compressed_size = int(info.compress_size or 0)
+
+        if file_size > MAX_ZIP_ENTRY_SIZE:
+            raise ValueError(
+                f"Entrada excede o limite permitido: {info.filename}"
+            )
+
+        total_size += file_size
+
+        if total_size > MAX_ZIP_TOTAL_SIZE:
+            raise ValueError(
+                "Backup excede o limite total descompactado permitido."
+            )
+
+        if (
+            file_size >= 1024 * 1024
+            and compressed_size > 0
+            and file_size / compressed_size > MAX_ZIP_COMPRESSION_RATIO
+        ):
+            raise ValueError(
+                f"Taxa de compressão anormal em: {info.filename}"
+            )
+
+    if destino_temp is not None:
+        livre = shutil.disk_usage(Path(destino_temp)).free
+        necessario = int(total_size * 1.10) + 100 * 1024 * 1024
+
+        if livre < necessario:
+            raise ValueError(
+                "Espaço livre insuficiente para extrair e validar o backup."
+            )
+
+    arquivo_crc_invalido = zip_file.testzip()
+    if arquivo_crc_invalido:
+        raise ValueError(
+            f"Falha de integridade CRC no arquivo: {arquivo_crc_invalido}"
+        )
+
+    return {
+        "entradas": len(infos),
+        "tamanho_descompactado": total_size,
+    }
+
+
 def inspecionar_backup(caminho_backup):
     caminho_backup = Path(caminho_backup)
 
@@ -432,6 +559,10 @@ def inspecionar_backup(caminho_backup):
 
     try:
         with ZipFile(caminho_backup) as zip_file:
+            _validar_conteudo_zip(
+                zip_file,
+                validar_caminhos=False,
+            )
             for info in zip_file.infolist():
                 nome = info.filename
 
@@ -494,6 +625,10 @@ def inspecionar_backup(caminho_backup):
 
 def _extrair_backup_para_temp(caminho_backup, destino_temp):
     with ZipFile(caminho_backup) as zip_file:
+        _validar_conteudo_zip(
+            zip_file,
+            destino_temp=destino_temp,
+        )
         for info in zip_file.infolist():
             nome = info.filename
 
@@ -521,6 +656,37 @@ def _extrair_backup_para_temp(caminho_backup, destino_temp):
                     origem,
                     saida
                 )
+
+
+def _validar_fontes_extraidas(extraido, fontes):
+    extraido = Path(extraido)
+
+    if "config" in fontes:
+        for path in (extraido / "config").rglob("*.json"):
+            try:
+                json.loads(path.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, UnicodeDecodeError) as error:
+                raise ValueError(
+                    f"JSON inválido no backup: {path.relative_to(extraido)}"
+                ) from error
+
+    if "database" in fontes:
+        database = extraido / "rede.db"
+        if not database.exists():
+            raise ValueError("Banco SQLite não encontrado no backup extraído.")
+        try:
+            connection = sqlite3.connect(
+                f"file:{database.resolve()}?mode=ro",
+                uri=True,
+            )
+            try:
+                result = connection.execute("PRAGMA quick_check").fetchone()
+            finally:
+                connection.close()
+        except sqlite3.DatabaseError as error:
+            raise ValueError("Banco SQLite inválido no backup.") from error
+        if not result or str(result[0]).lower() != "ok":
+            raise ValueError("Banco SQLite do backup falhou no quick_check.")
 
 
 def _copiar_fonte_extraida(origem, destino, tipo):
@@ -738,6 +904,10 @@ def restaurar_backup(
             caminho_backup,
             extraido
         )
+        _validar_fontes_extraidas(
+            extraido,
+            fontes_para_restaurar,
+        )
 
         try:
             for chave in fontes_para_restaurar:
@@ -848,10 +1018,11 @@ def criar_backup(
     agora = datetime.now()
     nome_arquivo = f"sgs_backup_{agora.strftime('%Y%m%d_%H%M%S')}.zip"
     caminho_backup = destino_backup / nome_arquivo
+    caminho_temporario = destino_backup / f".{nome_arquivo}.tmp"
     arquivos = 0
 
     with ZipFile(
-        caminho_backup,
+        caminho_temporario,
         "w",
         ZIP_DEFLATED,
         strict_timestamps=False
@@ -862,7 +1033,12 @@ def criar_backup(
             config,
             base
         ):
-            if tipo == "diretorio":
+            if chave == "database":
+                adicionados = _adicionar_banco_sqlite(
+                    zip_file,
+                    caminho,
+                )
+            elif tipo == "diretorio":
                 adicionados = _adicionar_diretorio(
                     zip_file,
                     caminho,
@@ -904,6 +1080,10 @@ def criar_backup(
                 indent=2
             ) + "\n"
         )
+
+    with caminho_temporario.open("rb") as arquivo:
+        os.fsync(arquivo.fileno())
+    os.replace(caminho_temporario, caminho_backup)
 
     removidos = []
 

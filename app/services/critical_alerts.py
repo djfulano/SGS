@@ -13,7 +13,7 @@ from app.services.finance_service import normalizar_codigo_microsiga
 from app.services.finance_service import preparar_acordos_exibicao
 from app.services.finance_service import preparar_pagamentos_exibicao
 from app.services.site_registry_service import load_site_registry
-from app.storage import read_json
+from app.storage import read_json_authoritative
 from app.storage import write_json_atomic
 
 
@@ -53,7 +53,7 @@ AGREEMENT_ALERT_COLUMNS = [
 
 
 def load_alert_config(path=None):
-    config = read_json(path or ALERT_CONFIG_FILE, {})
+    config = read_json_authoritative(path or ALERT_CONFIG_FILE, {})
     try:
         dias = int(config.get("alert_days", DEFAULT_ALERT_DAYS))
     except (TypeError, ValueError):
@@ -67,7 +67,11 @@ def save_alert_config(config, path=None):
     except (TypeError, ValueError):
         dias = DEFAULT_ALERT_DAYS
     resultado = {"alert_days": max(1, min(90, dias))}
-    write_json_atomic(path or ALERT_CONFIG_FILE, resultado)
+    write_json_atomic(
+        path or ALERT_CONFIG_FILE,
+        resultado,
+        backup_previous=True,
+    )
     return resultado
 
 

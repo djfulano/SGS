@@ -1,5 +1,46 @@
 # Histórico de versões
 
+## 1.3.28
+
+- Clientes ganha a subaba Resumo de Clientes, com seleção pesquisável de múltiplas assinaturas.
+- O resumo consolida quantidade de clientes, receita e sites únicos considerando vínculos principais e adicionais.
+- A tabela apresenta assinatura, nome, produto, receita, sites de atendimento e gerente de contas.
+- A nova permissão `clientes_resumo_assinaturas` controla o acesso à subaba.
+
+## 1.3.27
+
+- O mapa passa a exibir enlaces POP x POP em verde e POP x BH, POP x REP e BH x REP em amarelo.
+- Todos os vínculos entre sites e clientes passam a ser azuis, e os marcadores de clientes passam a ser brancos.
+- Sites, clientes e enlaces podem ser selecionados por clique para manter os detalhes em um painel de texto persistente e selecionável.
+- As novas cores também são aplicadas aos arquivos KML/KMZ e aos pacotes de mapa já compilados.
+
+## 1.3.26
+
+- Sistema ganha diagnóstico administrativo de JSONs, SQLite, arquivos obrigatórios, disco, backups, permissões e dependências.
+- Logs JSONL passam a usar bloqueio, `fsync`, rotação em 10 MB e cinco arquivos de retenção, com falhas reportadas no processo.
+- Foram adicionados comandos independentes para backup agendado, backup de documentos, validação de ZIP e diagnóstico.
+- Exemplos de unidades e timers `systemd` executam o SGS como usuário dedicado, reiniciam a aplicação e agendam backup e saúde.
+- A documentação operacional orienta restringir a porta 8501 à rede corporativa/VPN e registra o risco residual do HTTP direto.
+
+## 1.3.25
+
+- Gravações JSON passam a usar bloqueio Linux com timeout, atualização transacional e cópia `.bak` para dados autoritativos.
+- A planilha Sites passa a ser gravada em arquivo temporário validado antes da substituição, sob bloqueio e com rollback preservado.
+- Operações de documentos mantêm arquivo físico e índice sincronizados mesmo em falhas de gravação.
+- SQLite passa a usar `foreign_keys`, WAL, espera de 30 segundos e bloqueio nas sincronizações.
+- Backups usam a API de cópia do SQLite e a restauração limita entradas, tamanho, taxa de compressão, CRC e espaço livre.
+- Arquivos JSON autoritativos corrompidos passam a gerar erro explícito em vez de serem tratados como bases vazias.
+
+## 1.3.24
+
+- Senhas novas passam a exigir de 12 a 128 caracteres e não podem ser iguais ao usuário.
+- PBKDF2-SHA256 passa de 200 mil para 600 mil iterações, com atualização automática de hashes antigos após login.
+- Sessões passam a expirar em 12 horas ou após 60 minutos de inatividade e são revogadas após alterações de senha, usuário ou perfil.
+- Cookies de autenticação passam a usar `SameSite=Strict` e `Secure` quando o SGS estiver sob HTTPS.
+- Primeira execução, restauração inicial e criação do primeiro Master passam a exigir `SGS_BOOTSTRAP_TOKEN`.
+- Os pins vulneráveis de GitPython e dependências transitivas foram removidos; o Streamlit instala automaticamente uma versão corrigida.
+- GitHub passa a executar auditoria de dependências, Bandit, testes e atualizações semanais do Dependabot.
+
 ## 1.3.23
 
 - A pré-visualização do relatório financeiro usa uma chave vinculada ao conteúdo para refletir imediatamente a seleção atual.

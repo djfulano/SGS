@@ -7,6 +7,7 @@ try:
     from app.ui.views.map import camadas_marcadores_geometricos
     from app.ui.views.map import centro_zoom_mapa
     from app.ui.views.map import deve_atualizar_cache_mapa_geral
+    from app.ui.views.map import extrair_objeto_selecionado_mapa
     from app.ui.views.map import marcador_endereco_temporario
     from app.ui.views.map import ocultar_valores_clientes_mapa
     from app.ui.views.map import pontos_centro_mapa
@@ -14,12 +15,14 @@ try:
     from app.ui.views.map import preparar_marcadores_clientes
     from app.ui.views.map import preparar_marcadores_sites
     from app.ui.views.map import sanitizar_tooltip_receita
+    from app.ui.views.map import texto_item_selecionado_mapa
 except ModuleNotFoundError:
     pd = None
     aplicar_busca_mapa = None
     camadas_marcadores_geometricos = None
     centro_zoom_mapa = None
     deve_atualizar_cache_mapa_geral = None
+    extrair_objeto_selecionado_mapa = None
     marcador_endereco_temporario = None
     ocultar_valores_clientes_mapa = None
     pontos_centro_mapa = None
@@ -27,10 +30,34 @@ except ModuleNotFoundError:
     preparar_marcadores_clientes = None
     preparar_marcadores_sites = None
     sanitizar_tooltip_receita = None
+    texto_item_selecionado_mapa = None
 
 
 @unittest.skipIf(pd is None, "pandas nao instalado")
 class MapSearchTest(unittest.TestCase):
+
+    def test_selecao_do_mapa_mantem_texto_seguro(self):
+        evento = {
+            "selection": {
+                "objects": {
+                    "mapa_sites": [
+                        {
+                            "Tooltip": (
+                                "<b>POP &amp; Centro</b><br/>"
+                                "Tipo: POP"
+                            )
+                        }
+                    ]
+                }
+            }
+        }
+
+        selecionado = extrair_objeto_selecionado_mapa(evento)
+
+        self.assertEqual(
+            texto_item_selecionado_mapa(selecionado),
+            "POP & Centro\nTipo: POP",
+        )
 
     def setUp(self):
         self.df_sites = pd.DataFrame([
@@ -528,11 +555,11 @@ class MapSearchTest(unittest.TestCase):
         self.assertEqual(marcadores_clientes.loc[0, "RaioMaxPixels"], 17)
         self.assertEqual(
             marcadores_clientes.loc[0, "Cor Marcador"],
-            [130, 130, 130, 191]
+            [255, 255, 255, 255]
         )
         self.assertEqual(
             marcadores_clientes.loc[0, "Cor Marcador"][3],
-            191
+            255
         )
 
     def test_marcador_busca_e_destacado(self):

@@ -1,4 +1,6 @@
+import html
 import re
+from collections.abc import Mapping
 from datetime import datetime
 
 import pandas as pd
@@ -389,12 +391,12 @@ def preparar_marcadores_clientes(df_clientes, zoom_mapa=13):
     df["Tamanho Alvo"] = 11
     df["Offset Marcador"] = [[0, 0] for _indice in range(len(df))]
     df["Offset Alvo"] = [[0, 0] for _indice in range(len(df))]
-    df["Cor Marcador"] = [[130, 130, 130, 220] for _indice in range(len(df))]
-    df["Cor Alvo"] = [[255, 255, 255, 230] for _indice in range(len(df))]
+    df["Cor Marcador"] = [[255, 255, 255, 255] for _indice in range(len(df))]
+    df["Cor Alvo"] = [[35, 110, 255, 245] for _indice in range(len(df))]
     df["Cor Marcador"] = df["Cor Marcador"].apply(
-        lambda cor: cor_com_alpha(cor, 191, [130, 130, 130, 191])
+        lambda cor: cor_com_alpha(cor, 255, [255, 255, 255, 255])
     )
-    df["Cor Borda"] = [[17, 24, 39, 70] for _indice in range(len(df))]
+    df["Cor Borda"] = [[35, 110, 255, 210] for _indice in range(len(df))]
     df["Raio Marcador"] = 12.5
     df["Raio Min Pixels"] = 7
     df["Raio Max Pixels"] = 17
@@ -444,7 +446,10 @@ def preparar_marcadores_busca(df_marcador, zoom_mapa=13):
     return df
 
 
-def camadas_marcadores_geometricos(df_marcadores):
+def camadas_marcadores_geometricos(
+    df_marcadores,
+    id_camada="marcadores",
+):
     if df_marcadores.empty:
         return []
 
@@ -454,6 +459,7 @@ def camadas_marcadores_geometricos(df_marcadores):
     return [
         pdk.Layer(
             "ScatterplotLayer",
+            id=id_camada,
             data=df_marcadores,
             get_position="[Longitude, Latitude]",
             get_fill_color="CorMarcador",
@@ -467,6 +473,46 @@ def camadas_marcadores_geometricos(df_marcadores):
             pickable=True
         )
     ]
+
+
+def extrair_objeto_selecionado_mapa(evento):
+    if evento is None:
+        return None
+
+    selecao = (
+        evento.get("selection")
+        if isinstance(evento, Mapping)
+        else getattr(evento, "selection", None)
+    )
+    if selecao is None:
+        return None
+
+    objetos = (
+        selecao.get("objects")
+        if isinstance(selecao, Mapping)
+        else getattr(selecao, "objects", None)
+    )
+    if not isinstance(objetos, Mapping):
+        return None
+
+    for itens in objetos.values():
+        if isinstance(itens, list) and itens and isinstance(itens[0], Mapping):
+            return dict(itens[0])
+
+    return None
+
+
+def texto_item_selecionado_mapa(registro):
+    if not isinstance(registro, dict):
+        return ""
+
+    tooltip = str(registro.get("Tooltip") or "").strip()
+    if not tooltip:
+        return ""
+
+    texto = re.sub(r"<br\s*/?>", "\n", tooltip, flags=re.IGNORECASE)
+    texto = re.sub(r"<[^>]+>", "", texto)
+    return html.unescape(texto).strip()
 
 
 def buscar_endereco_temporario(termo):
@@ -868,6 +914,7 @@ def renderizar_pacote_mapa(
 
         camadas.append(pdk.Layer(
             "LineLayer",
+            id=f"{prefixo_key}_links_clientes",
             data=df_links_clientes_mapa,
             get_source_position="Origem",
             get_target_position="Destino",
@@ -880,6 +927,7 @@ def renderizar_pacote_mapa(
 
         camadas.append(pdk.Layer(
             "LineLayer",
+            id=f"{prefixo_key}_links_sites",
             data=df_links_sites_mapa,
             get_source_position="Origem",
             get_target_position="Destino",
@@ -892,6 +940,7 @@ def renderizar_pacote_mapa(
 
         camadas.append(pdk.Layer(
             "TextLayer",
+            id=f"{prefixo_key}_rotulos_distancia",
             data=df_rotulos_distancia,
             get_position="Ponto Rotulo",
             get_text="Rotulo Distancia",
@@ -909,7 +958,10 @@ def renderizar_pacote_mapa(
         )
 
         camadas.extend(
-            camadas_marcadores_geometricos(df_marcadores_clientes)
+            camadas_marcadores_geometricos(
+                df_marcadores_clientes,
+                f"{prefixo_key}_clientes",
+            )
         )
 
     if not df_sites_mapa.empty:
@@ -919,7 +971,10 @@ def renderizar_pacote_mapa(
         )
 
         camadas.extend(
-            camadas_marcadores_geometricos(df_marcadores_sites)
+            camadas_marcadores_geometricos(
+                df_marcadores_sites,
+                f"{prefixo_key}_sites",
+            )
         )
 
     if not df_marcador_busca.empty:
@@ -929,7 +984,10 @@ def renderizar_pacote_mapa(
         )
 
         camadas.extend(
-            camadas_marcadores_geometricos(df_marcador_busca_visual)
+            camadas_marcadores_geometricos(
+                df_marcador_busca_visual,
+                f"{prefixo_key}_busca",
+            )
         )
 
     estilo_ruas = "https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json"
@@ -972,7 +1030,8 @@ def renderizar_pacote_mapa(
         else None
     )
 
-    st.pydeck_chart(
+    painel_item_selecionado = st.empty()
+    evento_mapa = st.pydeck_chart(
         pdk.Deck(
             map_style=estilos_mapa[visualizacao],
             map_provider="mapbox" if visualizacao == "Satélite" else "carto",
@@ -982,8 +1041,24 @@ def renderizar_pacote_mapa(
             tooltip={
                 "html": "{Tooltip}"
             }
-        )
+        ),
+        key=f"{prefixo_key}_deck",
+        on_select="rerun",
+        selection_mode="single-object",
     )
+    item_selecionado = extrair_objeto_selecionado_mapa(evento_mapa)
+    chave_item_selecionado = f"{prefixo_key}_item_selecionado"
+
+    if item_selecionado:
+        st.session_state[chave_item_selecionado] = item_selecionado
+
+    texto_selecionado = texto_item_selecionado_mapa(
+        st.session_state.get(chave_item_selecionado)
+    )
+    if texto_selecionado:
+        with painel_item_selecionado.container(border=True):
+            st.caption("Item selecionado")
+            st.text(texto_selecionado)
 
     if not mostrar_tabelas:
         return

@@ -12,6 +12,8 @@ from app.services.clients import filtrar_clientes
 from app.services.clients import levantar_custos_sites_cliente
 from app.services.clients import montar_base_consulta_clientes
 from app.services.clients import montar_base_clientes
+from app.services.clients import montar_resumo_assinaturas_clientes
+from app.services.clients import normalizar_selecao_assinaturas
 from app.services.clients import resumo_clientes
 from app.ui.navigation import mostrar_subnavegacao
 
@@ -370,6 +372,121 @@ def mostrar_consulta_clientes(sites, equipamentos):
     mostrar_resumo_cliente(cliente)
 
 
+def mostrar_resumo_assinaturas_clientes(sites, equipamentos):
+    st.header("Resumo de Clientes")
+    df_clientes = montar_base_consulta_clientes(sites, equipamentos)
+
+    if df_clientes.empty:
+        st.warning("Nenhum cliente ativo foi encontrado na base atual.")
+        return
+
+    opcoes, rotulos, _registros = preparar_busca_clientes(df_clientes)
+    assinaturas_validas = [
+        assinatura
+        for assinatura in opcoes
+        if assinatura
+    ]
+    chave_selecionados = "clientes_resumo_assinaturas_selecionados"
+    selecionados = normalizar_selecao_assinaturas(
+        st.session_state.get(chave_selecionados, []),
+        assinaturas_validas,
+    )
+    st.session_state[chave_selecionados] = selecionados
+
+    versao_seletor = int(
+        st.session_state.get("clientes_resumo_assinaturas_versao", 0)
+    )
+    opcoes_disponiveis = [""] + [
+        assinatura
+        for assinatura in assinaturas_validas
+        if assinatura not in selecionados
+    ]
+    col_busca, col_limpar = st.columns([5, 1])
+
+    with col_busca:
+        assinatura_adicionar = st.selectbox(
+            "Buscar cliente",
+            opcoes_disponiveis,
+            index=None,
+            placeholder="Digite nome, assinatura, produto, gerente ou site",
+            key=f"clientes_resumo_assinaturas_busca_{versao_seletor}",
+            format_func=lambda valor: (
+                rotulos.get(str(valor), "")
+                if valor
+                else ""
+            ),
+        )
+
+    with col_limpar:
+        st.write("")
+        limpar = st.button(
+            "Limpar seleção",
+            key="clientes_resumo_assinaturas_limpar",
+            disabled=not selecionados,
+        )
+
+    if limpar:
+        st.session_state[chave_selecionados] = []
+        st.session_state["clientes_resumo_assinaturas_versao"] = (
+            versao_seletor + 1
+        )
+        st.rerun()
+
+    if assinatura_adicionar:
+        st.session_state[chave_selecionados] = selecionados + [
+            str(assinatura_adicionar)
+        ]
+        st.session_state["clientes_resumo_assinaturas_versao"] = (
+            versao_seletor + 1
+        )
+        st.rerun()
+
+    if not selecionados:
+        st.info("Pesquise e adicione clientes para montar o resumo.")
+        return
+
+    st.caption(f"Clientes selecionados: {len(selecionados)}")
+    for indice, assinatura in enumerate(selecionados):
+        col_rotulo, col_remover = st.columns([8, 1])
+        col_rotulo.write(rotulos.get(assinatura, assinatura))
+        if col_remover.button(
+            "Remover",
+            key=f"clientes_resumo_remover_{indice}_{assinatura}",
+        ):
+            st.session_state[chave_selecionados] = [
+                item
+                for item in selecionados
+                if item != assinatura
+            ]
+            st.rerun()
+
+    resultado = montar_resumo_assinaturas_clientes(
+        df_clientes,
+        selecionados,
+    )
+    col_clientes, col_receita, col_sites = st.columns(3)
+    col_clientes.metric("Clientes", resultado["clientes"])
+    col_receita.metric(
+        "Receita",
+        (
+            _formatar_moeda(resultado["receita"])
+            if can_view_values(usuario_atual())
+            else "Restrito"
+        ),
+    )
+    col_sites.metric("Sites", resultado["sites"])
+
+    _mostrar_grid(
+        resultado["tabela"],
+        height=min(
+            520,
+            max(140, 75 + len(resultado["tabela"]) * 35),
+        ),
+        key="clientes_resumo_assinaturas_tabela",
+        mostrar_abrir_site=False,
+    )
+
+
 def mostrar_custos_sites_cliente(sites):
     st.header("Custos por Cliente")
     termo = st.text_input(
@@ -523,6 +640,11 @@ def mostrar_clientes(sites, equipamentos):
             "clientes_relatorios",
             "Relatórios",
             lambda: mostrar_relatorios_clientes(sites, equipamentos)
+        ),
+        (
+            "clientes_resumo_assinaturas",
+            "Resumo de Clientes",
+            lambda: mostrar_resumo_assinaturas_clientes(sites, equipamentos)
         ),
         (
             "clientes_custos_sites",

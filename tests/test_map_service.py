@@ -9,6 +9,7 @@ try:
     from app.services.map_settings import load_map_config
     from app.services.map_service import chave_cache_mapa
     from app.services.map_service import compilar_dados_mapa
+    from app.services.map_service import cor_enlace_entre_sites
     from app.services.map_service import cor_linha_cliente_por_site
     from app.services.map_service import cor_ponto_site
     from app.services.map_service import cor_setorial
@@ -24,6 +25,7 @@ except ModuleNotFoundError:
     load_map_config = None
     chave_cache_mapa = None
     compilar_dados_mapa = None
+    cor_enlace_entre_sites = None
     cor_linha_cliente_por_site = None
     cor_ponto_site = None
     cor_setorial = None
@@ -92,6 +94,25 @@ class ClienteMapaFake:
 @unittest.skipIf(chave_cache_mapa is None, "pandas nao instalado")
 class MapServiceTest(unittest.TestCase):
 
+    def test_cores_padronizadas_dos_enlaces(self):
+        self.assertEqual(
+            cor_enlace_entre_sites("POP", "POP"),
+            [20, 150, 70, 220],
+        )
+        for origem, destino in (
+            ("POP", "BH"),
+            ("POP", "REP"),
+            ("BH", "REP"),
+        ):
+            self.assertEqual(
+                cor_enlace_entre_sites(origem, destino),
+                [245, 210, 45, 220],
+            )
+        self.assertEqual(
+            cor_linha_cliente_por_site([255, 0, 0, 255]),
+            [35, 110, 255, 180],
+        )
+
     def test_mapa_gera_um_marcador_e_multiplas_linhas_por_assinatura(self):
         principal = Site("BEL_POP_1_IP", "POP")
         adicional = Site("FUV_POP_2_IP", "POP")
@@ -154,10 +175,10 @@ class MapServiceTest(unittest.TestCase):
             [245, 210, 45, 220]
         )
 
-    def test_cor_linha_cliente_usa_cor_do_site_com_alpha_de_linha(self):
+    def test_cor_linha_cliente_e_sempre_azul(self):
         self.assertEqual(
             cor_linha_cliente_por_site([245, 130, 35, 220]),
-            [245, 130, 35, 125]
+            [35, 110, 255, 180]
         )
 
     def test_cor_ponto_site_prioriza_tipo_no_nome_do_site(self):
@@ -545,7 +566,7 @@ class MapServiceTest(unittest.TestCase):
         ]
 
         self.assertEqual(len(enlaces_snmpc), 1)
-        self.assertEqual(enlaces_snmpc[0]["Cor"], [35, 110, 255, 180])
+        self.assertEqual(enlaces_snmpc[0]["Cor"], [20, 150, 70, 220])
         self.assertIsNone(san.pai)
 
     def test_compilar_mapa_enlace_snmpc_sem_coordenada_vai_para_nao_plotados(self):

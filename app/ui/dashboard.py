@@ -58,6 +58,7 @@ from app.ui.components.site_selector import rotulo_busca_site
 from app.ui.navigation import mostrar_subnavegacao
 from app.ui.navigation import preparar_navegacao_mapa_endereco
 from app.ui.session import preparar_sessao_usuario
+from app.ui.session import exigir_token_bootstrap
 from app.ui.session import usuario_logado
 from app.ui.theme import aplicar_tema_visual
 from app.ui.views.analysis import configurar_analises
@@ -181,6 +182,9 @@ def mostrar_primeira_execucao():
         "Os arquivos obrigatórios do SGS ainda não foram encontrados. "
         "Restaure um backup completo ou faça a importação inicial para liberar o sistema."
     )
+
+    if not exigir_token_bootstrap():
+        return
 
     status = pd.DataFrame(
         status_inicializacao_dados()

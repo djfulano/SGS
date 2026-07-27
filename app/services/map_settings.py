@@ -1,7 +1,7 @@
 import os
 
 from app.config import MAP_CONFIG_FILE
-from app.storage import read_json
+from app.storage import read_json_authoritative
 from app.storage import write_json_atomic
 
 
@@ -92,7 +92,7 @@ def normalizar_provedor_geocoding(valor):
 
 def load_map_config(path=None):
 
-    dados = read_json(
+    dados = read_json_authoritative(
         path or MAP_CONFIG_FILE,
         {}
     )
@@ -235,7 +235,8 @@ def save_map_config(config, path=None):
 
     write_json_atomic(
         path or MAP_CONFIG_FILE,
-        config_nova
+        config_nova,
+        backup_previous=True,
     )
 
     return config_nova

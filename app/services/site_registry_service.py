@@ -2,8 +2,10 @@ from datetime import datetime
 from io import BytesIO
 from copy import copy
 from pathlib import Path
+import os
 import re
 import shutil
+import tempfile
 
 import pandas as pd
 from openpyxl import Workbook
@@ -11,6 +13,7 @@ from openpyxl import load_workbook
 
 from app.config import ARCHIVE_DIR
 from app.importers.topos_importer import caminho_sites_excel
+from app.storage import file_lock
 
 
 SITE_REGISTRY_COLUMNS = [
@@ -678,7 +681,12 @@ def prepare_contacts_for_save(df):
     )
 
 
-def save_site_registry(df, path=None, create_backup=True, df_contacts=None):
+def _save_site_registry_unlocked(
+    df,
+    path,
+    create_backup=True,
+    df_contacts=None,
+):
     path = Path(path) if path else caminho_sites_excel()
     path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -710,20 +718,67 @@ def save_site_registry(df, path=None, create_backup=True, df_contacts=None):
         CONTACT_COLUMN_ALIASES
     )
 
-    workbook.save(path)
+    descriptor, temp_name = tempfile.mkstemp(
+        prefix=f".{path.name}.",
+        suffix=".tmp.xlsx",
+        dir=path.parent,
+    )
+    os.close(descriptor)
+
+    try:
+        workbook.save(temp_name)
+        workbook.close()
+
+        validation = load_workbook(
+            temp_name,
+            read_only=True,
+            data_only=False,
+        )
+        validation.close()
+
+        with open(temp_name, "rb") as temp_file:
+            os.fsync(temp_file.fileno())
+
+        os.replace(temp_name, path)
+        os.chmod(path, 0o640)
+        directory_fd = os.open(str(path.parent), os.O_RDONLY)
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
+    except Exception:
+        try:
+            os.unlink(temp_name)
+        except FileNotFoundError:
+            pass
+        raise
 
     return backup
 
 
-def save_site_contacts(df_contacts, path=None, create_backup=True):
-    df_sites = load_site_registry(path)
+def save_site_registry(df, path=None, create_backup=True, df_contacts=None):
+    path = Path(path) if path else caminho_sites_excel()
 
-    return save_site_registry(
-        df_sites,
-        path=path,
-        create_backup=create_backup,
-        df_contacts=df_contacts
-    )
+    with file_lock(path):
+        return _save_site_registry_unlocked(
+            df,
+            path,
+            create_backup=create_backup,
+            df_contacts=df_contacts,
+        )
+
+
+def save_site_contacts(df_contacts, path=None, create_backup=True):
+    path = Path(path) if path else caminho_sites_excel()
+
+    with file_lock(path):
+        df_sites = load_site_registry(path)
+        return _save_site_registry_unlocked(
+            df_sites,
+            path,
+            create_backup=create_backup,
+            df_contacts=df_contacts,
+        )
 
 
 def duplicated_site_codes(df):
@@ -820,46 +875,49 @@ def upsert_site(record, original_code=None):
     # Colunas novas podem ser inferidas pelo pandas como string estrita quando
     # ainda estão vazias. O formulário, porém, entrega campos numéricos como
     # int/float antes da normalização feita em save_site_registry.
-    df = load_site_registry().astype(object)
-    record = dict(record or {})
-    record["DIA VENCIMENTO"] = normalize_site_due_day(
-        record.get("DIA VENCIMENTO")
-    )
-    code = normalize_code(record.get(SITE_CODE_COLUMN))
-    original_code = normalize_code(original_code)
+    path = caminho_sites_excel()
 
-    if not code:
-        raise ValueError("Informe o codigo do site.")
+    with file_lock(path):
+        df = load_site_registry(path).astype(object)
+        record = dict(record or {})
+        record["DIA VENCIMENTO"] = normalize_site_due_day(
+            record.get("DIA VENCIMENTO")
+        )
+        code = normalize_code(record.get(SITE_CODE_COLUMN))
+        original_code = normalize_code(original_code)
 
-    validate_unique_site_codes(
-        df,
-        record,
-        original_code=original_code
-    )
+        if not code:
+            raise ValueError("Informe o codigo do site.")
 
-    codes = df[SITE_CODE_COLUMN].apply(normalize_code)
-
-    if original_code and original_code in set(codes):
-        index = codes[codes == original_code].index[0]
-
-        for column in SITE_REGISTRY_COLUMNS:
-            df.at[index, column] = record.get(column, "")
-
-    else:
-        df = pd.concat(
-            [
-                df,
-                pd.DataFrame([
-                    {
-                        column: record.get(column, "")
-                        for column in SITE_REGISTRY_COLUMNS
-                    }
-                ])
-            ],
-            ignore_index=True
+        validate_unique_site_codes(
+            df,
+            record,
+            original_code=original_code
         )
 
-    return save_site_registry(df)
+        codes = df[SITE_CODE_COLUMN].apply(normalize_code)
+
+        if original_code and original_code in set(codes):
+            index = codes[codes == original_code].index[0]
+
+            for column in SITE_REGISTRY_COLUMNS:
+                df.at[index, column] = record.get(column, "")
+
+        else:
+            df = pd.concat(
+                [
+                    df,
+                    pd.DataFrame([
+                        {
+                            column: record.get(column, "")
+                            for column in SITE_REGISTRY_COLUMNS
+                        }
+                    ])
+                ],
+                ignore_index=True
+            )
+
+        return _save_site_registry_unlocked(df, path)
 
 
 def export_site_registry_excel(df=None):

@@ -58,7 +58,7 @@ class SiteManagementTest(unittest.TestCase):
             "app.services.site_registry_service.load_site_registry",
             return_value=cadastro,
         ), patch(
-            "app.services.site_registry_service.save_site_registry",
+            "app.services.site_registry_service._save_site_registry_unlocked",
             return_value=None,
         ) as salvar:
             upsert_site(
@@ -82,7 +82,7 @@ class SiteManagementTest(unittest.TestCase):
             "app.services.site_registry_service.load_site_registry",
             return_value=cadastro,
         ), patch(
-            "app.services.site_registry_service.save_site_registry",
+            "app.services.site_registry_service._save_site_registry_unlocked",
             return_value=None,
         ) as salvar:
             upsert_site(

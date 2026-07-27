@@ -13,6 +13,10 @@ from app.auth import UsersFileError
 from app.auth import all_permissions
 from app.auth import can_manage_users
 from app.auth import create_user
+from app.auth import revoke_user_sessions
+from app.auth import update_profiles_atomic
+from app.auth import update_users_atomic
+from app.auth import validate_password
 from app.auth import effective_permissions
 from app.auth import has_permission
 from app.auth import load_profiles
@@ -41,6 +45,7 @@ from app.services.backup_service import read_backup_file
 from app.services.backup_service import restaurar_backup
 from app.services.backup_service import save_backup_config
 from app.services.database_service import sincronizar_banco
+from app.services.system_diagnostics import executar_diagnostico
 from app.services.contract_service import CONTRACTS_DIR
 from app.services.contract_service import index_contract_folders
 from app.services.contract_service import migrar_pastas_documentos_para_codigo_aquiles
@@ -329,6 +334,13 @@ def mostrar_usuarios(
             st.error("Informe a senha do novo usuário.")
             return
 
+        if password:
+            valid, message = validate_password(password, username)
+
+            if not valid:
+                st.error(message)
+                return
+
         if usuario_edicao != "Novo usuário" and not password:
             usuario_atualizado = dict(
                 users[username]
@@ -361,7 +373,16 @@ def mostrar_usuarios(
             )
             senha_alterada_admin = usuario_edicao != "Novo usuário"
 
-        save_users(users)
+        user_to_save = users[username]
+        update_users_atomic(
+            lambda current: {
+                **current,
+                username: user_to_save,
+            }
+        )
+
+        if usuario_edicao != "Novo usuário":
+            revoke_user_sessions(username)
         registrar_log_usuario(
             evento_usuario,
             usuario=username,
@@ -402,12 +423,14 @@ def mostrar_usuarios(
         )
 
         if st.button("Remover usuário"):
-            users.pop(
-                usuario_remover,
-                None
+            update_users_atomic(
+                lambda current: {
+                    username: user_data
+                    for username, user_data in current.items()
+                    if username != usuario_remover
+                }
             )
-
-            save_users(users)
+            revoke_user_sessions(usuario_remover)
             registrar_log_usuario(
                 "usuario_removido",
                 usuario=usuario_remover,
@@ -661,12 +684,26 @@ def mostrar_perfis(
         if nome == "Master":
             permissoes = all_permissions()
 
-        profiles[nome] = {
+        profile_to_save = {
             "name": nome,
             "permissions": sorted(set(permissoes)),
             "system": nome == "Master" or bool(dados_edicao.get("system"))
         }
-        save_profiles(profiles)
+        profiles[nome] = profile_to_save
+        update_profiles_atomic(
+            lambda current: {
+                **current,
+                nome: profile_to_save,
+            }
+        )
+        usuarios_afetados = [
+            username
+            for username, user_data in users.items()
+            if user_data.get("profile") == nome
+        ]
+
+        for username in usuarios_afetados:
+            revoke_user_sessions(username)
         registrar_log_usuario(
             "perfil_acesso_salvo",
             usuario=nome,
@@ -713,11 +750,13 @@ def mostrar_perfis(
         disabled=bool(em_uso),
         key="perfil_acesso_remover_botao"
     ):
-        profiles.pop(
-            perfil_remover,
-            None
+        update_profiles_atomic(
+            lambda current: {
+                name: profile
+                for name, profile in current.items()
+                if name != perfil_remover
+            }
         )
-        save_profiles(profiles)
         registrar_log_usuario(
             "perfil_acesso_removido",
             usuario=perfil_remover,
@@ -1180,6 +1219,30 @@ def mostrar_configuracoes(
             "Seu perfil não possui permissão para alterar configurações."
         )
         return
+
+    st.subheader("Diagnóstico do ambiente")
+    st.caption(
+        "Verifica dados, banco, backups, espaço, permissões e dependências sem alterar o sistema."
+    )
+    if st.button(
+        "Executar diagnóstico",
+        key="executar_diagnostico_sistema",
+    ):
+        with st.spinner("Verificando o ambiente..."):
+            st.session_state["diagnostico_sistema"] = executar_diagnostico()
+
+    diagnostico = st.session_state.get("diagnostico_sistema")
+    if diagnostico:
+        if diagnostico.get("saudavel"):
+            st.success("Diagnóstico concluído sem erros críticos.")
+        else:
+            st.error("O diagnóstico encontrou erros que exigem atenção.")
+        st.dataframe(
+            pd.DataFrame(diagnostico.get("itens", [])),
+            hide_index=True,
+            use_container_width=True,
+            height=360,
+        )
 
     config_mapa = load_map_config()
 

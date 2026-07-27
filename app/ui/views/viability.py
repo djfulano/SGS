@@ -3,6 +3,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from app.auth import has_permission
+from app.logs import registrar_log_sistema
 from app.services.client_viability import dados_cliente_viabilidade
 from app.services.client_viability import salvar_dados_cliente_viabilidade
 from app.services.elevation_service import carregar_cache_elevacao
@@ -106,8 +107,15 @@ def ponto_cliente(site, cliente):
                 if ponto:
                     latitude = ponto["lat"]
                     longitude = ponto["lon"]
-            except Exception:
-                pass
+            except Exception as erro:
+                registrar_log_sistema(
+                    "geocodificacao_cliente_viabilidade",
+                    status="erro",
+                    detalhes={
+                        "assinatura": assinatura,
+                        "erro": str(erro),
+                    },
+                )
 
     return {
         "Tipo": "Cliente",

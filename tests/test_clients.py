@@ -12,6 +12,8 @@ from app.services.clients import filtrar_clientes_consulta
 from app.services.clients import levantar_custos_sites_cliente
 from app.services.clients import montar_base_consulta_clientes
 from app.services.clients import montar_base_clientes
+from app.services.clients import montar_resumo_assinaturas_clientes
+from app.services.clients import normalizar_selecao_assinaturas
 from app.ui.views.clients import preparar_busca_clientes
 from app.ui.views.clients import href_navegacao_resumo
 from app.ui.views.clients import rotulo_cliente
@@ -19,6 +21,84 @@ from app.ui.views.clients import valor_resumo_cliente
 
 
 class ClientsServiceTest(unittest.TestCase):
+
+    def test_resumo_assinaturas_consolida_receita_e_sites_de_atendimento(self):
+        df = pd.DataFrame([
+            {
+                "Cliente": "Cliente A",
+                "Assinatura": "100",
+                "Produto": "Produto A",
+                "Receita": 150,
+                "Site": "POP_A",
+                "Gerente de contas": "Maria",
+                "Sites de atendimento": "POP_A, POP_B",
+                "Vínculos de atendimento": [
+                    {"Site": "POP_A", "Vínculo": "Principal"},
+                    {"Site": "POP_B", "Vínculo": "Adicional"},
+                ],
+            },
+            {
+                "Cliente": "Cliente B",
+                "Assinatura": "200",
+                "Produto": "Produto B",
+                "Receita": 250,
+                "Site": "POP_B",
+                "Gerente de contas": "João",
+                "Sites de atendimento": "POP_B, POP_C",
+                "Vínculos de atendimento": [
+                    {"Site": "POP_B", "Vínculo": "Principal"},
+                    {"Site": "POP_C", "Vínculo": "Adicional"},
+                ],
+            },
+        ])
+
+        resultado = montar_resumo_assinaturas_clientes(
+            df,
+            ["100", "200", "100"],
+        )
+
+        self.assertEqual(resultado["clientes"], 2)
+        self.assertEqual(resultado["receita"], 400)
+        self.assertEqual(resultado["sites"], 3)
+        self.assertEqual(
+            resultado["tabela"].loc[0, "Site"],
+            "POP_A, POP_B",
+        )
+        self.assertEqual(
+            resultado["tabela"].loc[1, "Gerente de Contas"],
+            "João",
+        )
+
+    def test_resumo_assinaturas_cliente_sem_vinculo(self):
+        df = pd.DataFrame([
+            {
+                "Cliente": "Cliente sem vínculo",
+                "Assinatura": "300",
+                "Produto": "Produto C",
+                "Receita": 80,
+                "Site": "",
+                "Gerente de contas": "",
+                "Sites de atendimento": "",
+                "Vínculos de atendimento": [],
+            }
+        ])
+
+        resultado = montar_resumo_assinaturas_clientes(df, ["300"])
+
+        self.assertEqual(resultado["sites"], 0)
+        self.assertEqual(
+            resultado["tabela"].loc[0, "Site"],
+            "Sem vínculo",
+        )
+
+    def test_normalizar_selecao_remove_invalidas_e_duplicadas(self):
+        self.assertEqual(
+            normalizar_selecao_assinaturas(
+                ["100", "200", "100", "999", ""],
+                ["100", "200"],
+            ),
+            ["100", "200"],
+        )
 
     def test_custos_cliente_busca_nome_e_consolida_sites_unicos(self):
         principal = Site("POP_PRINCIPAL", "POP")

@@ -10,6 +10,8 @@ from app.config import PROFILES_FILE
 from app.config import SESSIONS_FILE
 from app.config import USERS_FILE
 from app.storage import read_json
+from app.storage import read_json_authoritative
+from app.storage import update_json_atomic
 from app.storage import write_json_atomic
 
 
@@ -19,6 +21,14 @@ class UsersFileError(RuntimeError):
 
 MAX_LOGIN_FAILURES = 5
 LOGIN_LOCK_SECONDS = 15 * 60
+PASSWORD_MIN_LENGTH = 12
+PASSWORD_MAX_LENGTH = 128
+PBKDF2_ITERATIONS = 600_000
+LEGACY_PBKDF2_ITERATIONS = 200_000
+SESSION_ABSOLUTE_SECONDS = 12 * 60 * 60
+SESSION_IDLE_SECONDS = 60 * 60
+SESSION_TOUCH_INTERVAL_SECONDS = 5 * 60
+SESSION_SCHEMA_VERSION = 2
 
 MODULES = [
     ("resumo_superior", "Resumo > Barra superior"),
@@ -31,6 +41,7 @@ MODULES = [
     ("gerenciar_sites_editar", "Gerenciamento de Sites > Editar"),
     ("clientes", "Clientes"),
     ("clientes_consulta", "Clientes > Consulta"),
+    ("clientes_resumo_assinaturas", "Clientes > Resumo de Clientes"),
     ("clientes_custos_sites", "Clientes > Custos por Cliente"),
     ("clientes_relatorios", "Clientes > Relatórios"),
     ("clientes_insights", "Clientes > Insights"),
@@ -123,7 +134,18 @@ def load_users():
 def save_users(users):
     write_json_atomic(
         USERS_FILE,
-        users
+        users,
+        backup_previous=True,
+    )
+
+
+def update_users_atomic(updater):
+    return update_json_atomic(
+        USERS_FILE,
+        {},
+        updater,
+        authoritative=True,
+        backup_previous=True,
     )
 
 
@@ -185,7 +207,7 @@ def ensure_profiles(profiles=None):
 
 
 def load_profiles_raw():
-    return read_json(
+    return read_json_authoritative(
         PROFILES_FILE,
         {}
     )
@@ -198,12 +220,23 @@ def load_profiles():
 def save_profiles(profiles):
     write_json_atomic(
         PROFILES_FILE,
-        profiles
+        profiles,
+        backup_previous=True,
+    )
+
+
+def update_profiles_atomic(updater):
+    return update_json_atomic(
+        PROFILES_FILE,
+        {},
+        updater,
+        authoritative=True,
+        backup_previous=True,
     )
 
 
 def load_sessions():
-    return read_json(
+    return read_json_authoritative(
         SESSIONS_FILE,
         {}
     )
@@ -212,12 +245,13 @@ def load_sessions():
 def save_sessions(sessions):
     write_json_atomic(
         SESSIONS_FILE,
-        sessions
+        sessions,
+        backup_previous=True,
     )
 
 
 def load_login_attempts():
-    return read_json(
+    return read_json_authoritative(
         LOGIN_ATTEMPTS_FILE,
         {}
     )
@@ -226,7 +260,8 @@ def load_login_attempts():
 def save_login_attempts(attempts):
     write_json_atomic(
         LOGIN_ATTEMPTS_FILE,
-        attempts
+        attempts,
+        backup_previous=True,
     )
 
 
@@ -254,11 +289,17 @@ def login_lock_status(username):
     if locked_until <= agora:
 
         if locked_until:
-            attempts.pop(
-                chave,
-                None
+            update_json_atomic(
+                LOGIN_ATTEMPTS_FILE,
+                {},
+                lambda current: {
+                    key: value
+                    for key, value in current.items()
+                    if key != chave
+                },
+                authoritative=True,
+                backup_previous=True,
             )
-            save_login_attempts(attempts)
 
         return False, 0
 
@@ -272,25 +313,29 @@ def register_login_failure(username):
 
         return 0
 
-    attempts = load_login_attempts()
-    registro = attempts.get(
-        chave,
-        {}
+    falhas = 0
+
+    def add_failure(attempts):
+        nonlocal falhas
+        registro = attempts.get(chave, {})
+        falhas = int(registro.get("failures") or 0) + 1
+        registro = {
+            "failures": falhas,
+            "last_failure_at": int(time.time()),
+            "locked_until": 0,
+        }
+        if falhas >= MAX_LOGIN_FAILURES:
+            registro["locked_until"] = int(time.time()) + LOGIN_LOCK_SECONDS
+        attempts[chave] = registro
+        return attempts
+
+    update_json_atomic(
+        LOGIN_ATTEMPTS_FILE,
+        {},
+        add_failure,
+        authoritative=True,
+        backup_previous=True,
     )
-    falhas = int(
-        registro.get("failures") or 0
-    ) + 1
-    registro = {
-        "failures": falhas,
-        "last_failure_at": int(time.time()),
-        "locked_until": 0
-    }
-
-    if falhas >= MAX_LOGIN_FAILURES:
-        registro["locked_until"] = int(time.time()) + LOGIN_LOCK_SECONDS
-
-    attempts[chave] = registro
-    save_login_attempts(attempts)
 
     return falhas
 
@@ -302,18 +347,77 @@ def clear_login_failures(username):
 
         return
 
-    attempts = load_login_attempts()
-    attempts.pop(
-        chave,
-        None
+    update_json_atomic(
+        LOGIN_ATTEMPTS_FILE,
+        {},
+        lambda attempts: {
+            key: value
+            for key, value in attempts.items()
+            if key != chave
+        },
+        authoritative=True,
+        backup_previous=True,
     )
-    save_login_attempts(attempts)
 
 
 def hash_token(token):
 
     return hashlib.sha256(
         token.encode("utf-8")
+    ).hexdigest()
+
+
+def validate_password(password, username=""):
+    password = str(password or "")
+    username = str(username or "").strip()
+
+    if len(password) < PASSWORD_MIN_LENGTH:
+        return (
+            False,
+            f"A senha deve ter pelo menos {PASSWORD_MIN_LENGTH} caracteres."
+        )
+
+    if len(password) > PASSWORD_MAX_LENGTH:
+        return (
+            False,
+            f"A senha deve ter no máximo {PASSWORD_MAX_LENGTH} caracteres."
+        )
+
+    if username and hmac.compare_digest(
+        password.casefold(),
+        username.casefold()
+    ):
+        return False, "A senha não pode ser igual ao nome do usuário."
+
+    return True, ""
+
+
+def bootstrap_token_configured():
+    return bool(str(os.getenv("SGS_BOOTSTRAP_TOKEN") or "").strip())
+
+
+def verify_bootstrap_token(informed_token):
+    configured_token = str(os.getenv("SGS_BOOTSTRAP_TOKEN") or "").strip()
+    informed_token = str(informed_token or "")
+
+    if not configured_token:
+        return False
+
+    return hmac.compare_digest(
+        informed_token.encode("utf-8"),
+        configured_token.encode("utf-8")
+    )
+
+
+def user_session_fingerprint(user):
+    fields = (
+        str(user.get("username") or ""),
+        str(user.get("profile") or ""),
+        str(user.get("hash") or ""),
+        "1" if user.get("must_change_password") else "0",
+    )
+    return hashlib.sha256(
+        "\x1f".join(fields).encode("utf-8")
     ).hexdigest()
 
 
@@ -324,22 +428,48 @@ def limpar_sessoes_expiradas(sessions):
     return {
         chave: sessao
         for chave, sessao in sessions.items()
-        if int(sessao.get("expires_at", 0)) > agora
+        if (
+            int(sessao.get("schema_version", 0)) == SESSION_SCHEMA_VERSION
+            and int(sessao.get("expires_at", 0)) > agora
+            and (
+                agora - int(sessao.get("last_seen_at", 0))
+                <= SESSION_IDLE_SECONDS
+            )
+        )
     }
 
 
-def create_session(username, hours=24):
+def create_session(username):
 
     token = secrets.token_urlsafe(32)
-    sessions = limpar_sessoes_expiradas(
-        load_sessions()
-    )
-    sessions[hash_token(token)] = {
+    agora = int(time.time())
+    users = load_users()
+    user = users.get(username)
+
+    if not user:
+        raise UsersFileError("Usuário não encontrado para criar a sessão.")
+
+    session_record = {
+        "schema_version": SESSION_SCHEMA_VERSION,
         "username": username,
-        "created_at": int(time.time()),
-        "expires_at": int(time.time()) + hours * 60 * 60
+        "created_at": agora,
+        "last_seen_at": agora,
+        "expires_at": agora + SESSION_ABSOLUTE_SECONDS,
+        "user_fingerprint": user_session_fingerprint(user)
     }
-    save_sessions(sessions)
+
+    def add_session(sessions):
+        sessions = limpar_sessoes_expiradas(sessions)
+        sessions[hash_token(token)] = session_record
+        return sessions
+
+    update_json_atomic(
+        SESSIONS_FILE,
+        {},
+        add_session,
+        authoritative=True,
+        backup_previous=True,
+    )
 
     return token
 
@@ -350,32 +480,82 @@ def authenticate_session(token):
 
         return None
 
-    sessions = limpar_sessoes_expiradas(
-        load_sessions()
-    )
+    sessions_original = load_sessions()
+    sessions = limpar_sessoes_expiradas(sessions_original)
     token_hash = hash_token(token)
     sessao = sessions.get(token_hash)
 
     if not sessao:
-
-        save_sessions(sessions)
+        if sessions != sessions_original:
+            update_json_atomic(
+                SESSIONS_FILE,
+                {},
+                limpar_sessoes_expiradas,
+                authoritative=True,
+                backup_previous=True,
+            )
 
         return None
 
     users = load_users()
     user = users.get(sessao.get("username"))
 
-    if not user:
-
-        sessions.pop(
-            token_hash,
-            None
+    if (
+        not user
+        or not hmac.compare_digest(
+            str(sessao.get("user_fingerprint") or ""),
+            user_session_fingerprint(user)
         )
-        save_sessions(sessions)
+    ):
+
+        update_json_atomic(
+            SESSIONS_FILE,
+            {},
+            lambda current: {
+                key: value
+                for key, value in current.items()
+                if key != token_hash
+            },
+            authoritative=True,
+            backup_previous=True,
+        )
 
         return None
 
-    save_sessions(sessions)
+    agora = int(time.time())
+    ultima_atividade = int(sessao.get("last_seen_at", 0))
+
+    if agora - ultima_atividade >= SESSION_TOUCH_INTERVAL_SECONDS:
+        expected_fingerprint = str(sessao.get("user_fingerprint") or "")
+
+        def touch_session(current):
+            current_session = current.get(token_hash)
+            if (
+                current_session
+                and hmac.compare_digest(
+                    str(current_session.get("user_fingerprint") or ""),
+                    expected_fingerprint,
+                )
+            ):
+                current_session["last_seen_at"] = agora
+                current[token_hash] = current_session
+            return limpar_sessoes_expiradas(current)
+
+        update_json_atomic(
+            SESSIONS_FILE,
+            {},
+            touch_session,
+            authoritative=True,
+            backup_previous=True,
+        )
+    elif sessions != sessions_original:
+        update_json_atomic(
+            SESSIONS_FILE,
+            {},
+            limpar_sessoes_expiradas,
+            authoritative=True,
+            backup_previous=True,
+        )
 
     return {
         key: value
@@ -393,15 +573,61 @@ def revoke_session(token):
 
         return
 
-    sessions = load_sessions()
-    sessions.pop(
-        hash_token(token),
-        None
+    token_hash = hash_token(token)
+
+    def remove_session(sessions):
+        sessions.pop(token_hash, None)
+        return sessions
+
+    update_json_atomic(
+        SESSIONS_FILE,
+        {},
+        remove_session,
+        authoritative=True,
+        backup_previous=True,
     )
-    save_sessions(sessions)
 
 
-def hash_password(password, salt=None):
+def revoke_user_sessions(username):
+    username = str(username or "").strip()
+
+    if not username:
+        return 0
+
+    removed = 0
+
+    def remove_sessions(sessions):
+        nonlocal removed
+        filtered = {
+            key: session
+            for key, session in sessions.items()
+            if str(session.get("username") or "") != username
+        }
+        removed = len(sessions) - len(filtered)
+        return filtered
+
+    update_json_atomic(
+        SESSIONS_FILE,
+        {},
+        remove_sessions,
+        authoritative=True,
+        backup_previous=True,
+    )
+
+    return removed
+
+
+def revoke_all_sessions():
+    update_json_atomic(
+        SESSIONS_FILE,
+        {},
+        lambda _sessions: {},
+        authoritative=True,
+        backup_previous=True,
+    )
+
+
+def hash_password(password, salt=None, iterations=PBKDF2_ITERATIONS):
 
     if salt is None:
 
@@ -415,20 +641,26 @@ def hash_password(password, salt=None):
         "sha256",
         password.encode("utf-8"),
         salt,
-        200_000
+        int(iterations)
     )
 
     return {
         "salt": base64.b64encode(salt).decode("ascii"),
-        "hash": base64.b64encode(digest).decode("ascii")
+        "hash": base64.b64encode(digest).decode("ascii"),
+        "iterations": int(iterations)
     }
 
 
 def verify_password(password, user):
+    iterations = int(
+        user.get("iterations")
+        or LEGACY_PBKDF2_ITERATIONS
+    )
 
     password_hash = hash_password(
         password,
-        user["salt"]
+        user["salt"],
+        iterations=iterations
     )
 
     return hmac.compare_digest(
@@ -438,7 +670,6 @@ def verify_password(password, user):
 
 
 def update_password(username, current_password, new_password):
-
     users = load_users()
     user = users.get(username)
 
@@ -453,15 +684,29 @@ def update_password(username, current_password, new_password):
 
         return False, "Senha atual inválida."
 
+    valid, message = validate_password(new_password, username)
+
+    if not valid:
+        return False, message
+
     password_data = hash_password(new_password)
-    user["salt"] = password_data["salt"]
-    user["hash"] = password_data["hash"]
-    user["must_change_password"] = False
-    users[username] = user
 
-    save_users(users)
+    def apply_password(current_users):
+        current_user = current_users.get(username)
+        if not current_user:
+            raise UsersFileError("Usuário não encontrado.")
+        current_user = dict(current_user)
+        current_user["salt"] = password_data["salt"]
+        current_user["hash"] = password_data["hash"]
+        current_user["iterations"] = password_data["iterations"]
+        current_user["must_change_password"] = False
+        current_users[username] = current_user
+        return current_users
 
-    return True, "Senha atualizada."
+    update_users_atomic(apply_password)
+    revoke_user_sessions(username)
+
+    return True, "Senha atualizada. Entre novamente para continuar."
 
 
 def all_permissions():
@@ -478,6 +723,10 @@ def create_user(
     profile="Master",
     must_change_password=True,
 ):
+    valid, message = validate_password(password, username)
+
+    if not valid:
+        raise ValueError(message)
 
     password_data = hash_password(password)
 
@@ -486,7 +735,8 @@ def create_user(
         "profile": str(profile or "").strip(),
         "must_change_password": bool(must_change_password),
         "salt": password_data["salt"],
-        "hash": password_data["hash"]
+        "hash": password_data["hash"],
+        "iterations": password_data["iterations"]
     }
 
 
@@ -502,6 +752,27 @@ def authenticate(username, password):
     if not verify_password(password, user):
 
         return None
+
+    current_iterations = int(
+        user.get("iterations")
+        or LEGACY_PBKDF2_ITERATIONS
+    )
+
+    if current_iterations < PBKDF2_ITERATIONS:
+        password_data = hash_password(password)
+
+        def upgrade_hash(current_users):
+            current_user = dict(current_users.get(username) or {})
+            if not current_user:
+                return current_users
+            current_user["salt"] = password_data["salt"]
+            current_user["hash"] = password_data["hash"]
+            current_user["iterations"] = password_data["iterations"]
+            current_users[username] = current_user
+            return current_users
+
+        users = update_users_atomic(upgrade_hash)
+        user = users[username]
 
     return {
         key: value

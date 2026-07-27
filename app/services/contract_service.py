@@ -8,7 +8,9 @@ import uuid
 
 from app.config import CONTRACTS_DIR
 from app.config import CONTRACTS_INDEX_FILE
-from app.storage import read_json
+from app.storage import read_json_authoritative
+from app.storage import file_lock
+from app.storage import _write_json_atomic_unlocked
 from app.storage import write_json_atomic
 
 
@@ -99,7 +101,7 @@ def site_folder_for_code(site_code):
 
 
 def load_contract_index():
-    data = read_json(
+    data = read_json_authoritative(
         CONTRACTS_INDEX_FILE,
         {
             "sites": {}
@@ -115,7 +117,8 @@ def load_contract_index():
 def save_contract_index(data):
     write_json_atomic(
         CONTRACTS_INDEX_FILE,
-        data
+        data,
+        backup_previous=True,
     )
 
 
@@ -197,136 +200,158 @@ def find_contract_record(data, record_id):
 
 
 def archive_contract_file(record_id, archived_by=""):
-    data = load_contract_index()
-    site_code, index, record = find_contract_record(
-        data,
-        record_id
-    )
-
-    if record is None:
-        raise ValueError("Documento não encontrado.")
-
-    if record.get("archived"):
-        return record
-
-    origem = safe_contract_file_path(record)
-
-    if not origem or not origem.exists() or not origem.is_file():
-        raise FileNotFoundError("Arquivo do documento não encontrado.")
-
-    pasta_arquivado = origem.parent / "Arquivado"
-    pasta_arquivado.mkdir(
-        parents=True,
-        exist_ok=True
-    )
-    destino = pasta_arquivado / origem.name
-
-    if destino.exists():
-        destino = pasta_arquivado / (
-            f"{origem.stem}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-            f"{origem.suffix}"
+    with file_lock(CONTRACTS_INDEX_FILE):
+        data = load_contract_index()
+        site_code, index, record = find_contract_record(
+            data,
+            record_id
         )
 
-    shutil.move(
-        str(origem),
-        str(destino)
-    )
+        if record is None:
+            raise ValueError("Documento não encontrado.")
 
-    record = {
-        **record,
-        "path": str(destino),
-        "archived": True,
-        "archived_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "archived_by": str(archived_by or "").strip()
-    }
-    data["sites"][site_code][index] = record
-    save_contract_index(data)
+        if record.get("archived"):
+            return record
+
+        origem = safe_contract_file_path(record)
+
+        if not origem or not origem.exists() or not origem.is_file():
+            raise FileNotFoundError("Arquivo do documento não encontrado.")
+
+        pasta_arquivado = origem.parent / "Arquivado"
+        pasta_arquivado.mkdir(
+            parents=True,
+            exist_ok=True
+        )
+        destino = pasta_arquivado / origem.name
+
+        if destino.exists():
+            destino = unique_destination_path(destino)
+
+        shutil.move(str(origem), str(destino))
+
+        record = {
+            **record,
+            "path": str(destino),
+            "archived": True,
+            "archived_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "archived_by": str(archived_by or "").strip()
+        }
+        data["sites"][site_code][index] = record
+        try:
+            _write_json_atomic_unlocked(
+                CONTRACTS_INDEX_FILE,
+                data,
+                backup_previous=True,
+            )
+        except Exception:
+            shutil.move(str(destino), str(origem))
+            raise
 
     return record
 
 
 def restore_archived_contract_file(record_id, restored_by=""):
-    data = load_contract_index()
-    site_code, index, record = find_contract_record(
-        data,
-        record_id
-    )
-
-    if record is None:
-        raise ValueError("Documento não encontrado.")
-
-    if not record.get("archived"):
-        raise ValueError("Documento não está arquivado.")
-
-    origem = safe_contract_file_path(record)
-
-    if not origem or not origem.exists() or not origem.is_file():
-        raise FileNotFoundError("Arquivo do documento não encontrado.")
-
-    if origem.parent.name.strip().casefold() == "arquivado":
-        pasta_destino = origem.parent.parent
-    else:
-        pasta_destino = origem.parent
-
-    pasta_destino.mkdir(
-        parents=True,
-        exist_ok=True
-    )
-    destino = pasta_destino / origem.name
-
-    if destino.exists():
-        destino = pasta_destino / (
-            f"{origem.stem}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-            f"{origem.suffix}"
+    with file_lock(CONTRACTS_INDEX_FILE):
+        data = load_contract_index()
+        site_code, index, record = find_contract_record(
+            data,
+            record_id
         )
 
-    shutil.move(
-        str(origem),
-        str(destino)
-    )
+        if record is None:
+            raise ValueError("Documento não encontrado.")
 
-    record = {
-        **record,
-        "path": str(destino),
-        "stored_filename": destino.name,
-        "archived": False,
-        "restored_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "restored_by": str(restored_by or "").strip()
-    }
-    record.pop("archived_at", None)
-    record.pop("archived_by", None)
-    data["sites"][site_code][index] = record
-    save_contract_index(data)
+        if not record.get("archived"):
+            raise ValueError("Documento não está arquivado.")
+
+        origem = safe_contract_file_path(record)
+
+        if not origem or not origem.exists() or not origem.is_file():
+            raise FileNotFoundError("Arquivo do documento não encontrado.")
+
+        if origem.parent.name.strip().casefold() == "arquivado":
+            pasta_destino = origem.parent.parent
+        else:
+            pasta_destino = origem.parent
+
+        pasta_destino.mkdir(
+            parents=True,
+            exist_ok=True
+        )
+        destino = pasta_destino / origem.name
+
+        if destino.exists():
+            destino = unique_destination_path(destino)
+
+        shutil.move(str(origem), str(destino))
+
+        record = {
+            **record,
+            "path": str(destino),
+            "stored_filename": destino.name,
+            "archived": False,
+            "restored_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "restored_by": str(restored_by or "").strip()
+        }
+        record.pop("archived_at", None)
+        record.pop("archived_by", None)
+        data["sites"][site_code][index] = record
+        try:
+            _write_json_atomic_unlocked(
+                CONTRACTS_INDEX_FILE,
+                data,
+                backup_previous=True,
+            )
+        except Exception:
+            shutil.move(str(destino), str(origem))
+            raise
 
     return record
 
 
 def delete_archived_contract_file(record_id):
-    data = load_contract_index()
-    site_code, index, record = find_contract_record(
-        data,
-        record_id
-    )
+    with file_lock(CONTRACTS_INDEX_FILE):
+        data = load_contract_index()
+        site_code, index, record = find_contract_record(
+            data,
+            record_id
+        )
 
-    if record is None:
-        raise ValueError("Documento não encontrado.")
+        if record is None:
+            raise ValueError("Documento não encontrado.")
 
-    if not record.get("archived"):
-        raise ValueError("Somente documentos arquivados podem ser excluídos definitivamente.")
+        if not record.get("archived"):
+            raise ValueError("Somente documentos arquivados podem ser excluídos definitivamente.")
 
-    caminho = safe_contract_file_path(record)
+        caminho = safe_contract_file_path(record)
 
-    if caminho is None:
-        raise ValueError("Caminho do documento inválido.")
+        if caminho is None:
+            raise ValueError("Caminho do documento inválido.")
 
-    if caminho.exists():
-        if not caminho.is_file():
-            raise ValueError("Caminho do documento não aponta para um arquivo.")
+        temporario = None
+        if caminho.exists():
+            if not caminho.is_file():
+                raise ValueError("Caminho do documento não aponta para um arquivo.")
+            temporario = unique_destination_path(
+                caminho.with_name(f".{caminho.name}.delete")
+            )
+            shutil.move(str(caminho), str(temporario))
 
-        caminho.unlink()
+        del data["sites"][site_code][index]
+        try:
+            _write_json_atomic_unlocked(
+                CONTRACTS_INDEX_FILE,
+                data,
+                backup_previous=True,
+            )
+        except Exception:
+            if temporario and temporario.exists():
+                shutil.move(str(temporario), str(caminho))
+            raise
 
-    del data["sites"][site_code][index]
-    save_contract_index(data)
+        if temporario:
+            temporario.unlink(missing_ok=True)
 
     return record
 
@@ -869,46 +894,52 @@ def add_site_contract(
     if len(content) > MAX_CONTRACT_SIZE_BYTES:
         raise ValueError("Arquivo do documento excede o limite de 50 MB.")
 
-    data = load_contract_index()
-    site_versions = data.setdefault("sites", {}).setdefault(site_code, [])
-    version_number = len(site_versions) + 1
-    uploaded_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     original_filename = safe_filename(original_filename)
     extension = Path(original_filename).suffix.lower()
 
     if extension not in ALLOWED_CONTRACT_EXTENSIONS:
         raise ValueError("Tipo de arquivo do documento nao permitido.")
 
-    stored_filename = (
-        f"v{version_number:03d}_"
-        f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_"
-        f"{uuid.uuid4().hex[:8]}_"
-        f"{original_filename}"
-    )
-    site_dir = site_contract_dir(
-        site_code,
-        site_name
-    )
-    site_dir.mkdir(parents=True, exist_ok=True)
-    path = site_dir / stored_filename
-    path.write_bytes(content)
+    with file_lock(CONTRACTS_INDEX_FILE):
+        data = load_contract_index()
+        site_versions = data.setdefault("sites", {}).setdefault(site_code, [])
+        version_number = len(site_versions) + 1
+        uploaded_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        stored_filename = (
+            f"v{version_number:03d}_"
+            f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_"
+            f"{uuid.uuid4().hex[:8]}_"
+            f"{original_filename}"
+        )
+        site_dir = site_contract_dir(site_code, site_name)
+        site_dir.mkdir(parents=True, exist_ok=True)
+        path = site_dir / stored_filename
+        path.write_bytes(content)
 
-    record = {
-        "id": uuid.uuid4().hex,
-        "site_code": site_code,
-        "site_name": str(site_name or "").strip(),
-        "version": version_number,
-        "version_label": str(version_label or "").strip(),
-        "notes": str(notes or "").strip(),
-        "original_filename": original_filename,
-        "stored_filename": stored_filename,
-        "content_type": str(content_type or "").strip(),
-        "size": len(content),
-        "uploaded_by": str(uploaded_by or "").strip(),
-        "uploaded_at": uploaded_at,
-        "path": str(path)
-    }
-    site_versions.append(record)
-    save_contract_index(data)
+        record = {
+            "id": uuid.uuid4().hex,
+            "site_code": site_code,
+            "site_name": str(site_name or "").strip(),
+            "version": version_number,
+            "version_label": str(version_label or "").strip(),
+            "notes": str(notes or "").strip(),
+            "original_filename": original_filename,
+            "stored_filename": stored_filename,
+            "content_type": str(content_type or "").strip(),
+            "size": len(content),
+            "uploaded_by": str(uploaded_by or "").strip(),
+            "uploaded_at": uploaded_at,
+            "path": str(path)
+        }
+        site_versions.append(record)
+        try:
+            _write_json_atomic_unlocked(
+                CONTRACTS_INDEX_FILE,
+                data,
+                backup_previous=True,
+            )
+        except Exception:
+            path.unlink(missing_ok=True)
+            raise
 
     return record

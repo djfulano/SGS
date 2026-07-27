@@ -5,7 +5,7 @@ import unicodedata
 import pandas as pd
 
 from app.config import PRODUCT_CATALOG_FILE
-from app.storage import read_json
+from app.storage import read_json_authoritative
 from app.storage import write_json_atomic
 
 
@@ -185,7 +185,7 @@ def normalize_catalog_dataframe(df):
 
 def load_product_catalog(path=None):
     path = path or PRODUCT_CATALOG_FILE
-    records = read_json(
+    records = read_json_authoritative(
         path,
         []
     )
@@ -200,7 +200,8 @@ def save_product_catalog(df, path=None):
     df_save = normalize_catalog_dataframe(df)
     write_json_atomic(
         path,
-        df_save.to_dict("records")
+        df_save.to_dict("records"),
+        backup_previous=True,
     )
 
     return df_save

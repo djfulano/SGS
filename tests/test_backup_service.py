@@ -2,6 +2,7 @@ import tempfile
 import unittest
 import json
 import os
+import sqlite3
 from pathlib import Path
 from unittest.mock import patch
 from zipfile import ZipFile
@@ -45,10 +46,11 @@ class BackupServiceTest(unittest.TestCase):
                 "{}",
                 encoding="utf-8"
             )
-            (base / "rede.db").write_text(
-                "db",
-                encoding="utf-8"
-            )
+            database = sqlite3.connect(base / "rede.db")
+            database.execute("CREATE TABLE teste (id INTEGER PRIMARY KEY)")
+            database.execute("INSERT INTO teste DEFAULT VALUES")
+            database.commit()
+            database.close()
             (base / "VERSION").write_text(
                 "teste",
                 encoding="utf-8"
@@ -170,6 +172,53 @@ class BackupServiceTest(unittest.TestCase):
             self.assertNotIn("backups/nao_incluir.zip", nomes)
             self.assertIn('"backup_type": "documentos"', metadata)
             self.assertIn('"key": "contracts"', metadata)
+
+    def test_backup_sqlite_inclui_dados_presentes_no_wal(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            base = Path(temp_dir)
+            backups = base / "backups"
+            backups.mkdir()
+            database_path = base / "rede.db"
+            connection = sqlite3.connect(database_path)
+            connection.execute("PRAGMA journal_mode=WAL")
+            connection.execute("CREATE TABLE dados (valor TEXT)")
+            connection.execute("INSERT INTO dados VALUES ('presente-no-wal')")
+            connection.commit()
+
+            config = {
+                "include_imports": False,
+                "include_config": False,
+                "include_cache": False,
+                "include_contracts": False,
+                "include_database": True,
+                "include_system_files": False,
+            }
+            with patch(
+                "app.services.backup_service.BACKUP_DIR",
+                backups,
+            ), patch(
+                "app.services.backup_service.BACKUP_CONFIG_FILE",
+                base / "backup_config.json",
+            ):
+                result = criar_backup(
+                    config,
+                    base_dir=base,
+                    persistir_config=False,
+                )
+            connection.close()
+
+            restored = base / "restored.db"
+            with ZipFile(result["path"]) as zip_file:
+                restored.write_bytes(zip_file.read("rede.db"))
+            restored_connection = sqlite3.connect(restored)
+            try:
+                value = restored_connection.execute(
+                    "SELECT valor FROM dados"
+                ).fetchone()[0]
+            finally:
+                restored_connection.close()
+
+        self.assertEqual(value, "presente-no-wal")
 
     def test_criar_backup_aceita_arquivo_com_timestamp_antigo(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -535,6 +584,33 @@ class BackupServiceTest(unittest.TestCase):
                     criar_backup_previo=False
                 )
 
+    def test_inspecionar_backup_recusa_excesso_de_entradas(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            backup = Path(temp_dir) / "muitas_entradas.zip"
+            with ZipFile(backup, "w") as zip_file:
+                zip_file.writestr("imports/a.txt", "a")
+                zip_file.writestr("imports/b.txt", "b")
+
+            with patch(
+                "app.services.backup_service.MAX_ZIP_ENTRIES",
+                1,
+            ):
+                with self.assertRaisesRegex(ValueError, "limite"):
+                    inspecionar_backup(backup)
+
+    def test_inspecionar_backup_recusa_entrada_grande(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            backup = Path(temp_dir) / "entrada_grande.zip"
+            with ZipFile(backup, "w") as zip_file:
+                zip_file.writestr("imports/grande.txt", "12345")
+
+            with patch(
+                "app.services.backup_service.MAX_ZIP_ENTRY_SIZE",
+                4,
+            ):
+                with self.assertRaisesRegex(ValueError, "Entrada excede"):
+                    inspecionar_backup(backup)
+
     def test_restaurar_backup_substitui_snapshot_e_cria_backup_previo(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             base = Path(temp_dir)
@@ -574,12 +650,19 @@ class BackupServiceTest(unittest.TestCase):
                 "contrato atual",
                 encoding="utf-8"
             )
-            (base / "rede.db").write_text(
-                "db-atual",
-                encoding="utf-8"
-            )
+            database = sqlite3.connect(base / "rede.db")
+            database.execute("CREATE TABLE estado (valor TEXT)")
+            database.execute("INSERT INTO estado VALUES ('db-atual')")
+            database.commit()
+            database.close()
 
             backup = backups / "sgs_backup_restore.zip"
+            restored_database = base / "restored_source.db"
+            database = sqlite3.connect(restored_database)
+            database.execute("CREATE TABLE estado (valor TEXT)")
+            database.execute("INSERT INTO estado VALUES ('db-novo')")
+            database.commit()
+            database.close()
 
             with ZipFile(backup, "w") as zip_file:
                 zip_file.writestr(
@@ -598,10 +681,7 @@ class BackupServiceTest(unittest.TestCase):
                     "contracts/SITE_NOVO/doc.pdf",
                     "contrato novo"
                 )
-                zip_file.writestr(
-                    "rede.db",
-                    "db-novo"
-                )
+                zip_file.write(restored_database, "rede.db")
 
             with patch(
                 "app.services.backup_service.IMPORTS_DIR",
@@ -646,10 +726,14 @@ class BackupServiceTest(unittest.TestCase):
                 (cache / "mapa.json").read_text(encoding="utf-8"),
                 "cache-novo"
             )
-            self.assertEqual(
-                (base / "rede.db").read_text(encoding="utf-8"),
-                "db-novo"
-            )
+            database = sqlite3.connect(base / "rede.db")
+            try:
+                restored_value = database.execute(
+                    "SELECT valor FROM estado"
+                ).fetchone()[0]
+            finally:
+                database.close()
+            self.assertEqual(restored_value, "db-novo")
             self.assertTrue(
                 (contracts / "SITE_ATUAL" / "doc.pdf").exists()
             )
@@ -768,18 +852,22 @@ class BackupServiceTest(unittest.TestCase):
                 pasta.mkdir()
 
             banco = base / "rede.db"
-            banco.write_text(
-                "db-atual",
-                encoding="utf-8"
-            )
+            database = sqlite3.connect(banco)
+            database.execute("CREATE TABLE estado (valor TEXT)")
+            database.execute("INSERT INTO estado VALUES ('db-atual')")
+            database.commit()
+            database.close()
 
             backup = backups / "sgs_backup_database.zip"
+            restored_database = base / "restored_source.db"
+            database = sqlite3.connect(restored_database)
+            database.execute("CREATE TABLE estado (valor TEXT)")
+            database.execute("INSERT INTO estado VALUES ('db-restaurado')")
+            database.commit()
+            database.close()
 
             with ZipFile(backup, "w") as zip_file:
-                zip_file.writestr(
-                    "rede.db",
-                    "db-restaurado"
-                )
+                zip_file.write(restored_database, "rede.db")
 
             def move_bloqueado(origem, destino):
                 raise OSError(
@@ -815,10 +903,14 @@ class BackupServiceTest(unittest.TestCase):
                     base_dir=base
                 )
 
-            self.assertEqual(
-                banco.read_text(encoding="utf-8"),
-                "db-restaurado"
-            )
+            database = sqlite3.connect(banco)
+            try:
+                restored_value = database.execute(
+                    "SELECT valor FROM estado"
+                ).fetchone()[0]
+            finally:
+                database.close()
+            self.assertEqual(restored_value, "db-restaurado")
 
     def test_restaurar_backup_restaurando_contracts_quando_marcado(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -843,10 +935,11 @@ class BackupServiceTest(unittest.TestCase):
                 "antigo",
                 encoding="utf-8"
             )
-            (base / "rede.db").write_text(
-                "db",
-                encoding="utf-8"
-            )
+            database = sqlite3.connect(base / "rede.db")
+            database.execute("CREATE TABLE estado (valor TEXT)")
+            database.execute("INSERT INTO estado VALUES ('db')")
+            database.commit()
+            database.close()
             backup = backups / "sgs_backup_contracts.zip"
 
             with ZipFile(backup, "w") as zip_file:
