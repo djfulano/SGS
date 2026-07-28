@@ -1,5 +1,9 @@
 # Histórico de versões
 
+## 1.3.30
+
+- Senhas novas passam a exigir no mínimo 8 caracteres, mantendo o limite máximo de 128 caracteres e a proibição de senha igual ao usuário.
+
 ## 1.3.29
 
 - Corrigido o fluxo em que um cookie de sessão antigo removia a nova sessão logo após o primeiro login.

@@ -89,7 +89,11 @@ class AuthSessionsTest(unittest.TestCase):
             validate_password("uma frase senha longa", "ana"),
             (True, ""),
         )
-        self.assertFalse(validate_password("curta", "ana")[0])
+        self.assertEqual(validate_password("12345678", "ana"), (True, ""))
+        self.assertEqual(
+            validate_password("1234567", "ana"),
+            (False, "A senha deve ter pelo menos 8 caracteres."),
+        )
         self.assertFalse(validate_password("UsuarioMesmo", "usuariomesmo")[0])
 
     def test_bootstrap_requires_configured_matching_token(self):
