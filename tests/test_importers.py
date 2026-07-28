@@ -215,6 +215,40 @@ class ImportersTest(unittest.TestCase):
         self.assertEqual(df.iloc[0]["Dia Vencimento"], 18)
 
     @unittest.skipIf(carregar_topos is None, "pandas nao instalado")
+    def test_carregar_topos_soma_locacao_energia_e_outros(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            caminho = Path(temp_dir) / "Sites.xlsx"
+            pd.DataFrame([{
+                "CÓDIGO AQUILES": "123",
+                "SNMPc": "SITE_CUSTOS_123_IP",
+                "LOCAÇÃO": "R$ 1.000,00",
+                "ENERGIA": "R$ 250,00",
+                "OUTROS": "R$ 50,00",
+            }]).to_excel(caminho, index=False)
+
+            df = carregar_topos(caminho)
+
+        self.assertEqual(df.iloc[0]["Locacao"], 1000)
+        self.assertEqual(df.iloc[0]["Energia"], 250)
+        self.assertEqual(df.iloc[0]["Outros Custos"], 50)
+        self.assertEqual(df.iloc[0]["Custo"], 1300)
+
+    @unittest.skipIf(carregar_topos is None, "pandas nao instalado")
+    def test_carregar_topos_trata_custo_legado_como_locacao(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            caminho = Path(temp_dir) / "Sites.xlsx"
+            pd.DataFrame([{
+                "CÓDIGO AQUILES": "123",
+                "SNMPc": "SITE_CUSTO_LEGADO_123_IP",
+                "CUSTO": 900,
+            }]).to_excel(caminho, index=False)
+
+            df = carregar_topos(caminho)
+
+        self.assertEqual(df.iloc[0]["Locacao"], 900)
+        self.assertEqual(df.iloc[0]["Custo"], 900)
+
+    @unittest.skipIf(carregar_topos is None, "pandas nao instalado")
     def test_carregar_topos_aceita_alias_vencimento_e_descarta_dia_invalido(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             caminho = Path(temp_dir) / "Sites.xlsx"

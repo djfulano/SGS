@@ -709,7 +709,9 @@ def montar_registro_site_formulario(registro, df_cadastro, sufixo):
     status_atual = texto_registro_site(registro, "Status")
     relacionamento_atual = texto_registro_site(registro, "Relacionamento")
     favorecido_atual = texto_registro_site(registro, "Favorecido")
-    custo_atual = texto_registro_site(registro, "CUSTO")
+    locacao_atual = texto_registro_site(registro, "LOCAÇÃO")
+    energia_atual = texto_registro_site(registro, "ENERGIA")
+    outros_custos_atual = texto_registro_site(registro, "OUTROS")
     site_critico_atual = texto_registro_site(
         registro,
         "SITE CRÍTICO"
@@ -880,25 +882,59 @@ def montar_registro_site_formulario(registro, df_cadastro, sufixo):
         )
 
     st.markdown("**Financeiro**")
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col2, col3 = st.columns(3)
 
     with col1:
         if pode_visualizar_custos_site():
-            custo = st.text_input(
-                "Custo mensal",
-                value=custo_atual,
-                key=chave_campo_site(sufixo, "custo")
+            locacao = st.text_input(
+                "Locação",
+                value=locacao_atual,
+                key=chave_campo_site(sufixo, "locacao")
             )
         else:
             st.text_input(
-                "Custo mensal",
+                "Locação",
                 value="Restrito",
                 disabled=True,
-                key=chave_campo_site(sufixo, "custo_restrito")
+                key=chave_campo_site(sufixo, "locacao_restrita")
             )
-            custo = custo_atual
+            locacao = locacao_atual
 
     with col2:
+        if pode_visualizar_custos_site():
+            energia = st.text_input(
+                "Energia",
+                value=energia_atual,
+                key=chave_campo_site(sufixo, "energia")
+            )
+        else:
+            st.text_input(
+                "Energia",
+                value="Restrito",
+                disabled=True,
+                key=chave_campo_site(sufixo, "energia_restrita")
+            )
+            energia = energia_atual
+
+    with col3:
+        if pode_visualizar_custos_site():
+            outros_custos = st.text_input(
+                "Outros",
+                value=outros_custos_atual,
+                key=chave_campo_site(sufixo, "outros_custos")
+            )
+        else:
+            st.text_input(
+                "Outros",
+                value="Restrito",
+                disabled=True,
+                key=chave_campo_site(sufixo, "outros_custos_restrito")
+            )
+            outros_custos = outros_custos_atual
+
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
         opcoes_vencimento, indice_vencimento = opcoes_dia_vencimento_padrao(
             texto_registro_site(registro, "DIA VENCIMENTO")
         )
@@ -911,7 +947,7 @@ def montar_registro_site_formulario(registro, df_cadastro, sufixo):
             help="Dia mensal opcional, limitado ao intervalo de 1 a 28."
         )
 
-    with col3:
+    with col2:
         site_critico = st.checkbox(
             "Site crítico",
             value=site_critico_atual,
@@ -922,7 +958,7 @@ def montar_registro_site_formulario(registro, df_cadastro, sufixo):
             )
         )
 
-    with col4:
+    with col3:
         opcoes_criticidade = [""] + SITE_CRITICAL_TYPE_OPTIONS
         tipo_criticidade = st.selectbox(
             "Tipo de criticidade",
@@ -1121,7 +1157,9 @@ def montar_registro_site_formulario(registro, df_cadastro, sufixo):
         "QTDO": qtdo,
         "CATEGORIA": categoria.strip(),
         "PERFIL": perfil.strip(),
-        "CUSTO": custo.strip(),
+        "LOCAÇÃO": locacao.strip(),
+        "ENERGIA": energia.strip(),
+        "OUTROS": outros_custos.strip(),
         "ENDEREÇO": endereco.strip(),
         "NUMERO": numero.strip(),
         "BAIRRO": bairro.strip(),
@@ -2811,7 +2849,9 @@ def mostrar_cadastro_site_selecionado(site):
             "QTDO": site.get("Qtdo") or 0,
             "CATEGORIA": site.get("Categoria") or "",
             "PERFIL": site.get("Perfil") or "",
-            "CUSTO": site.get("Custo") or "",
+            "LOCAÇÃO": site.get("Locacao") or site.get("Custo") or "",
+            "ENERGIA": site.get("Energia") or "",
+            "OUTROS": site.get("Outros Custos") or "",
             "ENDEREÇO": site.get("Endereco") or "",
             "NUMERO": site.get("Numero") or "",
             "BAIRRO": site.get("Bairro") or "",
@@ -2909,7 +2949,9 @@ def montar_site_vazio_para_cadastro():
         "Qtdo": 0,
         "Categoria": "",
         "Perfil": "",
-        "Custo": "",
+        "Locacao": "",
+        "Energia": "",
+        "Outros Custos": "",
         "Endereco": "",
         "Numero": "",
         "Bairro": "",

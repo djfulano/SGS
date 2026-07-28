@@ -1,5 +1,11 @@
 # Histórico de versões
 
+## 1.3.32
+
+- A seção Financeiro do cadastro de sites passa a separar os valores de Locação, Energia e Outros.
+- A coluna antiga CUSTO é migrada para LOCAÇÃO, preservando a leitura das planilhas existentes.
+- O custo total usado nas análises passa a somar Locação, Energia e Outros.
+
 ## 1.3.31
 
 - Sites críticos passam a exigir uma classificação entre Desliga, Bloqueia, Jurídico e Outros.

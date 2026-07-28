@@ -103,7 +103,14 @@ def aplicar_cadastro_topos(sites, df_topos):
             site.microsiga = topo.get("Microsiga") or ""
             site.codigo_condominio = topo.get("Codigo Condominio") or ""
             site.abreviacao = topo.get("Abreviacao") or ""
-            site.custo = float(topo.get("Custo") or 0)
+            site.locacao = float(topo.get("Locacao") or 0)
+            site.energia = float(topo.get("Energia") or 0)
+            site.outros_custos = float(topo.get("Outros Custos") or 0)
+            site.custo = (
+                site.locacao
+                + site.energia
+                + site.outros_custos
+            )
             site.status_cadastro = topo.get("Status Cadastro") or ""
             site.nome_cadastro = topo.get("Nome Cadastro") or ""
             site.relacionamento = topo.get("Relacionamento") or ""
@@ -135,6 +142,9 @@ def aplicar_cadastro_topos(sites, df_topos):
             site.codigo_condominio = ""
             site.abreviacao = ""
             site.custo = 0.0
+            site.locacao = 0.0
+            site.energia = 0.0
+            site.outros_custos = 0.0
             site.status_cadastro = ""
             site.nome_cadastro = ""
             site.relacionamento = ""

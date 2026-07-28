@@ -272,9 +272,18 @@ def carregar_topos(caminho=None):
         colunas,
         "NOME"
     )
-    coluna_custo = obter_coluna(
+    coluna_locacao = obter_coluna(
         colunas,
+        "LOCACAO",
         "CUSTO"
+    )
+    coluna_energia = obter_coluna(
+        colunas,
+        "ENERGIA"
+    )
+    coluna_outros_custos = obter_coluna(
+        colunas,
+        "OUTROS"
     )
     coluna_status = obter_coluna(
         colunas,
@@ -423,6 +432,21 @@ def carregar_topos(caminho=None):
             if coluna_numero
             else ""
         )
+        locacao = valor_numero(
+            linha.get(coluna_locacao)
+            if coluna_locacao
+            else 0
+        )
+        energia = valor_numero(
+            linha.get(coluna_energia)
+            if coluna_energia
+            else 0
+        )
+        outros_custos = valor_numero(
+            linha.get(coluna_outros_custos)
+            if coluna_outros_custos
+            else 0
+        )
 
         registros.append({
             "Codigo": codigo,
@@ -452,11 +476,10 @@ def carregar_topos(caminho=None):
                 if coluna_nome
                 else ""
             ),
-            "Custo": valor_numero(
-                linha.get(coluna_custo)
-                if coluna_custo
-                else 0
-            ),
+            "Locacao": locacao,
+            "Energia": energia,
+            "Outros Custos": outros_custos,
+            "Custo": locacao + energia + outros_custos,
             "Status Cadastro": valor_texto(
                 linha.get(coluna_status)
                 if coluna_status

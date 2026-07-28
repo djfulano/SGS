@@ -91,11 +91,16 @@ class SiteManagementTest(unittest.TestCase):
     def test_prepara_planilha_preserva_vencimento_vazio(self):
         preparado = prepare_registry_for_save(pd.DataFrame([{
             "CÓDIGO AQUILES": "100",
-            "CUSTO": "1000",
+            "LOCAÇÃO": "1000",
+            "ENERGIA": "250",
+            "OUTROS": "50",
             "DIA VENCIMENTO": "",
         }]))
 
         self.assertEqual(preparado.iloc[0]["DIA VENCIMENTO"], "")
+        self.assertEqual(preparado.iloc[0]["LOCAÇÃO"], "1000")
+        self.assertEqual(preparado.iloc[0]["ENERGIA"], "250")
+        self.assertEqual(preparado.iloc[0]["OUTROS"], "50")
 
     def test_salva_vencimento_vazio_independente_de_site_critico(self):
         cadastro = pd.DataFrame({

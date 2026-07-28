@@ -30,7 +30,9 @@ SITE_REGISTRY_COLUMNS = [
     "QTDO",
     "CATEGORIA",
     "PERFIL",
-    "CUSTO",
+    "LOCAÇÃO",
+    "ENERGIA",
+    "OUTROS",
     "ENDEREÇO",
     "NUMERO",
     "BAIRRO",
@@ -94,7 +96,9 @@ NUMERIC_COLUMNS = {
     "DIA VENCIMENTO"
 }
 CURRENCY_COLUMNS = {
-    "CUSTO"
+    "LOCAÇÃO",
+    "ENERGIA",
+    "OUTROS",
 }
 
 SITE_CODE_COLUMN = "CÓDIGO AQUILES"
@@ -132,6 +136,8 @@ COLUMN_ALIASES = {
     "ABREVIACAO": "ABREVIAÇÃO",
     "RELACIONAMENTO": "Relacionamento",
     "FAVORECIDO": "Favorecido",
+    "CUSTO": "LOCAÇÃO",
+    "LOCACAO": "LOCAÇÃO",
     "SITE CRITICO": "SITE CRÍTICO",
     "CRITICO": "SITE CRÍTICO",
     "CRITICIDADE": "TIPO CRITICIDADE",
@@ -594,7 +600,8 @@ def load_site_registry(path=None):
             df[column] = ""
 
     df = df[SITE_REGISTRY_COLUMNS].fillna("")
-    df["CUSTO"] = df["CUSTO"].astype(str).str.strip()
+    for column in CURRENCY_COLUMNS:
+        df[column] = df[column].astype(str).str.strip()
 
     return df
 
@@ -723,7 +730,8 @@ def prepare_registry_for_save(df):
             df[column] = ""
 
     df = df[SITE_REGISTRY_COLUMNS].fillna("")
-    df["CUSTO"] = df["CUSTO"].astype(str).str.strip()
+    for column in CURRENCY_COLUMNS:
+        df[column] = df[column].astype(str).str.strip()
 
     for column in NUMERIC_COLUMNS - {"DIA VENCIMENTO"}:
         df[column] = pd.to_numeric(

@@ -18,6 +18,12 @@ class Site:
 
         self.custo = 0.0
 
+        self.locacao = 0.0
+
+        self.energia = 0.0
+
+        self.outros_custos = 0.0
+
         self.status_cadastro = ""
 
         self.nome_cadastro = ""
