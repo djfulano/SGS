@@ -432,7 +432,11 @@ def ensure_worksheet_columns(ws, columns, aliases):
         if header is None:
             continue
 
-        headers[canonical_column_name(header, aliases)] = column_index
+        canonical = canonical_column_name(header, aliases)
+        headers[canonical] = column_index
+
+        if canonical in columns and str(header).strip() != canonical:
+            ws.cell(row=1, column=column_index).value = canonical
 
     for column in columns:
         if column in headers:

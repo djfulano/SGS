@@ -1,5 +1,10 @@
 # Histórico de versões
 
+## 1.3.33
+
+- A gravação da planilha Sites passa a renomear fisicamente o cabeçalho legado CUSTO para LOCAÇÃO.
+- A planilha mantém apenas Locação, Energia e Outros; o Custo total permanece calculado exclusivamente pelo SGS.
+
 ## 1.3.32
 
 - A seção Financeiro do cadastro de sites passa a separar os valores de Locação, Energia e Outros.

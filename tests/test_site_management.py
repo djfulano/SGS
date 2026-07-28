@@ -1,12 +1,17 @@
 import unittest
+import tempfile
+from pathlib import Path
 from unittest.mock import patch
 
 import pandas as pd
+from openpyxl import load_workbook
 
 from app.services.site_registry_service import normalize_site_contacts
 from app.services.site_registry_service import normalize_site_critical_type
 from app.services.site_registry_service import normalize_site_due_day
 from app.services.site_registry_service import prepare_registry_for_save
+from app.services.site_registry_service import load_site_registry
+from app.services.site_registry_service import save_site_registry
 from app.services.site_registry_service import SITE_CRITICAL_TYPE_OPTIONS
 from app.services.site_registry_service import SITE_TYPE_OPTIONS
 from app.services.site_registry_service import duplicated_site_codes
@@ -101,6 +106,31 @@ class SiteManagementTest(unittest.TestCase):
         self.assertEqual(preparado.iloc[0]["LOCAÇÃO"], "1000")
         self.assertEqual(preparado.iloc[0]["ENERGIA"], "250")
         self.assertEqual(preparado.iloc[0]["OUTROS"], "50")
+
+    def test_salvamento_migra_cabecalho_custo_para_locacao(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            caminho = Path(temp_dir) / "Sites.xlsx"
+            pd.DataFrame([{
+                "CÓDIGO AQUILES": "100",
+                "CUSTO": 1000,
+            }]).to_excel(caminho, index=False)
+
+            cadastro = load_site_registry(caminho)
+            save_site_registry(
+                cadastro,
+                caminho,
+                create_backup=False,
+            )
+
+            workbook = load_workbook(caminho, read_only=True)
+            headers = [
+                cell.value
+                for cell in next(workbook[workbook.sheetnames[0]].iter_rows())
+            ]
+            workbook.close()
+
+        self.assertIn("LOCAÇÃO", headers)
+        self.assertNotIn("CUSTO", headers)
 
     def test_salva_vencimento_vazio_independente_de_site_critico(self):
         cadastro = pd.DataFrame({
