@@ -86,6 +86,13 @@ def valor_codigo(valor):
     return texto
 
 
+def valor_codigo_banco(valor):
+    codigo = valor_codigo(valor)
+    if codigo.isdigit() and len(codigo) <= 3:
+        return codigo.zfill(3)
+    return codigo
+
+
 def valor_numero(valor):
 
     if pd.isna(valor):
@@ -285,6 +292,51 @@ def carregar_topos(caminho=None):
         colunas,
         "OUTROS"
     )
+    coluna_cnpj_cpf = obter_coluna(
+        colunas,
+        "CNPJ CPF",
+        "CPF CNPJ"
+    )
+    coluna_tipo_pagamento = obter_coluna(
+        colunas,
+        "TIPO PAGAMENTO",
+        "TIPO DE PAGAMENTO",
+        "TIPO PGTO",
+        "FORMA DE PAGAMENTO"
+    )
+    coluna_pix = obter_coluna(
+        colunas,
+        "PIX",
+        "CHAVE PIX"
+    )
+    coluna_banco = obter_coluna(
+        colunas,
+        "BANCO"
+    )
+    coluna_codigo_banco = obter_coluna(
+        colunas,
+        "CODIGO BANCO",
+        "COD BANCO",
+        "CODIGO DO BANCO"
+    )
+    coluna_agencia = obter_coluna(
+        colunas,
+        "AGENCIA"
+    )
+    coluna_conta_corrente = obter_coluna(
+        colunas,
+        "CONTA CORRENTE",
+        "C CORRENTE",
+        "CC"
+    )
+    coluna_multa = obter_coluna(
+        colunas,
+        "MULTA"
+    )
+    coluna_juros = obter_coluna(
+        colunas,
+        "JUROS"
+    )
     coluna_status = obter_coluna(
         colunas,
         "STATUS"
@@ -480,6 +532,51 @@ def carregar_topos(caminho=None):
             "Energia": energia,
             "Outros Custos": outros_custos,
             "Custo": locacao + energia + outros_custos,
+            "CNPJ CPF": valor_codigo(
+                linha.get(coluna_cnpj_cpf)
+                if coluna_cnpj_cpf
+                else ""
+            ),
+            "Tipo Pagamento": valor_texto(
+                linha.get(coluna_tipo_pagamento)
+                if coluna_tipo_pagamento
+                else ""
+            ),
+            "Pix": valor_texto(
+                linha.get(coluna_pix)
+                if coluna_pix
+                else ""
+            ),
+            "Banco": valor_texto(
+                linha.get(coluna_banco)
+                if coluna_banco
+                else ""
+            ),
+            "Codigo Banco": valor_codigo_banco(
+                linha.get(coluna_codigo_banco)
+                if coluna_codigo_banco
+                else ""
+            ),
+            "Agencia": valor_codigo(
+                linha.get(coluna_agencia)
+                if coluna_agencia
+                else ""
+            ),
+            "Conta Corrente": valor_codigo(
+                linha.get(coluna_conta_corrente)
+                if coluna_conta_corrente
+                else ""
+            ),
+            "Multa": valor_texto(
+                linha.get(coluna_multa)
+                if coluna_multa
+                else ""
+            ),
+            "Juros": valor_texto(
+                linha.get(coluna_juros)
+                if coluna_juros
+                else ""
+            ),
             "Status Cadastro": valor_texto(
                 linha.get(coluna_status)
                 if coluna_status

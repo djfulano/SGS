@@ -1,5 +1,11 @@
 # Histórico de versões
 
+## 1.3.34
+
+- O cadastro de sites passa a armazenar CNPJ/CPF, tipo de pagamento, Pix, banco, código do banco, agência e conta corrente.
+- A seção financeira também passa a registrar as condições de multa e juros.
+- Os novos campos são incluídos na planilha Sites, no importador e no modelo carregado pelo SGS.
+
 ## 1.3.33
 
 - A gravação da planilha Sites passa a renomear fisicamente o cabeçalho legado CUSTO para LOCAÇÃO.

@@ -33,6 +33,15 @@ SITE_REGISTRY_COLUMNS = [
     "LOCAÇÃO",
     "ENERGIA",
     "OUTROS",
+    "CNPJ/CPF",
+    "TIPO PAGAMENTO",
+    "PIX",
+    "BANCO",
+    "CÓDIGO BANCO",
+    "AGÊNCIA",
+    "CONTA CORRENTE",
+    "MULTA",
+    "JUROS",
     "ENDEREÇO",
     "NUMERO",
     "BAIRRO",
@@ -138,6 +147,18 @@ COLUMN_ALIASES = {
     "FAVORECIDO": "Favorecido",
     "CUSTO": "LOCAÇÃO",
     "LOCACAO": "LOCAÇÃO",
+    "CNPJ CPF": "CNPJ/CPF",
+    "CPF CNPJ": "CNPJ/CPF",
+    "TIPO DE PAGAMENTO": "TIPO PAGAMENTO",
+    "TIPO PGTO": "TIPO PAGAMENTO",
+    "FORMA DE PAGAMENTO": "TIPO PAGAMENTO",
+    "CHAVE PIX": "PIX",
+    "COD BANCO": "CÓDIGO BANCO",
+    "CODIGO BANCO": "CÓDIGO BANCO",
+    "CODIGO DO BANCO": "CÓDIGO BANCO",
+    "AGENCIA": "AGÊNCIA",
+    "C CORRENTE": "CONTA CORRENTE",
+    "CC": "CONTA CORRENTE",
     "SITE CRITICO": "SITE CRÍTICO",
     "CRITICO": "SITE CRÍTICO",
     "CRITICIDADE": "TIPO CRITICIDADE",
@@ -196,6 +217,13 @@ def normalize_code(value):
         text = text[:-2]
 
     return text
+
+
+def normalize_bank_code(value):
+    code = normalize_code(value)
+    if code.isdigit() and len(code) <= 3:
+        return code.zfill(3)
+    return code
 
 
 def normalize_site_due_day(value, strict=True):
@@ -606,6 +634,7 @@ def load_site_registry(path=None):
     df = df[SITE_REGISTRY_COLUMNS].fillna("")
     for column in CURRENCY_COLUMNS:
         df[column] = df[column].astype(str).str.strip()
+    df["CÓDIGO BANCO"] = df["CÓDIGO BANCO"].apply(normalize_bank_code)
 
     return df
 
@@ -736,6 +765,7 @@ def prepare_registry_for_save(df):
     df = df[SITE_REGISTRY_COLUMNS].fillna("")
     for column in CURRENCY_COLUMNS:
         df[column] = df[column].astype(str).str.strip()
+    df["CÓDIGO BANCO"] = df["CÓDIGO BANCO"].apply(normalize_bank_code)
 
     for column in NUMERIC_COLUMNS - {"DIA VENCIMENTO"}:
         df[column] = pd.to_numeric(
@@ -958,6 +988,9 @@ def upsert_site(record, original_code=None):
     with file_lock(path):
         df = load_site_registry(path).astype(object)
         record = validate_site_critical_fields(record)
+        record["CÓDIGO BANCO"] = normalize_bank_code(
+            record.get("CÓDIGO BANCO")
+        )
         record["DIA VENCIMENTO"] = normalize_site_due_day(
             record.get("DIA VENCIMENTO")
         )

@@ -24,6 +24,24 @@ class Site:
 
         self.outros_custos = 0.0
 
+        self.cnpj_cpf = ""
+
+        self.tipo_pagamento = ""
+
+        self.pix = ""
+
+        self.banco = ""
+
+        self.codigo_banco = ""
+
+        self.agencia = ""
+
+        self.conta_corrente = ""
+
+        self.multa = ""
+
+        self.juros = ""
+
         self.status_cadastro = ""
 
         self.nome_cadastro = ""

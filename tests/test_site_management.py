@@ -99,6 +99,15 @@ class SiteManagementTest(unittest.TestCase):
             "LOCAÇÃO": "1000",
             "ENERGIA": "250",
             "OUTROS": "50",
+            "CNPJ/CPF": "12.345.678/0001-90",
+            "TIPO PAGAMENTO": "PIX",
+            "PIX": "financeiro@example.com",
+            "BANCO": "Banco Teste",
+            "CÓDIGO BANCO": 1,
+            "AGÊNCIA": "1234",
+            "CONTA CORRENTE": "98765-0",
+            "MULTA": "2%",
+            "JUROS": "1% a.m.",
             "DIA VENCIMENTO": "",
         }]))
 
@@ -106,6 +115,14 @@ class SiteManagementTest(unittest.TestCase):
         self.assertEqual(preparado.iloc[0]["LOCAÇÃO"], "1000")
         self.assertEqual(preparado.iloc[0]["ENERGIA"], "250")
         self.assertEqual(preparado.iloc[0]["OUTROS"], "50")
+        self.assertEqual(
+            preparado.iloc[0]["CNPJ/CPF"],
+            "12.345.678/0001-90",
+        )
+        self.assertEqual(preparado.iloc[0]["TIPO PAGAMENTO"], "PIX")
+        self.assertEqual(preparado.iloc[0]["CÓDIGO BANCO"], "001")
+        self.assertEqual(preparado.iloc[0]["MULTA"], "2%")
+        self.assertEqual(preparado.iloc[0]["JUROS"], "1% a.m.")
 
     def test_salvamento_migra_cabecalho_custo_para_locacao(self):
         with tempfile.TemporaryDirectory() as temp_dir:

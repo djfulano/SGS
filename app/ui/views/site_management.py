@@ -712,6 +712,15 @@ def montar_registro_site_formulario(registro, df_cadastro, sufixo):
     locacao_atual = texto_registro_site(registro, "LOCAÇÃO")
     energia_atual = texto_registro_site(registro, "ENERGIA")
     outros_custos_atual = texto_registro_site(registro, "OUTROS")
+    cnpj_cpf_atual = texto_registro_site(registro, "CNPJ/CPF")
+    tipo_pagamento_atual = texto_registro_site(registro, "TIPO PAGAMENTO")
+    pix_atual = texto_registro_site(registro, "PIX")
+    banco_atual = texto_registro_site(registro, "BANCO")
+    codigo_banco_atual = texto_registro_site(registro, "CÓDIGO BANCO")
+    agencia_atual = texto_registro_site(registro, "AGÊNCIA")
+    conta_corrente_atual = texto_registro_site(registro, "CONTA CORRENTE")
+    multa_atual = texto_registro_site(registro, "MULTA")
+    juros_atual = texto_registro_site(registro, "JUROS")
     site_critico_atual = texto_registro_site(
         registro,
         "SITE CRÍTICO"
@@ -931,6 +940,76 @@ def montar_registro_site_formulario(registro, df_cadastro, sufixo):
                 key=chave_campo_site(sufixo, "outros_custos_restrito")
             )
             outros_custos = outros_custos_atual
+
+    st.markdown("**Dados de pagamento**")
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        cnpj_cpf = st.text_input(
+            "CNPJ/CPF",
+            value=cnpj_cpf_atual,
+            key=chave_campo_site(sufixo, "cnpj_cpf")
+        )
+
+    with col2:
+        tipo_pagamento = st.text_input(
+            "Tipo de pagamento",
+            value=tipo_pagamento_atual,
+            key=chave_campo_site(sufixo, "tipo_pagamento")
+        )
+
+    with col3:
+        pix = st.text_input(
+            "Pix",
+            value=pix_atual,
+            key=chave_campo_site(sufixo, "pix")
+        )
+
+    col1, col2, col3, col4 = st.columns(4)
+
+    with col1:
+        banco = st.text_input(
+            "Banco",
+            value=banco_atual,
+            key=chave_campo_site(sufixo, "banco")
+        )
+
+    with col2:
+        codigo_banco = st.text_input(
+            "Código Banco",
+            value=codigo_banco_atual,
+            key=chave_campo_site(sufixo, "codigo_banco")
+        )
+
+    with col3:
+        agencia = st.text_input(
+            "Agência",
+            value=agencia_atual,
+            key=chave_campo_site(sufixo, "agencia")
+        )
+
+    with col4:
+        conta_corrente = st.text_input(
+            "Conta corrente",
+            value=conta_corrente_atual,
+            key=chave_campo_site(sufixo, "conta_corrente")
+        )
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        multa = st.text_input(
+            "Multa",
+            value=multa_atual,
+            key=chave_campo_site(sufixo, "multa")
+        )
+
+    with col2:
+        juros = st.text_input(
+            "Juros",
+            value=juros_atual,
+            key=chave_campo_site(sufixo, "juros")
+        )
 
     col1, col2, col3 = st.columns(3)
 
@@ -1160,6 +1239,15 @@ def montar_registro_site_formulario(registro, df_cadastro, sufixo):
         "LOCAÇÃO": locacao.strip(),
         "ENERGIA": energia.strip(),
         "OUTROS": outros_custos.strip(),
+        "CNPJ/CPF": cnpj_cpf.strip(),
+        "TIPO PAGAMENTO": tipo_pagamento.strip(),
+        "PIX": pix.strip(),
+        "BANCO": banco.strip(),
+        "CÓDIGO BANCO": codigo_banco.strip(),
+        "AGÊNCIA": agencia.strip(),
+        "CONTA CORRENTE": conta_corrente.strip(),
+        "MULTA": multa.strip(),
+        "JUROS": juros.strip(),
         "ENDEREÇO": endereco.strip(),
         "NUMERO": numero.strip(),
         "BAIRRO": bairro.strip(),
@@ -2852,6 +2940,15 @@ def mostrar_cadastro_site_selecionado(site):
             "LOCAÇÃO": site.get("Locacao") or site.get("Custo") or "",
             "ENERGIA": site.get("Energia") or "",
             "OUTROS": site.get("Outros Custos") or "",
+            "CNPJ/CPF": site.get("CNPJ CPF") or "",
+            "TIPO PAGAMENTO": site.get("Tipo Pagamento") or "",
+            "PIX": site.get("Pix") or "",
+            "BANCO": site.get("Banco") or "",
+            "CÓDIGO BANCO": site.get("Codigo Banco") or "",
+            "AGÊNCIA": site.get("Agencia") or "",
+            "CONTA CORRENTE": site.get("Conta Corrente") or "",
+            "MULTA": site.get("Multa") or "",
+            "JUROS": site.get("Juros") or "",
             "ENDEREÇO": site.get("Endereco") or "",
             "NUMERO": site.get("Numero") or "",
             "BAIRRO": site.get("Bairro") or "",
@@ -2952,6 +3049,15 @@ def montar_site_vazio_para_cadastro():
         "Locacao": "",
         "Energia": "",
         "Outros Custos": "",
+        "CNPJ CPF": "",
+        "Tipo Pagamento": "",
+        "Pix": "",
+        "Banco": "",
+        "Codigo Banco": "",
+        "Agencia": "",
+        "Conta Corrente": "",
+        "Multa": "",
+        "Juros": "",
         "Endereco": "",
         "Numero": "",
         "Bairro": "",

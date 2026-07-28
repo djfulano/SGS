@@ -224,6 +224,15 @@ class ImportersTest(unittest.TestCase):
                 "LOCAÇÃO": "R$ 1.000,00",
                 "ENERGIA": "R$ 250,00",
                 "OUTROS": "R$ 50,00",
+                "CNPJ/CPF": "12.345.678/0001-90",
+                "TIPO PGTO": "PIX",
+                "CHAVE PIX": "financeiro@example.com",
+                "BANCO": "Banco Teste",
+                "CÓDIGO BANCO": "001",
+                "AGÊNCIA": "1234",
+                "CONTA CORRENTE": "98765-0",
+                "MULTA": "2%",
+                "JUROS": "1% a.m.",
             }]).to_excel(caminho, index=False)
 
             df = carregar_topos(caminho)
@@ -232,6 +241,15 @@ class ImportersTest(unittest.TestCase):
         self.assertEqual(df.iloc[0]["Energia"], 250)
         self.assertEqual(df.iloc[0]["Outros Custos"], 50)
         self.assertEqual(df.iloc[0]["Custo"], 1300)
+        self.assertEqual(df.iloc[0]["CNPJ CPF"], "12.345.678/0001-90")
+        self.assertEqual(df.iloc[0]["Tipo Pagamento"], "PIX")
+        self.assertEqual(df.iloc[0]["Pix"], "financeiro@example.com")
+        self.assertEqual(df.iloc[0]["Banco"], "Banco Teste")
+        self.assertEqual(df.iloc[0]["Codigo Banco"], "001")
+        self.assertEqual(df.iloc[0]["Agencia"], "1234")
+        self.assertEqual(df.iloc[0]["Conta Corrente"], "98765-0")
+        self.assertEqual(df.iloc[0]["Multa"], "2%")
+        self.assertEqual(df.iloc[0]["Juros"], "1% a.m.")
 
     @unittest.skipIf(carregar_topos is None, "pandas nao instalado")
     def test_carregar_topos_trata_custo_legado_como_locacao(self):

@@ -111,6 +111,15 @@ def aplicar_cadastro_topos(sites, df_topos):
                 + site.energia
                 + site.outros_custos
             )
+            site.cnpj_cpf = topo.get("CNPJ CPF") or ""
+            site.tipo_pagamento = topo.get("Tipo Pagamento") or ""
+            site.pix = topo.get("Pix") or ""
+            site.banco = topo.get("Banco") or ""
+            site.codigo_banco = topo.get("Codigo Banco") or ""
+            site.agencia = topo.get("Agencia") or ""
+            site.conta_corrente = topo.get("Conta Corrente") or ""
+            site.multa = topo.get("Multa") or ""
+            site.juros = topo.get("Juros") or ""
             site.status_cadastro = topo.get("Status Cadastro") or ""
             site.nome_cadastro = topo.get("Nome Cadastro") or ""
             site.relacionamento = topo.get("Relacionamento") or ""
@@ -145,6 +154,15 @@ def aplicar_cadastro_topos(sites, df_topos):
             site.locacao = 0.0
             site.energia = 0.0
             site.outros_custos = 0.0
+            site.cnpj_cpf = ""
+            site.tipo_pagamento = ""
+            site.pix = ""
+            site.banco = ""
+            site.codigo_banco = ""
+            site.agencia = ""
+            site.conta_corrente = ""
+            site.multa = ""
+            site.juros = ""
             site.status_cadastro = ""
             site.nome_cadastro = ""
             site.relacionamento = ""
