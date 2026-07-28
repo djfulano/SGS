@@ -20,6 +20,7 @@ class CriticalAlertsTest(unittest.TestCase):
             "NOME": "Site Crítico",
             "Status": "Ativo",
             "SITE CRÍTICO": "Sim",
+            "TIPO CRITICIDADE": "Desliga",
             "DIA VENCIMENTO": 20,
         }
         registro.update(overrides)
@@ -79,6 +80,7 @@ class CriticalAlertsTest(unittest.TestCase):
         self.assertEqual(len(resultado), 1)
         self.assertEqual(resultado.iloc[0]["Vencimento"], "2026-07-18")
         self.assertEqual(resultado.iloc[0]["Dias"], -3)
+        self.assertEqual(resultado.iloc[0]["Criticidade"], "Desliga")
         self.assertEqual(resultado.iloc[0]["Origem da data"], "Parcela financeira aberta")
 
     def test_dia_mensal_e_usado_sem_parcela_aberta(self):

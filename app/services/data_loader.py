@@ -124,6 +124,7 @@ def aplicar_cadastro_topos(sites, df_topos):
             site.site_critico = str(
                 topo.get("Site Critico") or ""
             ).strip().casefold() in {"sim", "s", "true", "1"}
+            site.tipo_criticidade = topo.get("Tipo Criticidade") or ""
             site.dia_vencimento = int(topo.get("Dia Vencimento") or 0)
             site.detalhe = topo.get("Detalhe") or ""
             site.observacao = topo.get("Observacao") or ""
@@ -152,6 +153,7 @@ def aplicar_cadastro_topos(sites, df_topos):
             site.altura = 0.0
             site.restricao = ""
             site.site_critico = False
+            site.tipo_criticidade = ""
             site.dia_vencimento = 0
             site.detalhe = ""
             site.observacao = ""

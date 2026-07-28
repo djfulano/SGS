@@ -30,11 +30,13 @@ from app.services.contract_service import restore_archived_contract_file
 from app.services.finance_service import resumo_atraso_site
 from app.services.site_registry_service import SITE_CODE_COLUMN
 from app.services.site_registry_service import SITE_CONTACT_TYPES
+from app.services.site_registry_service import SITE_CRITICAL_TYPE_OPTIONS
 from app.services.site_registry_service import SITE_TYPE_OPTIONS
 from app.services.site_registry_service import load_site_contacts
 from app.services.site_registry_service import load_site_registry
 from app.services.site_registry_service import normalize_code
 from app.services.site_registry_service import normalize_site_due_day
+from app.services.site_registry_service import normalize_site_critical_type
 from app.services.site_registry_service import normalize_site_contacts
 from app.services.site_registry_service import save_site_contacts
 from app.services.site_registry_service import upsert_site
@@ -712,6 +714,11 @@ def montar_registro_site_formulario(registro, df_cadastro, sufixo):
         registro,
         "SITE CRÍTICO"
     ).casefold() in {"sim", "s", "true", "1"}
+    tipo_criticidade_atual = normalize_site_critical_type(
+        texto_registro_site(registro, "TIPO CRITICIDADE")
+    )
+    if tipo_criticidade_atual not in SITE_CRITICAL_TYPE_OPTIONS:
+        tipo_criticidade_atual = ""
 
     opcoes_contrato = opcoes_cadastradas_site(df_cadastro, "CONTRATO", contrato_atual)
     opcoes_categoria = opcoes_cadastradas_site(df_cadastro, "CATEGORIA", categoria_atual)
@@ -873,7 +880,7 @@ def montar_registro_site_formulario(registro, df_cadastro, sufixo):
         )
 
     st.markdown("**Financeiro**")
-    col1, col2, col3 = st.columns(3)
+    col1, col2, col3, col4 = st.columns(4)
 
     with col1:
         if pode_visualizar_custos_site():
@@ -913,6 +920,21 @@ def montar_registro_site_formulario(registro, df_cadastro, sufixo):
                 "O alerta só será ativado quando o site também possuir um "
                 "dia de vencimento padrão."
             )
+        )
+
+    with col4:
+        opcoes_criticidade = [""] + SITE_CRITICAL_TYPE_OPTIONS
+        tipo_criticidade = st.selectbox(
+            "Tipo de criticidade",
+            opcoes_criticidade,
+            index=opcoes_criticidade.index(tipo_criticidade_atual),
+            format_func=lambda value: value or "Selecione",
+            disabled=not site_critico,
+            key=chave_campo_site(sufixo, "tipo_criticidade"),
+            help=(
+                "Obrigatório para sites críticos. Em Outros, descreva o "
+                "motivo no campo Observação."
+            ),
         )
 
     st.markdown("**Localização**")
@@ -1112,6 +1134,7 @@ def montar_registro_site_formulario(registro, df_cadastro, sufixo):
         "ALTURA": altura,
         "RESTRIÇÃO": restricao.strip(),
         "SITE CRÍTICO": "Sim" if site_critico else "Não",
+        "TIPO CRITICIDADE": tipo_criticidade if site_critico else "",
         "DIA VENCIMENTO": dia_vencimento,
         "Status": status,
         "Detalhe": detalhe.strip(),
@@ -2801,6 +2824,7 @@ def mostrar_cadastro_site_selecionado(site):
             "ALTURA": site.get("Altura") or 0,
             "RESTRIÇÃO": site.get("Restricao") or "",
             "SITE CRÍTICO": "Sim" if site.get("Site Critico") else "Não",
+            "TIPO CRITICIDADE": site.get("Tipo Criticidade") or "",
             "DIA VENCIMENTO": site.get("Dia Vencimento") or "",
             "Status": site.get("Status Cadastro") or "",
             "Detalhe": site.get("Detalhe") or "",
@@ -2898,6 +2922,7 @@ def montar_site_vazio_para_cadastro():
         "Altura": 0,
         "Restricao": "",
         "Site Critico": False,
+        "Tipo Criticidade": "",
         "Dia Vencimento": "",
         "Status Cadastro": "",
         "Detalhe": "",

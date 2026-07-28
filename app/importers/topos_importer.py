@@ -354,6 +354,13 @@ def carregar_topos(caminho=None):
         "SITE CRITICO",
         "CRITICO"
     )
+    coluna_tipo_criticidade = obter_coluna(
+        colunas,
+        "TIPO CRITICIDADE",
+        "TIPO DE CRITICIDADE",
+        "CRITICIDADE",
+        "MOTIVO CRITICIDADE"
+    )
     coluna_dia_vencimento = obter_coluna(
         colunas,
         "DIA VENCIMENTO",
@@ -537,6 +544,11 @@ def carregar_topos(caminho=None):
             "Site Critico": valor_texto(
                 linha.get(coluna_site_critico)
                 if coluna_site_critico
+                else ""
+            ),
+            "Tipo Criticidade": valor_texto(
+                linha.get(coluna_tipo_criticidade)
+                if coluna_tipo_criticidade
                 else ""
             ),
             "Dia Vencimento": valor_dia_vencimento(

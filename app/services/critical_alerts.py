@@ -13,6 +13,7 @@ from app.services.finance_service import normalizar_codigo_microsiga
 from app.services.finance_service import preparar_acordos_exibicao
 from app.services.finance_service import preparar_pagamentos_exibicao
 from app.services.site_registry_service import load_site_registry
+from app.services.site_registry_service import normalize_site_critical_type
 from app.storage import read_json_authoritative
 from app.storage import write_json_atomic
 
@@ -30,6 +31,7 @@ CRITICAL_SITE_ALERT_COLUMNS = [
     "Nome",
     "Nome SNMPc",
     "Código Microsiga",
+    "Criticidade",
     "Vencimento",
     "Dias",
     "Situação",
@@ -204,6 +206,9 @@ def _montar_alertas_sites_criticos_preparados(
                 "Código Microsiga": normalizar_codigo_microsiga(
                     site.get("CÓDIGO MICROSIGA")
                 ),
+                "Criticidade": normalize_site_critical_type(
+                    site.get("TIPO CRITICIDADE")
+                ),
             })
             continue
 
@@ -235,6 +240,9 @@ def _montar_alertas_sites_criticos_preparados(
             "Nome": _texto(site.get("NOME")),
             "Nome SNMPc": _texto(site.get("SMNPC")),
             "Código Microsiga": microsiga,
+            "Criticidade": normalize_site_critical_type(
+                site.get("TIPO CRITICIDADE")
+            ),
             "Vencimento": vencimento.isoformat(),
             "Dias": dias,
             "Situação": _situacao_dias(dias),

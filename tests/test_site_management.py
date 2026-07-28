@@ -4,11 +4,14 @@ from unittest.mock import patch
 import pandas as pd
 
 from app.services.site_registry_service import normalize_site_contacts
+from app.services.site_registry_service import normalize_site_critical_type
 from app.services.site_registry_service import normalize_site_due_day
 from app.services.site_registry_service import prepare_registry_for_save
+from app.services.site_registry_service import SITE_CRITICAL_TYPE_OPTIONS
 from app.services.site_registry_service import SITE_TYPE_OPTIONS
 from app.services.site_registry_service import duplicated_site_codes
 from app.services.site_registry_service import validate_unique_site_codes
+from app.services.site_registry_service import validate_site_critical_fields
 from app.services.site_registry_service import upsert_site
 from app.ui.views.site_management import contatos_arquivados
 from app.ui.views.site_management import contatos_ativos
@@ -39,6 +42,51 @@ class SiteManagementTest(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "entre 1 e 28"):
             normalize_site_due_day(29)
+
+    def test_tipos_de_criticidade_sao_fixos_e_aceitam_juridico_sem_acento(self):
+        self.assertEqual(
+            SITE_CRITICAL_TYPE_OPTIONS,
+            ["Desliga", "Bloqueia", "Jurídico", "Outros"],
+        )
+        self.assertEqual(
+            normalize_site_critical_type("Juridico", strict=True),
+            "Jurídico",
+        )
+
+    def test_site_critico_exige_tipo_de_criticidade(self):
+        with self.assertRaisesRegex(
+            ValueError,
+            "Selecione o tipo de criticidade",
+        ):
+            validate_site_critical_fields({
+                "SITE CRÍTICO": "Sim",
+                "TIPO CRITICIDADE": "",
+            })
+
+    def test_criticidade_outros_exige_observacao(self):
+        with self.assertRaisesRegex(
+            ValueError,
+            "detalhes da criticidade em Observação",
+        ):
+            validate_site_critical_fields({
+                "SITE CRÍTICO": "Sim",
+                "TIPO CRITICIDADE": "Outros",
+                "OBSERVAÇÃO:": "",
+            })
+
+        registro = validate_site_critical_fields({
+            "SITE CRÍTICO": "Sim",
+            "TIPO CRITICIDADE": "Outros",
+            "OBSERVAÇÃO:": "Risco operacional específico.",
+        })
+        self.assertEqual(registro["TIPO CRITICIDADE"], "Outros")
+
+    def test_site_nao_critico_remove_classificacao_antiga(self):
+        registro = validate_site_critical_fields({
+            "SITE CRÍTICO": "Não",
+            "TIPO CRITICIDADE": "Desliga",
+        })
+        self.assertEqual(registro["TIPO CRITICIDADE"], "")
 
     def test_prepara_planilha_preserva_vencimento_vazio(self):
         preparado = prepare_registry_for_save(pd.DataFrame([{
@@ -89,6 +137,7 @@ class SiteManagementTest(unittest.TestCase):
                 {
                     "CÓDIGO AQUILES": "100",
                     "SITE CRÍTICO": "Sim",
+                    "TIPO CRITICIDADE": "Desliga",
                     "DIA VENCIMENTO": 18,
                 },
                 original_code="100",

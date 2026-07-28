@@ -204,12 +204,14 @@ class ImportersTest(unittest.TestCase):
                 "TIPO": "POP",
                 "NOME": "Site crítico",
                 "SITE CRÍTICO": "Sim",
+                "TIPO CRITICIDADE": "Bloqueia",
                 "DIA VENCIMENTO": 18,
             }]).to_excel(caminho, index=False)
 
             df = carregar_topos(caminho)
 
         self.assertEqual(df.iloc[0]["Site Critico"], "Sim")
+        self.assertEqual(df.iloc[0]["Tipo Criticidade"], "Bloqueia")
         self.assertEqual(df.iloc[0]["Dia Vencimento"], 18)
 
     @unittest.skipIf(carregar_topos is None, "pandas nao instalado")

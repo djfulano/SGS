@@ -1,5 +1,11 @@
 # Histórico de versões
 
+## 1.3.31
+
+- Sites críticos passam a exigir uma classificação entre Desliga, Bloqueia, Jurídico e Outros.
+- A classificação é armazenada na planilha Sites, carregada pelo importador e exibida nos alertas financeiros.
+- A opção Outros exige o detalhamento do motivo no campo Observação.
+
 ## 1.3.30
 
 - Senhas novas passam a exigir no mínimo 8 caracteres, mantendo o limite máximo de 128 caracteres e a proibição de senha igual ao usuário.

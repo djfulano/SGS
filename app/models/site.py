@@ -54,6 +54,8 @@ class Site:
 
         self.site_critico = False
 
+        self.tipo_criticidade = ""
+
         self.dia_vencimento = 0
 
         self.detalhe = ""

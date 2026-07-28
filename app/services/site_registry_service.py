@@ -43,6 +43,7 @@ SITE_REGISTRY_COLUMNS = [
     "ALTURA",
     "RESTRIÇÃO",
     "SITE CRÍTICO",
+    "TIPO CRITICIDADE",
     "DIA VENCIMENTO",
     "Status",
     "Detalhe",
@@ -78,6 +79,13 @@ SITE_TYPE_OPTIONS = [
     "REP",
     "DC",
     "SITE"
+]
+
+SITE_CRITICAL_TYPE_OPTIONS = [
+    "Desliga",
+    "Bloqueia",
+    "Jurídico",
+    "Outros",
 ]
 
 NUMERIC_COLUMNS = {
@@ -126,6 +134,9 @@ COLUMN_ALIASES = {
     "FAVORECIDO": "Favorecido",
     "SITE CRITICO": "SITE CRÍTICO",
     "CRITICO": "SITE CRÍTICO",
+    "CRITICIDADE": "TIPO CRITICIDADE",
+    "TIPO DE CRITICIDADE": "TIPO CRITICIDADE",
+    "MOTIVO CRITICIDADE": "TIPO CRITICIDADE",
     "DIA DE VENCIMENTO": "DIA VENCIMENTO",
     "VENCIMENTO": "DIA VENCIMENTO"
 }
@@ -235,6 +246,58 @@ def normalize_column_key(value):
 
 def normalize_site_type(value):
     return normalize_column_key(value)
+
+
+def normalize_site_critical_type(value, strict=False):
+    text = str(value or "").strip()
+    if not text:
+        return ""
+
+    options = {
+        normalize_column_key(option): option
+        for option in SITE_CRITICAL_TYPE_OPTIONS
+    }
+    normalized = options.get(normalize_column_key(text))
+    if normalized:
+        return normalized
+
+    if strict:
+        raise ValueError(
+            "Selecione uma criticidade válida: Desliga, Bloqueia, "
+            "Jurídico ou Outros."
+        )
+    return text
+
+
+def validate_site_critical_fields(record):
+    record = dict(record or {})
+    critical = normalize_column_key(
+        record.get("SITE CRÍTICO")
+    ) in {"SIM", "S", "TRUE", "1"}
+
+    if not critical:
+        record["TIPO CRITICIDADE"] = ""
+        return record
+
+    critical_type = normalize_site_critical_type(
+        record.get("TIPO CRITICIDADE"),
+        strict=True,
+    )
+    if not critical_type:
+        raise ValueError(
+            "Selecione o tipo de criticidade do site."
+        )
+
+    if (
+        critical_type == "Outros"
+        and not str(record.get("OBSERVAÇÃO:") or "").strip()
+    ):
+        raise ValueError(
+            "Informe os detalhes da criticidade em Observação."
+        )
+
+    record["TIPO CRITICIDADE"] = critical_type
+    return record
 
 
 def site_pode_atender_outros_enderecos(site):
@@ -671,6 +734,9 @@ def prepare_registry_for_save(df):
     df["DIA VENCIMENTO"] = df["DIA VENCIMENTO"].apply(
         lambda value: normalize_site_due_day(value, strict=False)
     ).astype(object)
+    df["TIPO CRITICIDADE"] = df["TIPO CRITICIDADE"].apply(
+        normalize_site_critical_type
+    )
 
     return df
 
@@ -879,7 +945,7 @@ def upsert_site(record, original_code=None):
 
     with file_lock(path):
         df = load_site_registry(path).astype(object)
-        record = dict(record or {})
+        record = validate_site_critical_fields(record)
         record["DIA VENCIMENTO"] = normalize_site_due_day(
             record.get("DIA VENCIMENTO")
         )
