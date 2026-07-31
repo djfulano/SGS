@@ -20,6 +20,7 @@ from app.services.finance_service import carregar_pagamentos
 from app.services.finance_service import dashboard_financeiro
 from app.services.finance_service import dataframe_para_excel
 from app.services.finance_service import exportar_conciliacao_financeira_excel
+from app.services.finance_service import exportar_prioridades_financeiras_excel
 from app.services.finance_service import historico_financeiro_site
 from app.services.finance_service import importar_planilha_financeira
 from app.services.finance_service import montar_relatorio_financeiro_sites
@@ -361,6 +362,16 @@ def mostrar_prioridades_financeiras():
         key=(
             f"financeiro_prioridades_editor_{assinatura}_{versao_editor}"
         ),
+    )
+
+    st.download_button(
+        "Baixar tabela em Excel",
+        data=exportar_prioridades_financeiras_excel(editado),
+        file_name=(
+            f"sgs_prioridades_financeiras_{datetime.now():%Y%m%d_%H%M%S}.xlsx"
+        ),
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        key="financeiro_prioridades_exportar",
     )
 
     if st.button(

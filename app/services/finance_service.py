@@ -207,6 +207,20 @@ AGREEMENT_NUMERIC_COLUMNS = [
     "Multa + Juros",
 ]
 
+FINANCE_EXPORT_CURRENCY_COLUMNS = {
+    *PAYMENT_NUMERIC_COLUMNS,
+    *AGREEMENT_NUMERIC_COLUMNS,
+    "Valor",
+    "Valor acumulado",
+    "Saldo em aberto",
+    "Receita Total",
+    "Valor em Atraso",
+    "Valor da Mensalidade Atual",
+    "Valor da Parcela do Acordo",
+    "Valor das Mensalidades Vencidas",
+    "Valor dos Acordos Vencidos",
+}
+
 FINANCE_AUDIT_COLUMNS = {
     "Importado em",
     "Atualizado em",
@@ -2267,9 +2281,39 @@ def exportar_conciliacao_financeira_excel(df):
     return dataframe_para_excel(df, "Conciliação")
 
 
-def dataframe_para_excel(df, sheet_name="Dados"):
+def exportar_prioridades_financeiras_excel(df):
+    dados = df.drop(
+        columns=[
+            coluna
+            for coluna in ["Chave Site", "Possui Vencidos"]
+            if coluna in df.columns
+        ],
+    )
+    return dataframe_para_excel(dados, "Prioridades")
+
+
+def dataframe_para_excel(df, sheet_name="Dados", colunas_monetarias=None):
     buffer = BytesIO()
     with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
-        df.to_excel(writer, index=False, sheet_name=sheet_name[:31] or "Dados")
+        nome_aba = sheet_name[:31] or "Dados"
+        df.to_excel(writer, index=False, sheet_name=nome_aba)
+        planilha = writer.sheets[nome_aba]
+        cabecalhos = {
+            celula.value: celula.column
+            for celula in planilha[1]
+            if celula.value
+        }
+        colunas_monetarias = set(
+            FINANCE_EXPORT_CURRENCY_COLUMNS
+            if colunas_monetarias is None
+            else colunas_monetarias
+        )
+        formato_reais = '[$R$-416] #,##0.00'
+        for coluna in colunas_monetarias.intersection(cabecalhos):
+            indice = cabecalhos[coluna]
+            for linha in range(2, planilha.max_row + 1):
+                celula = planilha.cell(row=linha, column=indice)
+                if celula.value is not None and celula.data_type == "n":
+                    celula.number_format = formato_reais
     buffer.seek(0)
     return buffer.getvalue()

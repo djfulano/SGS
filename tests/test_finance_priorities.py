@@ -1,10 +1,12 @@
 import tempfile
 import unittest
 from datetime import date, datetime
+from io import BytesIO
 from pathlib import Path
 from unittest.mock import patch
 
 import pandas as pd
+from openpyxl import load_workbook
 
 from app.services import finance_service as fs
 
@@ -169,6 +171,48 @@ class FinancePrioritiesTest(unittest.TestCase):
                     [{"site_key": "aquiles:100", "importance": "Urgente"}],
                     path=Path(temp_dir) / "site_priorities.json",
                 )
+
+    def test_exporta_valores_numericos_com_formato_em_reais(self):
+        dados = pd.DataFrame([{
+            "Chave Site": "aquiles:100",
+            "Site": "SITE A - 100 / SITE A - 12345",
+            "Valor da Mensalidade Atual": 1234.56,
+            "Valor dos Acordos Vencidos": 78.9,
+            "Importância": "Alta",
+            "Possui Vencidos": "Sim",
+        }])
+        arquivo = fs.exportar_prioridades_financeiras_excel(dados)
+        planilha = load_workbook(BytesIO(arquivo))["Prioridades"]
+        cabecalhos = {
+            celula.value: celula.column
+            for celula in planilha[1]
+        }
+        mensalidade = planilha.cell(
+            row=2,
+            column=cabecalhos["Valor da Mensalidade Atual"],
+        )
+        acordos = planilha.cell(
+            row=2,
+            column=cabecalhos["Valor dos Acordos Vencidos"],
+        )
+        self.assertEqual(mensalidade.data_type, "n")
+        self.assertEqual(mensalidade.value, 1234.56)
+        self.assertIn("R$", mensalidade.number_format)
+        self.assertEqual(acordos.data_type, "n")
+        self.assertIn("R$", acordos.number_format)
+        self.assertNotIn("Chave Site", cabecalhos)
+        self.assertNotIn("Possui Vencidos", cabecalhos)
+
+    def test_exportacao_preserva_valor_restrito_como_texto(self):
+        dados = pd.DataFrame([{
+            "Site": "SITE A",
+            "Valor da Mensalidade Atual": "Restrito",
+        }])
+        arquivo = fs.exportar_prioridades_financeiras_excel(dados)
+        planilha = load_workbook(BytesIO(arquivo))["Prioridades"]
+        valor = planilha.cell(row=2, column=2)
+        self.assertEqual(valor.value, "Restrito")
+        self.assertEqual(valor.data_type, "s")
 
 
 if __name__ == "__main__":

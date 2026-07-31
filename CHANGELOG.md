@@ -1,5 +1,11 @@
 # Histórico de versões
 
+## 1.3.36
+
+- A tabela de Prioridades Financeiras passa a oferecer download direto em Excel.
+- Valores financeiros são exportados como números com formato monetário em Reais, permitindo cálculos e edição no Excel.
+- O download respeita filtros, importância exibida e restrições de visualização de custos.
+
 ## 1.3.35
 
 - Financeiro ganha a subaba Prioridades com todos os sites ativos e identificação completa do cadastro.
