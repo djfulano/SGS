@@ -1,5 +1,10 @@
 # Histórico de versões
 
+## 1.3.37
+
+- Objetos técnicos duplicados do SNMPc passam a ser consolidados pelo Código Aquiles quando existe um único Nome SNMPc oficial no cadastro de Sites.
+- A busca, a topologia, os equipamentos, os clientes e os enlaces passam a usar somente o site canônico, preservando os dados existentes sob o contêiner duplicado.
+
 ## 1.3.36
 
 - A tabela de Prioridades Financeiras passa a oferecer download direto em Excel.

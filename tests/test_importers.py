@@ -14,9 +14,13 @@ from app.importers.excel_importer import ler_clientes_base
 from app.importers.excel_importer import importar_clientes
 
 try:
+    from app.services.data_loader import aplicar_cadastro_topos
+    from app.services.data_loader import consolidar_sites_duplicados_cadastro
     from app.services.data_loader import sistema_precisa_inicializacao
     from app.services.data_loader import status_inicializacao_dados
 except ModuleNotFoundError:
+    aplicar_cadastro_topos = None
+    consolidar_sites_duplicados_cadastro = None
     sistema_precisa_inicializacao = None
     status_inicializacao_dados = None
 
@@ -314,6 +318,80 @@ class ImportersTest(unittest.TestCase):
         self.assertIn("12345678", assinaturas)
         self.assertEqual(assinaturas["12345678"]["site"].nome, "ABC_POP_1_IP")
         self.assertEqual(equipamentos, [])
+
+    @unittest.skipIf(
+        consolidar_sites_duplicados_cadastro is None,
+        "pandas nao instalado"
+    )
+    def test_consolida_container_snmpc_pelo_nome_oficial_do_cadastro(self):
+        linhas = [
+            {
+                "ID": "1", "Name": "WINDSOR_POP_94500_IP",
+                "Type": "Subnet", "Parent": "(NULL)",
+                "Address": "", "Description": ""
+            },
+            {
+                "ID": "2", "Name": "WIN_POP_94500_IP",
+                "Type": "Subnet", "Parent": "1",
+                "Address": "", "Description": ""
+            },
+            {
+                "ID": "3", "Name": "WIN_S1", "Type": "Subnet",
+                "Parent": "2", "Address": "", "Description": ""
+            },
+            {
+                "ID": "4", "Name": "CLIENTE_WIN_12345678",
+                "Type": "Subnet", "Parent": "3",
+                "Address": "", "Description": ""
+            },
+            {
+                "ID": "5", "Name": "RADIO_WIN", "Type": "Device",
+                "Parent": "2", "Address": "10.0.0.1",
+                "Icon": "radio.ico", "Description": ""
+            }
+        ]
+        sites, assinaturas, equipamentos, enlaces = importar_estrutura_de_linhas(
+            linhas,
+            retornar_enlaces=True
+        )
+        cadastro = pd.DataFrame([{
+            "Codigo": "94500",
+            "SNMPc": "WIN_POP_94500_IP",
+            "Nome Cadastro": "CASTELO DE WINDSOR"
+        }])
+
+        aplicar_cadastro_topos(sites, cadastro)
+        sites = consolidar_sites_duplicados_cadastro(
+            sites,
+            assinaturas,
+            equipamentos,
+            enlaces
+        )
+
+        self.assertEqual(list(sites), ["WIN_POP_94500_IP"])
+        self.assertEqual(assinaturas["12345678"]["site"], sites["WIN_POP_94500_IP"])
+        self.assertEqual(equipamentos[0]["Site"], "WIN_POP_94500_IP")
+        self.assertEqual(equipamentos[0]["Arvore"].split(" > ")[0], "WIN_POP_94500_IP")
+        self.assertIsNone(sites["WIN_POP_94500_IP"].pai)
+
+    @unittest.skipIf(
+        consolidar_sites_duplicados_cadastro is None,
+        "pandas nao instalado"
+    )
+    def test_nao_consolida_codigo_sem_nome_snmpc_oficial_unico(self):
+        primeiro = Site("ABC_POP_123_IP", "POP")
+        segundo = Site("XYZ_POP_123_IP", "POP")
+
+        for site in [primeiro, segundo]:
+            site.codigo_topos = "123"
+            site.cadastro_topos = {"Codigo": "123", "SNMPc": "OUTRO_POP_123_IP"}
+
+        sites = consolidar_sites_duplicados_cadastro({
+            primeiro.nome: primeiro,
+            segundo.nome: segundo
+        })
+
+        self.assertEqual(set(sites), {primeiro.nome, segundo.nome})
 
     def test_importar_cliente_com_goto_em_outro_site(self):
         linhas = [
