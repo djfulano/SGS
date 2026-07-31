@@ -1,5 +1,12 @@
 # Histórico de versões
 
+## 1.3.35
+
+- Financeiro ganha a subaba Prioridades com todos os sites ativos e identificação completa do cadastro.
+- A lista consolida próxima mensalidade, acordos, quantidades e valores vencidos e criticidade do site.
+- A importância operacional pode ser classificada como Crítica, Alta, Média, Baixa ou Não definida, com persistência e auditoria.
+- Valores financeiros continuam restritos pela permissão de visualização de custos.
+
 ## 1.3.34
 
 - O cadastro de sites passa a armazenar CNPJ/CPF, tipo de pagamento, Pix, banco, código do banco, agência e conta corrente.

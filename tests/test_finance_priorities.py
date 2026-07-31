@@ -1,0 +1,175 @@
+import tempfile
+import unittest
+from datetime import date, datetime
+from pathlib import Path
+from unittest.mock import patch
+
+import pandas as pd
+
+from app.services import finance_service as fs
+
+
+class FinancePrioritiesTest(unittest.TestCase):
+
+    def cadastro(self):
+        return pd.DataFrame([
+            {
+                "CÓDIGO AQUILES": "100",
+                "CÓDIGO MICROSIGA": "12345",
+                "SMNPC": "SITE_A_POP_100_IP",
+                "NOME": "SITE A",
+                "Status": "Ativo",
+                "LOCAÇÃO": 900,
+                "DIA VENCIMENTO": 15,
+                "SITE CRÍTICO": "Sim",
+                "TIPO CRITICIDADE": "Bloqueia",
+            },
+            {
+                "CÓDIGO AQUILES": "200",
+                "CÓDIGO MICROSIGA": "23456",
+                "SMNPC": "SITE_B_BH_200_IP",
+                "NOME": "SITE B",
+                "Status": " ativo ",
+                "LOCAÇÃO": 700,
+                "DIA VENCIMENTO": 10,
+                "SITE CRÍTICO": "Não",
+                "TIPO CRITICIDADE": "",
+            },
+            {
+                "CÓDIGO AQUILES": "300",
+                "CÓDIGO MICROSIGA": "34567",
+                "SMNPC": "SITE_C_REP_300_IP",
+                "NOME": "SITE C",
+                "Status": "Cancelado",
+                "LOCAÇÃO": 500,
+                "DIA VENCIMENTO": 5,
+                "SITE CRÍTICO": "Não",
+                "TIPO CRITICIDADE": "",
+            },
+        ])
+
+    def pagamentos(self):
+        return pd.DataFrame([
+            {
+                "ID SGS": "R1",
+                "Status": "Pendente",
+                "Microsiga": "012345",
+                "Tipo de despesa": "RECORRENTE",
+                "Data de vencimento": "2026-07-01",
+                "Subtotal": 100.0,
+                "Site localizado": "Sim",
+            },
+            {
+                "ID SGS": "R2",
+                "Status": "Pendente",
+                "Microsiga": "012345",
+                "Tipo de despesa": "RECORRENTE",
+                "Data de vencimento": "2026-08-01",
+                "Subtotal": 120.0,
+                "Site localizado": "Sim",
+            },
+            {
+                "ID SGS": "A1",
+                "Status": "Pendente",
+                "Microsiga": "012345",
+                "Tipo de despesa": "ACORDO/PARCELAMENTO",
+                "Data de vencimento": "2026-06-01",
+                "Subtotal": 50.0,
+                "Site localizado": "Sim",
+            },
+            {
+                "ID SGS": "A2",
+                "Status": "Pendente",
+                "Microsiga": "012345",
+                "Tipo de despesa": "ACORDO/PARCELAMENTO",
+                "Data de vencimento": "2026-09-01",
+                "Subtotal": 60.0,
+                "Site localizado": "Sim",
+            },
+            {
+                "ID SGS": "R3",
+                "Status": "Pago",
+                "Microsiga": "012345",
+                "Tipo de despesa": "RECORRENTE",
+                "Data de vencimento": "2026-05-01",
+                "Subtotal": 999.0,
+                "Site localizado": "Sim",
+            },
+        ])
+
+    def test_monta_lista_com_parcelas_e_fallback_do_cadastro(self):
+        resultado = fs.montar_prioridades_financeiras(
+            cadastro_sites=self.cadastro(),
+            pagamentos=self.pagamentos(),
+            prioridades={
+                "sites": {
+                    "aquiles:100": {"importance": "Alta"},
+                }
+            },
+            hoje=date(2026, 7, 31),
+        )
+
+        self.assertEqual(len(resultado), 2)
+        site_a = resultado.set_index("Chave Site").loc["aquiles:100"]
+        self.assertEqual(
+            site_a["Site"],
+            "SITE_A_POP_100_IP - 100 / SITE A - 12345",
+        )
+        self.assertEqual(site_a["Vencimento da Mensalidade"], date(2026, 7, 1))
+        self.assertEqual(site_a["Valor da Mensalidade Atual"], 100.0)
+        self.assertEqual(site_a["Tem Acordo"], "Sim")
+        self.assertEqual(site_a["Vencimento do Acordo"], date(2026, 6, 1))
+        self.assertEqual(site_a["Valor da Parcela do Acordo"], 50.0)
+        self.assertEqual(site_a["Mensalidades Vencidas"], 1)
+        self.assertEqual(site_a["Valor das Mensalidades Vencidas"], 100.0)
+        self.assertEqual(site_a["Acordos Vencidos"], 1)
+        self.assertEqual(site_a["Valor dos Acordos Vencidos"], 50.0)
+        self.assertEqual(site_a["Criticidade"], "Bloqueia")
+        self.assertEqual(site_a["Importância"], "Alta")
+
+        site_b = resultado.set_index("Chave Site").loc["aquiles:200"]
+        self.assertEqual(site_b["Vencimento da Mensalidade"], date(2026, 8, 10))
+        self.assertEqual(site_b["Valor da Mensalidade Atual"], 700.0)
+        self.assertEqual(site_b["Tem Acordo"], "Não")
+        self.assertEqual(site_b["Criticidade"], "Não crítico")
+        self.assertEqual(site_b["Importância"], "Não definida")
+
+    def test_lista_sem_pagamentos_mantem_sites_ativos(self):
+        resultado = fs.montar_prioridades_financeiras(
+            cadastro_sites=self.cadastro(),
+            pagamentos=pd.DataFrame(columns=fs.PAYMENT_COLUMNS),
+            prioridades={"sites": {}},
+            hoje=date(2026, 7, 31),
+        )
+        self.assertEqual(set(resultado["Chave Site"]), {"aquiles:100", "aquiles:200"})
+        self.assertEqual(int(resultado["Mensalidades Vencidas"].sum()), 0)
+        self.assertEqual(int(resultado["Acordos Vencidos"].sum()), 0)
+
+    def test_salva_importancia_com_auditoria_e_recarrega(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "site_priorities.json"
+            with patch.object(fs, "registrar_log_sistema") as registrar:
+                salvo = fs.salvar_importancias_sites(
+                    [{"site_key": "aquiles:100", "importance": "Crítica"}],
+                    usuario="financeiro",
+                    path=path,
+                    agora=datetime(2026, 7, 31, 10, 30),
+                )
+            self.assertEqual(salvo["alteracoes"], 1)
+            registro = fs.carregar_prioridades_sites(path)["sites"]["aquiles:100"]
+            self.assertEqual(registro["importance"], "Crítica")
+            self.assertEqual(registro["updated_by"], "financeiro")
+            self.assertEqual(registro["updated_at"], "2026-07-31T10:30:00")
+            registrar.assert_called_once()
+
+    def test_recusa_importancia_invalida(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with self.assertRaisesRegex(ValueError, "Importância inválida"):
+                fs.salvar_importancias_sites(
+                    [{"site_key": "aquiles:100", "importance": "Urgente"}],
+                    path=Path(temp_dir) / "site_priorities.json",
+                )
+
+
+if __name__ == "__main__":
+    unittest.main()

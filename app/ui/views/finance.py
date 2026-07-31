@@ -13,6 +13,7 @@ from app.services.finance_service import AGREEMENT_COLUMNS
 from app.services.finance_service import AGREEMENT_STATUSES
 from app.services.finance_service import PAYMENT_COLUMNS
 from app.services.finance_service import PAYMENT_STATUSES
+from app.services.finance_service import SITE_IMPORTANCE_OPTIONS
 from app.services.finance_service import analisar_conciliacao_financeira
 from app.services.finance_service import carregar_acordos
 from app.services.finance_service import carregar_pagamentos
@@ -22,10 +23,12 @@ from app.services.finance_service import exportar_conciliacao_financeira_excel
 from app.services.finance_service import historico_financeiro_site
 from app.services.finance_service import importar_planilha_financeira
 from app.services.finance_service import montar_relatorio_financeiro_sites
+from app.services.finance_service import montar_prioridades_financeiras
 from app.services.finance_service import preparar_acordos_exibicao
 from app.services.finance_service import preparar_pagamentos_exibicao
 from app.services.finance_service import salvar_acordos
 from app.services.finance_service import salvar_pagamentos
+from app.services.finance_service import salvar_importancias_sites
 from app.services.finance_service import aplicar_edicoes_financeiras
 from app.services.finance_service import sites_financeiros_cadastrados
 from app.services.finance_service import texto_relatorio_financeiro_sites
@@ -64,6 +67,10 @@ COLUNAS_MONETARIAS_FINANCEIRO = {
     "Saldo em aberto",
     "Receita Total",
     "Valor em Atraso",
+    "Valor da Mensalidade Atual",
+    "Valor da Parcela do Acordo",
+    "Valor das Mensalidades Vencidas",
+    "Valor dos Acordos Vencidos",
 }
 
 
@@ -224,6 +231,172 @@ def mostrar_dashboard_financeiro():
         st.info("Não há obrigações vencidas em aberto.")
     else:
         _mostrar_grid(formatar_tabela_financeira(vencidos.head(200)), height=420, key="financeiro_dashboard_vencidos")
+
+
+def mostrar_prioridades_financeiras():
+    st.header("Prioridades financeiras")
+    st.caption(
+        "Acompanhamento dos compromissos dos sites ativos. A importância é "
+        "definida manualmente; os demais campos são calculados pelo cadastro "
+        "de Sites e pelas parcelas financeiras abertas."
+    )
+
+    dados = montar_prioridades_financeiras()
+    if dados.empty:
+        st.info("Nenhum site ativo foi encontrado.")
+        return
+
+    busca = st.text_input(
+        "Buscar site",
+        placeholder="Nome SNMPc, Código Aquiles, Nome ou Código Microsiga",
+        key="financeiro_prioridades_busca",
+    )
+    col1, col2, col3, col4 = st.columns(4)
+    importancias = col1.multiselect(
+        "Importância",
+        SITE_IMPORTANCE_OPTIONS,
+        key="financeiro_prioridades_importancia",
+    )
+    criticidades = col2.multiselect(
+        "Criticidade",
+        opcoes_coluna(dados, "Criticidade"),
+        key="financeiro_prioridades_criticidade",
+    )
+    acordos = col3.multiselect(
+        "Tem acordo",
+        ["Sim", "Não"],
+        key="financeiro_prioridades_acordo",
+    )
+    vencidos = col4.multiselect(
+        "Possui vencidos",
+        ["Sim", "Não"],
+        key="financeiro_prioridades_vencidos",
+    )
+
+    filtrado = filtro_texto(dados, busca, ["Site"])
+    filtrado = filtrar_dataframe(
+        filtrado,
+        {
+            "Importância": importancias,
+            "Criticidade": criticidades,
+            "Tem Acordo": acordos,
+            "Possui Vencidos": vencidos,
+        },
+    ).reset_index(drop=True)
+
+    metricas = st.columns(4)
+    metricas[0].metric("Sites", len(filtrado))
+    metricas[1].metric(
+        "Sites críticos",
+        int(filtrado["Criticidade"].ne("Não crítico").sum()),
+    )
+    metricas[2].metric(
+        "Com acordo",
+        int(filtrado["Tem Acordo"].eq("Sim").sum()),
+    )
+    metricas[3].metric(
+        "Com vencimentos",
+        int(filtrado["Possui Vencidos"].eq("Sim").sum()),
+    )
+
+    if filtrado.empty:
+        st.info("Nenhum site atende aos filtros selecionados.")
+        return
+
+    colunas_valores = [
+        "Valor da Mensalidade Atual",
+        "Valor da Parcela do Acordo",
+        "Valor das Mensalidades Vencidas",
+        "Valor dos Acordos Vencidos",
+    ]
+    exibido = filtrado.copy()
+    pode_ver_valores = pode("visualizar_valores_custos")
+    if not pode_ver_valores:
+        for coluna in colunas_valores:
+            if coluna in exibido.columns:
+                exibido[coluna] = "Restrito"
+
+    colunas_ocultas = ["Chave Site", "Possui Vencidos"]
+    colunas_editaveis = {"Importância"}
+    desabilitadas = [
+        coluna
+        for coluna in exibido.columns
+        if coluna not in colunas_editaveis and coluna not in colunas_ocultas
+    ]
+    assinatura = hashlib.sha256(
+        "|".join(exibido["Chave Site"].astype(str)).encode("utf-8")
+    ).hexdigest()[:12]
+    versao_editor = st.session_state.get("financeiro_prioridades_editor_versao", 0)
+    editado = st.data_editor(
+        exibido,
+        use_container_width=True,
+        hide_index=True,
+        height=min(720, max(220, 90 + len(exibido) * 35)),
+        column_config={
+            "Chave Site": None,
+            "Possui Vencidos": None,
+            "Importância": st.column_config.SelectboxColumn(
+                "Importância",
+                options=SITE_IMPORTANCE_OPTIONS,
+                required=True,
+            ),
+            "Vencimento da Mensalidade": st.column_config.DateColumn(
+                "Vencimento da Mensalidade",
+                format="DD/MM/YYYY",
+            ),
+            "Vencimento do Acordo": st.column_config.DateColumn(
+                "Vencimento do Acordo",
+                format="DD/MM/YYYY",
+            ),
+            **{
+                coluna: st.column_config.NumberColumn(
+                    coluna,
+                    format="R$ %.2f",
+                )
+                for coluna in colunas_valores
+                if coluna in exibido.columns and pode_ver_valores
+            },
+        },
+        disabled=desabilitadas,
+        key=(
+            f"financeiro_prioridades_editor_{assinatura}_{versao_editor}"
+        ),
+    )
+
+    if st.button(
+        "Salvar importâncias",
+        type="primary",
+        key="financeiro_prioridades_salvar",
+    ):
+        anteriores = dict(
+            zip(
+                filtrado["Chave Site"].astype(str),
+                filtrado["Importância"].astype(str),
+            )
+        )
+        alteracoes = [
+            {
+                "site_key": str(linha.get("Chave Site") or ""),
+                "importance": str(linha.get("Importância") or "Não definida"),
+            }
+            for _indice, linha in editado.iterrows()
+            if anteriores.get(str(linha.get("Chave Site") or ""))
+            != str(linha.get("Importância") or "Não definida")
+        ]
+        if not alteracoes:
+            st.info("Nenhuma importância foi alterada.")
+        else:
+            resultado = salvar_importancias_sites(
+                alteracoes,
+                usuario=usuario_atual().get("username", ""),
+            )
+            st.session_state["financeiro_prioridades_editor_versao"] = (
+                versao_editor + 1
+            )
+            st.success(
+                f"Importâncias atualizadas: {resultado['alteracoes']}."
+            )
+            st.rerun()
 
 
 def mostrar_editor_pagamentos(df):
@@ -945,6 +1118,12 @@ def mostrar_financeiro(sites):
             "financeiro_alertas_criticos",
             "Alertas",
             mostrar_alertas_financeiros,
+        ))
+    if pode("financeiro_prioridades") or pode("financeiro"):
+        itens.append((
+            "financeiro_prioridades",
+            "Prioridades",
+            mostrar_prioridades_financeiras,
         ))
     if pode("financeiro_historico_site") or pode("financeiro"):
         itens.append((

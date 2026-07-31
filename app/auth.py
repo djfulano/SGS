@@ -84,6 +84,7 @@ MODULES = [
     ("financeiro", "Financeiro"),
     ("financeiro_dashboard", "Financeiro > Dashboard"),
     ("financeiro_alertas_criticos", "Financeiro > Alertas de Sites Críticos"),
+    ("financeiro_prioridades", "Financeiro > Prioridades"),
     ("financeiro_historico_site", "Financeiro > Histórico por Site"),
     ("financeiro_relatorio", "Financeiro > Relatório"),
     ("financeiro_pagamentos", "Financeiro > Pagamentos"),

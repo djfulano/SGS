@@ -1650,6 +1650,7 @@ def permissao_aba(aba):
                 "financeiro",
                 "financeiro_dashboard",
                 "financeiro_alertas_criticos",
+                "financeiro_prioridades",
                 "financeiro_historico_site",
                 "financeiro_relatorio",
                 "financeiro_pagamentos",

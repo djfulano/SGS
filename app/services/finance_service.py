@@ -12,6 +12,7 @@ import pandas as pd
 from app.config import CONFIG_DIR
 from app.logs import registrar_log_sistema
 from app.services.site_registry_service import load_site_registry
+from app.services.site_registry_service import normalize_site_critical_type
 from app.services.site_metrics import sites_descendentes
 from app.storage import read_json_authoritative
 from app.storage import update_json_atomic
@@ -20,6 +21,32 @@ from app.storage import write_json_atomic
 FINANCE_DIR = CONFIG_DIR / "finance"
 PAYMENTS_FILE = FINANCE_DIR / "payments.json"
 AGREEMENTS_FILE = FINANCE_DIR / "agreements.json"
+SITE_PRIORITIES_FILE = FINANCE_DIR / "site_priorities.json"
+
+SITE_IMPORTANCE_OPTIONS = [
+    "Crítica",
+    "Alta",
+    "Média",
+    "Baixa",
+    "Não definida",
+]
+
+SITE_PRIORITY_COLUMNS = [
+    "Chave Site",
+    "Site",
+    "Vencimento da Mensalidade",
+    "Valor da Mensalidade Atual",
+    "Tem Acordo",
+    "Vencimento do Acordo",
+    "Valor da Parcela do Acordo",
+    "Mensalidades Vencidas",
+    "Valor das Mensalidades Vencidas",
+    "Acordos Vencidos",
+    "Valor dos Acordos Vencidos",
+    "Criticidade",
+    "Importância",
+    "Possui Vencidos",
+]
 
 PAYMENT_STATUSES = [
     "Pendente",
@@ -1579,6 +1606,302 @@ def resumo_atraso_site(microsiga, pagamentos=None, hoje=None):
         "valor_em_atraso": historico["valor_em_atraso"],
         "parcelas_vencidas": historico["parcelas_vencidas"],
     }
+
+
+def _codigo_site_texto(valor):
+    texto = _texto(valor)
+    return texto[:-2] if texto.endswith(".0") else texto
+
+
+def chave_prioridade_site(site):
+    codigo_aquiles = _codigo_site_texto(site.get("CÓDIGO AQUILES"))
+    if codigo_aquiles:
+        return f"aquiles:{codigo_aquiles}"
+    nome_snmpc = _texto(site.get("SMNPC"))
+    if nome_snmpc:
+        return f"snmpc:{nome_snmpc.casefold()}"
+    microsiga = normalizar_codigo_microsiga(site.get("CÓDIGO MICROSIGA"))
+    if microsiga:
+        return f"microsiga:{microsiga}"
+    nome = _texto(site.get("NOME"))
+    if nome:
+        return f"nome:{nome.casefold()}"
+    return ""
+
+
+def carregar_prioridades_sites(path=None):
+    dados = read_json_authoritative(
+        path or SITE_PRIORITIES_FILE,
+        {"sites": {}},
+    )
+    if not isinstance(dados, dict):
+        raise ValueError("O cadastro de prioridades financeiras é inválido.")
+    sites = dados.get("sites", {})
+    if not isinstance(sites, dict):
+        raise ValueError("A lista de prioridades financeiras é inválida.")
+    return {"sites": sites}
+
+
+def salvar_importancias_sites(alteracoes, usuario="", path=None, agora=None):
+    alteracoes = list(alteracoes or [])
+    normalizadas = []
+    for alteracao in alteracoes:
+        chave = _texto(alteracao.get("site_key"))
+        importancia = _texto(alteracao.get("importance")) or "Não definida"
+        if not chave:
+            raise ValueError("Não foi possível identificar o site da prioridade.")
+        if importancia not in SITE_IMPORTANCE_OPTIONS:
+            raise ValueError(f"Importância inválida: {importancia}.")
+        normalizadas.append((chave, importancia))
+
+    instante = agora or datetime.now()
+    atualizado_em = (
+        instante.isoformat(timespec="seconds")
+        if hasattr(instante, "isoformat")
+        else _texto(instante)
+    )
+    aplicadas = []
+
+    def atualizar(dados):
+        if not isinstance(dados, dict):
+            raise ValueError("O cadastro de prioridades financeiras é inválido.")
+        resultado = dict(dados)
+        sites = dict(resultado.get("sites") or {})
+        for chave, importancia in normalizadas:
+            anterior = sites.get(chave, {})
+            valor_anterior = _texto(
+                anterior.get("importance") if isinstance(anterior, dict) else anterior
+            ) or "Não definida"
+            if valor_anterior == importancia:
+                continue
+            sites[chave] = {
+                "importance": importancia,
+                "updated_at": atualizado_em,
+                "updated_by": _texto(usuario),
+            }
+            aplicadas.append({
+                "site": chave,
+                "anterior": valor_anterior,
+                "novo": importancia,
+            })
+        resultado["sites"] = sites
+        return resultado
+
+    dados = update_json_atomic(
+        path or SITE_PRIORITIES_FILE,
+        {"sites": {}},
+        atualizar,
+    )
+    if aplicadas:
+        registrar_log_sistema(
+            "financeiro_prioridades_atualizadas",
+            usuario=_texto(usuario),
+            status="sucesso",
+            detalhes={
+                "quantidade": len(aplicadas),
+                "alteracoes": aplicadas,
+            },
+        )
+    return {"alteracoes": len(aplicadas), "dados": dados}
+
+
+def _proximo_vencimento_padrao(dia, hoje):
+    try:
+        dia = int(float(dia))
+    except (TypeError, ValueError):
+        return None
+    if not 1 <= dia <= 28:
+        return None
+    if hoje.day <= dia:
+        return date(hoje.year, hoje.month, dia)
+    if hoje.month == 12:
+        return date(hoje.year + 1, 1, dia)
+    return date(hoje.year, hoje.month + 1, dia)
+
+
+def _rotulo_site_prioridade(site):
+    nome_snmpc = _texto(site.get("SMNPC")) or "-"
+    codigo_aquiles = _codigo_site_texto(site.get("CÓDIGO AQUILES")) or "-"
+    nome = _texto(site.get("NOME")) or "-"
+    microsiga = _codigo_site_texto(site.get("CÓDIGO MICROSIGA")) or "-"
+    return f"{nome_snmpc} - {codigo_aquiles} / {nome} - {microsiga}"
+
+
+def _importancia_prioridade(prioridades, chave):
+    registro = (prioridades.get("sites") or {}).get(chave, {})
+    if isinstance(registro, dict):
+        importancia = _texto(registro.get("importance"))
+    else:
+        importancia = _texto(registro)
+    return (
+        importancia
+        if importancia in SITE_IMPORTANCE_OPTIONS
+        else "Não definida"
+    )
+
+
+def _parcela_prioritaria(parcelas):
+    if parcelas is None or parcelas.empty:
+        return None, None
+    validas = parcelas[parcelas["_data"].notna()].sort_values(
+        ["_data", "ID SGS"],
+        kind="stable",
+    )
+    registro = validas.iloc[0] if not validas.empty else parcelas.iloc[0]
+    data_parcela = (
+        registro["_data"].date()
+        if not pd.isna(registro.get("_data"))
+        else None
+    )
+    return registro, data_parcela
+
+
+def montar_prioridades_financeiras(
+    cadastro_sites=None,
+    pagamentos=None,
+    prioridades=None,
+    hoje=None,
+):
+    hoje = hoje or date.today()
+    cadastro = load_site_registry() if cadastro_sites is None else cadastro_sites.copy()
+    prioridades = prioridades or carregar_prioridades_sites()
+    if cadastro is None or cadastro.empty:
+        return pd.DataFrame(columns=SITE_PRIORITY_COLUMNS)
+
+    pagamentos = preparar_pagamentos_exibicao(
+        pagamentos,
+        hoje=hoje,
+        cadastro_sites=cadastro,
+    )
+    abertos = _abertos_pagamentos(pagamentos)
+    if abertos.empty:
+        abertos = pd.DataFrame(columns=[
+            *PAYMENT_COLUMNS,
+            "Status Atual",
+            "_microsiga",
+            "_tipo",
+            "_data",
+            "_valor",
+        ])
+    else:
+        abertos = abertos.copy()
+        abertos["_microsiga"] = abertos.get(
+            "Microsiga",
+            pd.Series(index=abertos.index, dtype=str),
+        ).map(normalizar_codigo_microsiga)
+        abertos["_tipo"] = abertos.get(
+            "Tipo de despesa",
+            pd.Series(index=abertos.index, dtype=str),
+        ).map(_tipo_despesa)
+        abertos["_data"] = pd.to_datetime(
+            abertos.get("Data de vencimento"),
+            errors="coerce",
+        )
+        abertos["_valor"] = pd.to_numeric(
+            abertos.get("Subtotal", 0),
+            errors="coerce",
+        ).fillna(0.0)
+
+    registros = []
+    for site in cadastro.to_dict(orient="records"):
+        if _texto(site.get("Status")).casefold() != "ativo":
+            continue
+
+        microsiga = normalizar_codigo_microsiga(site.get("CÓDIGO MICROSIGA"))
+        parcelas = (
+            abertos[abertos["_microsiga"].eq(microsiga)].copy()
+            if microsiga and not abertos.empty
+            else pd.DataFrame(columns=abertos.columns)
+        )
+        recorrentes = parcelas[parcelas.get("_tipo").eq(TOPO_RECURRING_TYPE)]
+        acordos = parcelas[parcelas.get("_tipo").eq(TOPO_AGREEMENT_TYPE)]
+        mensalidade, vencimento_mensalidade = _parcela_prioritaria(recorrentes)
+        acordo, vencimento_acordo = _parcela_prioritaria(acordos)
+
+        if vencimento_mensalidade is None:
+            vencimento_mensalidade = _proximo_vencimento_padrao(
+                site.get("DIA VENCIMENTO"),
+                hoje,
+            )
+        valor_mensalidade = (
+            _numero(mensalidade.get("Subtotal"))
+            if mensalidade is not None
+            else _numero(site.get("LOCAÇÃO"))
+        )
+
+        recorrentes_vencidas = recorrentes[
+            recorrentes.get("Status Atual").eq("Vencido")
+        ]
+        acordos_vencidos = acordos[acordos.get("Status Atual").eq("Vencido")]
+        site_critico = _texto(site.get("SITE CRÍTICO")).casefold() in {
+            "sim", "s", "true", "1"
+        }
+        criticidade = (
+            normalize_site_critical_type(site.get("TIPO CRITICIDADE"))
+            if site_critico
+            else "Não crítico"
+        ) or ("Crítico" if site_critico else "Não crítico")
+        chave = chave_prioridade_site(site)
+        possui_vencidos = not recorrentes_vencidas.empty or not acordos_vencidos.empty
+
+        registros.append({
+            "Chave Site": chave,
+            "Site": _rotulo_site_prioridade(site),
+            "Vencimento da Mensalidade": vencimento_mensalidade,
+            "Valor da Mensalidade Atual": valor_mensalidade,
+            "Tem Acordo": "Sim" if not acordos.empty else "Não",
+            "Vencimento do Acordo": vencimento_acordo,
+            "Valor da Parcela do Acordo": (
+                _numero(acordo.get("Subtotal")) if acordo is not None else 0.0
+            ),
+            "Mensalidades Vencidas": len(recorrentes_vencidas),
+            "Valor das Mensalidades Vencidas": float(
+                recorrentes_vencidas.get("_valor", pd.Series(dtype=float)).sum()
+            ),
+            "Acordos Vencidos": len(acordos_vencidos),
+            "Valor dos Acordos Vencidos": float(
+                acordos_vencidos.get("_valor", pd.Series(dtype=float)).sum()
+            ),
+            "Criticidade": criticidade,
+            "Importância": _importancia_prioridade(prioridades, chave),
+            "Possui Vencidos": "Sim" if possui_vencidos else "Não",
+        })
+
+    resultado = pd.DataFrame(registros, columns=SITE_PRIORITY_COLUMNS)
+    if resultado.empty:
+        return resultado
+    ordem_importancia = {
+        "Crítica": 0,
+        "Alta": 1,
+        "Média": 2,
+        "Baixa": 3,
+        "Não definida": 4,
+    }
+    resultado["_ordem_importancia"] = resultado["Importância"].map(
+        ordem_importancia
+    ).fillna(5)
+    resultado["_ordem_criticidade"] = resultado["Criticidade"].eq(
+        "Não crítico"
+    ).astype(int)
+    resultado["_ordem_vencidos"] = resultado["Possui Vencidos"].ne(
+        "Sim"
+    ).astype(int)
+    resultado = resultado.sort_values(
+        [
+            "_ordem_importancia",
+            "_ordem_criticidade",
+            "_ordem_vencidos",
+            "Vencimento da Mensalidade",
+            "Site",
+        ],
+        kind="stable",
+        na_position="last",
+    ).drop(columns=[
+        "_ordem_importancia",
+        "_ordem_criticidade",
+        "_ordem_vencidos",
+    ])
+    return resultado.reset_index(drop=True)
 
 
 def _clientes_unicos_sites(sites):
