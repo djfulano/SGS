@@ -45,6 +45,113 @@ TIPOS_ESTRUTURA = {
 }
 
 
+def texto_campo(linha, campo):
+
+    return str(
+        linha.get(campo) or ""
+    ).strip()
+
+
+def _erro_arquivo_snmpc(linha, nome="", detalhe=""):
+
+    referencia = f" próximo à linha {linha}" if linha else ""
+    registro = f" O registro {nome} está incompleto." if nome else ""
+    causa = f" Detalhe técnico: {detalhe}." if detalhe else ""
+
+    return ValueError(
+        "Arquivo SNMPc incompleto ou inválido"
+        f"{referencia}.{registro}{causa} "
+        "Exporte novamente o TXT no SNMPc."
+    )
+
+
+def _nome_registro_invalido(caminho_arquivo):
+
+    ultimo_nome = ""
+
+    try:
+        with open(
+            caminho_arquivo,
+            "r",
+            encoding="latin1",
+            newline=""
+        ) as arquivo:
+            leitor = csv.DictReader(
+                arquivo,
+                delimiter=","
+            )
+
+            for linha in leitor:
+                ultimo_nome = texto_campo(linha, "Name") or ultimo_nome
+
+                if (
+                    None in linha
+                    or any(
+                        valor is None
+                        for chave, valor in linha.items()
+                        if chave is not None
+                    )
+                ):
+                    return ultimo_nome
+    except (OSError, csv.Error):
+        return ultimo_nome
+
+    return ultimo_nome
+
+
+def iterar_linhas_snmpc_validas(leitor, caminho_arquivo=None):
+
+    registros_lidos = 0
+
+    while True:
+        try:
+            linha = next(leitor)
+        except StopIteration:
+            return
+        except csv.Error as erro:
+            linha_erro = max(
+                leitor.line_num,
+                registros_lidos + 2
+            )
+            nome = (
+                _nome_registro_invalido(caminho_arquivo)
+                if caminho_arquivo
+                else ""
+            )
+            raise _erro_arquivo_snmpc(
+                linha_erro,
+                nome,
+                str(erro)
+            ) from erro
+
+        registros_lidos += 1
+        campos_ausentes = [
+            chave
+            for chave, valor in linha.items()
+            if chave is not None and valor is None
+        ]
+        possui_colunas_extras = None in linha
+
+        if campos_ausentes or possui_colunas_extras:
+            detalhes = []
+
+            if campos_ausentes:
+                detalhes.append(
+                    f"colunas ausentes: {', '.join(campos_ausentes)}"
+                )
+
+            if possui_colunas_extras:
+                detalhes.append("quantidade de colunas acima do cabeçalho")
+
+            raise _erro_arquivo_snmpc(
+                max(leitor.line_num, registros_lidos + 1),
+                texto_campo(linha, "Name"),
+                "; ".join(detalhes)
+            )
+
+        yield linha
+
+
 def eh_setorial(nome):
 
     return bool(
@@ -720,18 +827,16 @@ def importar_estrutura_de_linhas(linhas, retornar_enlaces=False):
     for linha in linhas:
 
         nome = normalizar_nome_snmpc(
-            linha.get("Name", "")
+            texto_campo(linha, "Name")
         )
 
-        item_id = str(
-            linha.get("ID", "")
-        ).strip()
+        item_id = texto_campo(linha, "ID")
 
         if not nome or not item_id:
 
             continue
 
-        tipo_item = linha.get("Type", "").strip()
+        tipo_item = texto_campo(linha, "Type")
 
         parent_id = extrair_parent_id(
             linha.get("Parent", "")
@@ -740,7 +845,7 @@ def importar_estrutura_de_linhas(linhas, retornar_enlaces=False):
         if tipo_item == "Goto":
 
             destino = (
-                linha.get("Address", "").strip()
+                texto_campo(linha, "Address")
                 or nome
             )
 
@@ -761,13 +866,13 @@ def importar_estrutura_de_linhas(linhas, retornar_enlaces=False):
             dispositivos.append({
                 "id": item_id,
                 "nome": nome,
-                "address": linha.get("Address", "").strip(),
-                "icon": linha.get("Icon", "").strip(),
-                "group1": linha.get("Group1", "").strip(),
-                "group2": linha.get("Group2", "").strip(),
+                "address": texto_campo(linha, "Address"),
+                "icon": texto_campo(linha, "Icon"),
+                "group1": texto_campo(linha, "Group1"),
+                "group2": texto_campo(linha, "Group2"),
                 "parent_id": parent_id,
-                "parent": linha.get("Parent", "").strip(),
-                "status": linha.get("Status", "").strip(),
+                "parent": texto_campo(linha, "Parent"),
+                "status": texto_campo(linha, "Status"),
                 "predio": extrair_predio(
                     linha.get("Description", "")
                 )
@@ -780,11 +885,11 @@ def importar_estrutura_de_linhas(linhas, retornar_enlaces=False):
             networks.append({
                 "id": item_id,
                 "nome": nome,
-                "address": linha.get("Address", "").strip(),
-                "icon": linha.get("Icon", "").strip(),
+                "address": texto_campo(linha, "Address"),
+                "icon": texto_campo(linha, "Icon"),
                 "parent_id": parent_id,
-                "parent": linha.get("Parent", "").strip(),
-                "status": linha.get("Status", "").strip(),
+                "parent": texto_campo(linha, "Parent"),
+                "status": texto_campo(linha, "Status"),
                 "linha": linha
             })
 
@@ -1184,14 +1289,23 @@ def importar_estrutura_de_linhas(linhas, retornar_enlaces=False):
 
 def importar_estrutura(caminho_arquivo, retornar_enlaces=False):
 
-    with open(caminho_arquivo, "r", encoding="latin1") as arquivo:
+    with open(
+        caminho_arquivo,
+        "r",
+        encoding="latin1",
+        newline=""
+    ) as arquivo:
 
         leitor = csv.DictReader(
             arquivo,
-            delimiter=","
+            delimiter=",",
+            strict=True
         )
 
         return importar_estrutura_de_linhas(
-            leitor,
+            iterar_linhas_snmpc_validas(
+                leitor,
+                caminho_arquivo=caminho_arquivo
+            ),
             retornar_enlaces=retornar_enlaces
         )

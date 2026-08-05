@@ -8,6 +8,7 @@ import pandas as pd
 from app.models.site import Site
 from app.importers.txt_importer import detectar_tipo
 from app.importers.txt_importer import extrair_assinatura
+from app.importers.txt_importer import importar_estrutura
 from app.importers.txt_importer import importar_estrutura_de_linhas
 from app.importers.txt_importer import normalizar_nome_snmpc
 from app.importers.excel_importer import ler_clientes_base
@@ -318,6 +319,66 @@ class ImportersTest(unittest.TestCase):
         self.assertIn("12345678", assinaturas)
         self.assertEqual(assinaturas["12345678"]["site"].nome, "ABC_POP_1_IP")
         self.assertEqual(equipamentos, [])
+
+    def test_importar_estrutura_aceita_campos_vazios_validos(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            caminho = Path(temp_dir) / "SNMPc.txt"
+            caminho.write_text(
+                "Name,Type,Address,ID,Description,Parent,Status\n"
+                '"ABC_POP_1_IP","Subnet","","1","","(NULL)",""\n',
+                encoding="latin1"
+            )
+
+            sites, assinaturas, equipamentos = importar_estrutura(caminho)
+
+        self.assertIn("ABC_POP_1_IP", sites)
+        self.assertEqual(assinaturas, {})
+        self.assertEqual(equipamentos, [])
+
+    def test_importar_estrutura_recusa_linha_com_colunas_ausentes(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            caminho = Path(temp_dir) / "SNMPc.txt"
+            caminho.write_text(
+                "Name,Type,Address,ID,Status\n"
+                '"ETH1","Network","","203359"\n',
+                encoding="latin1"
+            )
+
+            with self.assertRaisesRegex(
+                ValueError,
+                r"Arquivo SNMPc incompleto ou inválido.*ETH1.*colunas ausentes"
+            ):
+                importar_estrutura(caminho)
+
+    def test_importar_estrutura_recusa_linha_com_colunas_extras(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            caminho = Path(temp_dir) / "SNMPc.txt"
+            caminho.write_text(
+                "Name,Type,ID\n"
+                '"ETH1","Network","203359","EXTRA"\n',
+                encoding="latin1"
+            )
+
+            with self.assertRaisesRegex(
+                ValueError,
+                r"Arquivo SNMPc incompleto ou inválido.*ETH1.*acima do cabeçalho"
+            ):
+                importar_estrutura(caminho)
+
+    def test_importar_estrutura_recusa_aspas_sem_fechamento(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            caminho = Path(temp_dir) / "SNMPc.txt"
+            caminho.write_text(
+                "Name,Type,Address,ID,Status\n"
+                '"ETH1","Network","","203359","Normal',
+                encoding="latin1"
+            )
+
+            with self.assertRaisesRegex(
+                ValueError,
+                r"Arquivo SNMPc incompleto ou inválido.*ETH1.*unexpected end of data"
+            ):
+                importar_estrutura(caminho)
 
     @unittest.skipIf(
         consolidar_sites_duplicados_cadastro is None,

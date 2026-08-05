@@ -1,5 +1,11 @@
 # Histórico de versões
 
+## 1.3.38
+
+- A importação do SNMPc passa a bloquear arquivos CSV truncados, registros com colunas ausentes ou extras e aspas sem fechamento.
+- A validação informa a linha e o registro problemático, orientando uma nova exportação sem substituir a base atual.
+- Campos opcionais do TXT passam a ser normalizados com segurança, eliminando erros genéricos de `NoneType`.
+
 ## 1.3.37
 
 - Objetos técnicos duplicados do SNMPc passam a ser consolidados pelo Código Aquiles quando existe um único Nome SNMPc oficial no cadastro de Sites.
