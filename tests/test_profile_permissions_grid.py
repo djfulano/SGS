@@ -197,6 +197,10 @@ class ProfilePermissionsGridTest(unittest.TestCase):
             grupos_por_chave["clientes_resumo_assinaturas"],
             "Clientes"
         )
+        self.assertEqual(
+            grupos_por_chave["clientes_ranking"],
+            "Clientes"
+        )
 
     def test_extrai_chaves_selecionadas_da_grade(self):
         df_grade = montar_grade_permissoes_perfil(

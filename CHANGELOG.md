@@ -1,5 +1,11 @@
 # Histórico de versões
 
+## 1.3.44
+
+- Clientes ganha a subaba Ranking de Clientes, ordenada pelo maior faturamento total.
+- Assinaturas são consolidadas por nomes normalizados ou com similaridade mínima de 90%, mantendo nomes originais, assinaturas, sites, produtos e gerentes para conferência.
+- O ranking é pesquisável, cacheado e restrito a usuários com permissão de valores de clientes.
+
 ## 1.3.43
 
 - Financeiro > Prioridades passa a exibir as datas de vencimento da mensalidade e do acordo.

@@ -42,6 +42,7 @@ MODULES = [
     ("clientes", "Clientes"),
     ("clientes_consulta", "Clientes > Consulta"),
     ("clientes_resumo_assinaturas", "Clientes > Resumo de Clientes"),
+    ("clientes_ranking", "Clientes > Ranking de Clientes"),
     ("clientes_custos_sites", "Clientes > Custos por Cliente"),
     ("clientes_relatorios", "Clientes > Relatórios"),
     ("clientes_insights", "Clientes > Insights"),

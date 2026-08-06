@@ -7,13 +7,17 @@ from app.models.cliente import Cliente
 from app.models.site import Site
 from app.services.clients import agrupar_clientes
 from app.services.clients import equipamentos_cliente
+from app.services.clients import filtrar_ranking_clientes
 from app.services.clients import filtrar_clientes
 from app.services.clients import filtrar_clientes_consulta
 from app.services.clients import levantar_custos_sites_cliente
 from app.services.clients import montar_base_consulta_clientes
 from app.services.clients import montar_base_clientes
+from app.services.clients import montar_ranking_clientes_aproximado
 from app.services.clients import montar_resumo_assinaturas_clientes
 from app.services.clients import normalizar_selecao_assinaturas
+from app.services.clients import normalizar_nome_ranking_cliente
+from app.services.clients import similaridade_nomes_clientes
 from app.ui.views.clients import preparar_busca_clientes
 from app.ui.views.clients import href_navegacao_resumo
 from app.ui.views.clients import rotulo_cliente
@@ -21,6 +25,135 @@ from app.ui.views.clients import valor_resumo_cliente
 
 
 class ClientsServiceTest(unittest.TestCase):
+
+    def test_ranking_clientes_agrupa_nomes_aproximados_e_deduplica(self):
+        df = pd.DataFrame([
+            {
+                "Cliente": "Supermercado Barbosa Norte",
+                "Assinatura": "100",
+                "Receita": 500,
+                "Produto": "Link 1 Gbps",
+                "Gerente de contas": "Maria",
+                "Site": "POP_A",
+                "Sites de atendimento": "POP_A, POP_B",
+                "Vínculos de atendimento": [
+                    {"Site": "POP_A", "Vínculo": "Principal"},
+                    {"Site": "POP_B", "Vínculo": "Adicional"},
+                ],
+            },
+            {
+                "Cliente": "Supermercados Barbosa Norte Ltda.",
+                "Assinatura": "101",
+                "Receita": 50,
+                "Produto": "Backup",
+                "Gerente de contas": "João",
+                "Site": "POP_B",
+                "Sites de atendimento": "POP_B",
+                "Vínculos de atendimento": [],
+            },
+            {
+                "Cliente": "BARBOSA COMÉRCIO S/A",
+                "Assinatura": "200",
+                "Receita": 200,
+                "Produto": "VPN",
+                "Gerente de contas": "Ana",
+                "Site": "POP_C",
+            },
+            {
+                "Cliente": "Barbosa Comercio Ltda",
+                "Assinatura": "201",
+                "Receita": 100,
+                "Produto": "VPN",
+                "Gerente de contas": "Ana",
+                "Site": "POP_C",
+            },
+            {
+                "Cliente": "Barbosa Comercio Ltda",
+                "Assinatura": "201",
+                "Receita": 9999,
+                "Produto": "Duplicado",
+                "Gerente de contas": "Ana",
+                "Site": "POP_D",
+            },
+            {
+                "Cliente": "Supermercado Barbosa Sul",
+                "Assinatura": "300",
+                "Receita": 90,
+                "Produto": "Link",
+                "Gerente de contas": "Carlos",
+                "Site": "POP_D",
+            },
+        ])
+
+        ranking = montar_ranking_clientes_aproximado(df)
+
+        self.assertEqual(len(ranking), 3)
+        primeiro = ranking.iloc[0]
+        self.assertEqual(primeiro["Posição"], 1)
+        self.assertEqual(
+            primeiro["Cliente agrupado"],
+            "Supermercado Barbosa Norte",
+        )
+        self.assertEqual(primeiro["Receita Total"], 550)
+        self.assertEqual(primeiro["Quantidade de assinaturas"], 2)
+        self.assertEqual(primeiro["Assinaturas"], "100, 101")
+        self.assertEqual(primeiro["Quantidade de sites"], 2)
+        self.assertEqual(primeiro["Sites"], "POP_A, POP_B")
+        self.assertEqual(primeiro["Gerentes de Contas"], "João, Maria")
+        self.assertIn(
+            "Supermercados Barbosa Norte Ltda.",
+            primeiro["Nomes considerados"],
+        )
+        comercio = ranking[
+            ranking["Cliente agrupado"].eq("BARBOSA COMÉRCIO S/A")
+        ].iloc[0]
+        self.assertEqual(comercio["Receita Total"], 300)
+        self.assertEqual(comercio["Quantidade de assinaturas"], 2)
+
+    def test_ranking_clientes_normaliza_e_evitar_grupo_generico(self):
+        self.assertEqual(
+            normalizar_nome_ranking_cliente("Ácme Comércio Ltda."),
+            "acme comercio",
+        )
+        self.assertAlmostEqual(
+            similaridade_nomes_clientes(
+                "Supermercado Barbosa Norte",
+                "Supermercados Barbosa Norte Ltda",
+            ),
+            0.9811320754716981,
+        )
+        self.assertLess(
+            similaridade_nomes_clientes(
+                "Alfa Comércio Norte",
+                "Beta Comércio Norte",
+            ),
+            0.90,
+        )
+
+    def test_filtro_ranking_preserva_posicao_original(self):
+        ranking = pd.DataFrame([
+            {
+                "Posição": 1,
+                "Cliente agrupado": "Cliente A",
+                "Assinaturas": "100",
+                "Sites": "POP_A",
+                "Gerentes de Contas": "Maria",
+                "Nomes considerados": "Cliente A",
+            },
+            {
+                "Posição": 2,
+                "Cliente agrupado": "Cliente B",
+                "Assinaturas": "200",
+                "Sites": "POP_B",
+                "Gerentes de Contas": "João",
+                "Nomes considerados": "Cliente B",
+            },
+        ])
+
+        filtrado = filtrar_ranking_clientes(ranking, "joao")
+
+        self.assertEqual(len(filtrado), 1)
+        self.assertEqual(filtrado.iloc[0]["Posição"], 2)
 
     def test_resumo_assinaturas_consolida_receita_e_sites_de_atendimento(self):
         df = pd.DataFrame([

@@ -1,5 +1,8 @@
-import pandas as pd
+import re
 import unicodedata
+from difflib import SequenceMatcher
+
+import pandas as pd
 
 from app.config import CLIENTES_FILE
 from app.importers.excel_importer import ler_clientes_base
@@ -30,6 +33,48 @@ COLUNAS_SITES_CUSTOS_CLIENTE = [
     "Vínculos",
     "Custo"
 ]
+
+COLUNAS_RANKING_CLIENTES = [
+    "Posição",
+    "Cliente agrupado",
+    "Receita Total",
+    "Quantidade de assinaturas",
+    "Assinaturas",
+    "Quantidade de sites",
+    "Sites",
+    "Gerentes de Contas",
+    "Produtos",
+    "Nomes considerados",
+]
+
+TERMOS_IGNORADOS_NOME_CLIENTE = {
+    "a",
+    "as",
+    "com",
+    "da",
+    "das",
+    "de",
+    "do",
+    "dos",
+    "e",
+    "em",
+    "eireli",
+    "epp",
+    "ltda",
+    "me",
+    "para",
+    "s",
+    "sa",
+}
+
+TERMOS_GENERICOS_NOME_CLIENTE = {
+    "comercio",
+    "empresa",
+    "industria",
+    "servico",
+    "servicos",
+    "sociedade",
+}
 
 
 def normalizar_busca_custos_cliente(valor):
@@ -661,19 +706,29 @@ def normalizar_selecao_assinaturas(assinaturas, assinaturas_validas):
 def sites_atendimento_registro_cliente(registro):
     sites = []
 
-    for vinculo in registro.get("Vínculos de atendimento") or []:
+    vinculos = registro.get("Vínculos de atendimento")
+    if not isinstance(vinculos, (list, tuple)):
+        vinculos = []
+
+    for vinculo in vinculos:
         if not isinstance(vinculo, dict):
             continue
         site = str(vinculo.get("Site") or "").strip()
         if site and site not in sites:
             sites.append(site)
 
-    for site in str(registro.get("Sites de atendimento") or "").split(","):
+    sites_texto = registro.get("Sites de atendimento")
+    if pd.isna(sites_texto):
+        sites_texto = ""
+    for site in str(sites_texto or "").split(","):
         site = site.strip()
         if site and site not in sites:
             sites.append(site)
 
-    site_principal = str(registro.get("Site") or "").strip()
+    site_principal = registro.get("Site")
+    if pd.isna(site_principal):
+        site_principal = ""
+    site_principal = str(site_principal or "").strip()
     if (
         site_principal
         and site_principal.casefold() != "sem vínculo".casefold()
@@ -682,6 +737,223 @@ def sites_atendimento_registro_cliente(registro):
         sites.insert(0, site_principal)
 
     return sites
+
+
+def normalizar_nome_ranking_cliente(valor):
+    texto = unicodedata.normalize("NFKD", str(valor or ""))
+    texto = "".join(
+        caractere
+        for caractere in texto
+        if not unicodedata.combining(caractere)
+    ).casefold()
+    termos = [
+        termo
+        for termo in re.findall(r"[a-z0-9]+", texto)
+        if termo not in TERMOS_IGNORADOS_NOME_CLIENTE
+    ]
+    return " ".join(sorted(termos))
+
+
+def _termos_distintivos_nome_cliente(nome_normalizado):
+    return (
+        set(str(nome_normalizado or "").split())
+        - TERMOS_GENERICOS_NOME_CLIENTE
+    )
+
+
+def similaridade_nomes_clientes(nome_a, nome_b):
+    normalizado_a = normalizar_nome_ranking_cliente(nome_a)
+    normalizado_b = normalizar_nome_ranking_cliente(nome_b)
+
+    if not normalizado_a or not normalizado_b:
+        return 0.0
+    if normalizado_a == normalizado_b:
+        return 1.0
+
+    termos_distintivos = (
+        _termos_distintivos_nome_cliente(normalizado_a)
+        & _termos_distintivos_nome_cliente(normalizado_b)
+    )
+    if not termos_distintivos:
+        return 0.0
+
+    return SequenceMatcher(
+        None,
+        normalizado_a,
+        normalizado_b,
+        autojunk=False,
+    ).ratio()
+
+
+def _lista_textual_ranking(valores):
+    unicos = {
+        str(valor or "").strip()
+        for valor in valores
+        if str(valor or "").strip()
+    }
+    return ", ".join(sorted(unicos, key=str.casefold))
+
+
+def _ordenar_assinaturas_ranking(valores):
+    assinaturas = {
+        str(valor or "").strip()
+        for valor in valores
+        if str(valor or "").strip()
+    }
+    return sorted(
+        assinaturas,
+        key=lambda valor: (
+            0 if valor.isdigit() else 1,
+            int(valor) if valor.isdigit() else valor.casefold(),
+        ),
+    )
+
+
+def montar_ranking_clientes_aproximado(df_clientes, limiar=0.90):
+    if df_clientes is None or df_clientes.empty:
+        return pd.DataFrame(columns=COLUNAS_RANKING_CLIENTES)
+
+    base = df_clientes.copy()
+    for coluna in [
+        "Cliente",
+        "Assinatura",
+        "Receita",
+        "Produto",
+        "Gerente de contas",
+        "Site",
+        "Sites de atendimento",
+        "Vínculos de atendimento",
+    ]:
+        if coluna not in base.columns:
+            base[coluna] = ""
+
+    base["Assinatura"] = base["Assinatura"].astype(str).str.strip()
+    base = base[base["Assinatura"].ne("")].drop_duplicates(
+        subset=["Assinatura"],
+        keep="first",
+    )
+    if base.empty:
+        return pd.DataFrame(columns=COLUNAS_RANKING_CLIENTES)
+
+    base["Cliente"] = base["Cliente"].fillna("").astype(str).str.strip()
+    base["Receita"] = pd.to_numeric(
+        base["Receita"],
+        errors="coerce",
+    ).fillna(0.0)
+
+    variantes = []
+    for nome, registros_nome in base.groupby("Cliente", dropna=False):
+        variantes.append({
+            "nome": str(nome or "").strip() or "Não informado",
+            "indices": registros_nome.index.tolist(),
+            "receita": float(registros_nome["Receita"].sum()),
+            "assinaturas": int(registros_nome["Assinatura"].nunique()),
+        })
+    variantes.sort(
+        key=lambda item: (
+            -item["receita"],
+            -item["assinaturas"],
+            item["nome"].casefold(),
+        )
+    )
+
+    grupos = []
+    grupos_por_normalizado = {}
+    grupos_por_termo = {}
+    for variante in variantes:
+        nome_normalizado = normalizar_nome_ranking_cliente(variante["nome"])
+        indice_exato = grupos_por_normalizado.get(nome_normalizado)
+        indices_candidatos = set()
+        for termo in _termos_distintivos_nome_cliente(nome_normalizado):
+            indices_candidatos.update(grupos_por_termo.get(termo, set()))
+
+        if indice_exato is not None:
+            indices_candidatos.add(indice_exato)
+        candidatos = [
+            (
+                similaridade_nomes_clientes(
+                    variante["nome"],
+                    grupo["representante"]["nome"],
+                ),
+                indice,
+            )
+            for indice in indices_candidatos
+            for grupo in [grupos[indice]]
+        ]
+        melhor_score, melhor_indice = max(
+            candidatos,
+            default=(0.0, -1),
+            key=lambda item: (item[0], -item[1]),
+        )
+        if melhor_score >= float(limiar):
+            grupos[melhor_indice]["variantes"].append(variante)
+        else:
+            novo_indice = len(grupos)
+            grupos.append({
+                "representante": variante,
+                "variantes": [variante],
+            })
+            grupos_por_normalizado.setdefault(nome_normalizado, novo_indice)
+            for termo in _termos_distintivos_nome_cliente(nome_normalizado):
+                grupos_por_termo.setdefault(termo, set()).add(novo_indice)
+
+    linhas = []
+    for grupo in grupos:
+        indices = [
+            indice
+            for variante in grupo["variantes"]
+            for indice in variante["indices"]
+        ]
+        registros = base.loc[indices].copy()
+        assinaturas = _ordenar_assinaturas_ranking(registros["Assinatura"])
+        sites = set()
+        for registro in registros.to_dict(orient="records"):
+            sites.update(sites_atendimento_registro_cliente(registro))
+
+        linhas.append({
+            "Cliente agrupado": grupo["representante"]["nome"],
+            "Receita Total": float(registros["Receita"].sum()),
+            "Quantidade de assinaturas": len(assinaturas),
+            "Assinaturas": ", ".join(assinaturas),
+            "Quantidade de sites": len(sites),
+            "Sites": ", ".join(sorted(sites, key=str.casefold)),
+            "Gerentes de Contas": _lista_textual_ranking(
+                registros["Gerente de contas"]
+            ),
+            "Produtos": _lista_textual_ranking(registros["Produto"]),
+            "Nomes considerados": _lista_textual_ranking(
+                variante["nome"]
+                for variante in grupo["variantes"]
+            ),
+        })
+
+    resultado = pd.DataFrame(linhas).sort_values(
+        ["Receita Total", "Cliente agrupado"],
+        ascending=[False, True],
+        kind="stable",
+    ).reset_index(drop=True)
+    resultado.insert(0, "Posição", range(1, len(resultado) + 1))
+    return resultado[COLUNAS_RANKING_CLIENTES]
+
+
+def filtrar_ranking_clientes(df_ranking, termo):
+    termo = normalizar_busca_custos_cliente(termo)
+    if not termo or df_ranking is None or df_ranking.empty:
+        return df_ranking
+
+    colunas = [
+        "Cliente agrupado",
+        "Assinaturas",
+        "Sites",
+        "Gerentes de Contas",
+        "Nomes considerados",
+    ]
+    mascara = pd.Series(False, index=df_ranking.index)
+    for coluna in colunas:
+        mascara |= df_ranking[coluna].fillna("").astype(str).map(
+            normalizar_busca_custos_cliente
+        ).str.contains(termo, regex=False)
+    return df_ranking[mascara].copy()
 
 
 def montar_resumo_assinaturas_clientes(df_clientes, assinaturas):

@@ -1,4 +1,5 @@
 import html
+import json
 from urllib.parse import quote
 
 import pandas as pd
@@ -8,10 +9,12 @@ from app.auth import can_view_values
 from app.auth import can_view_cost_values
 from app.auth import has_permission
 from app.services.clients import agrupar_clientes
+from app.services.clients import filtrar_ranking_clientes
 from app.services.clients import filtrar_clientes
 from app.services.clients import levantar_custos_sites_cliente
 from app.services.clients import montar_base_consulta_clientes
 from app.services.clients import montar_base_clientes
+from app.services.clients import montar_ranking_clientes_aproximado
 from app.services.clients import montar_resumo_assinaturas_clientes
 from app.services.clients import normalizar_selecao_assinaturas
 from app.services.clients import resumo_clientes
@@ -35,6 +38,34 @@ def configurar_clientes(mostrar_grid, formatar_moeda, usuario_logado):
 
 def usuario_atual():
     return _usuario_logado() or {}
+
+
+@st.cache_data(show_spinner=False)
+def montar_ranking_clientes_cacheado(base_json):
+    return montar_ranking_clientes_aproximado(
+        pd.DataFrame(json.loads(base_json))
+    )
+
+
+def serializar_base_ranking_clientes(df_clientes):
+    colunas = [
+        "Cliente",
+        "Assinatura",
+        "Receita",
+        "Produto",
+        "Gerente de contas",
+        "Site",
+        "Sites de atendimento",
+        "Vínculos de atendimento",
+    ]
+    base = df_clientes.copy()
+    for coluna in colunas:
+        if coluna not in base.columns:
+            base[coluna] = ""
+    return base[colunas].to_json(
+        orient="records",
+        force_ascii=False,
+    )
 
 
 def pode_ver(chave):
@@ -538,6 +569,60 @@ def mostrar_custos_sites_cliente(sites):
     )
 
 
+def mostrar_ranking_clientes(sites, equipamentos):
+    st.header("Ranking de Clientes")
+    st.caption(
+        "Consolidação gerencial por nomes iguais ou aproximados. "
+        "Consulte os nomes considerados antes de usar o agrupamento em "
+        "decisões operacionais."
+    )
+
+    if not can_view_values(usuario_atual()):
+        st.warning(
+            "Seu perfil não possui permissão para visualizar valores de clientes."
+        )
+        return
+
+    df_clientes = montar_base_consulta_clientes(sites, equipamentos)
+    if df_clientes.empty:
+        st.warning("Nenhum cliente ativo foi encontrado na base atual.")
+        return
+
+    with st.spinner("Consolidando clientes por nome aproximado..."):
+        ranking = montar_ranking_clientes_cacheado(
+            serializar_base_ranking_clientes(df_clientes)
+        )
+
+    termo = st.text_input(
+        "Buscar no ranking",
+        placeholder="Nome, assinatura, site ou gerente de contas",
+        key="clientes_ranking_busca",
+    )
+    filtrado = filtrar_ranking_clientes(ranking, termo)
+
+    metricas = st.columns(3)
+    metricas[0].metric("Clientes agrupados", len(filtrado))
+    metricas[1].metric(
+        "Assinaturas",
+        int(filtrado["Quantidade de assinaturas"].sum()),
+    )
+    metricas[2].metric(
+        "Receita total",
+        _formatar_moeda(float(filtrado["Receita Total"].sum())),
+    )
+
+    if filtrado.empty:
+        st.info("Nenhum cliente atende à busca informada.")
+        return
+
+    _mostrar_grid(
+        filtrado,
+        height=min(720, max(180, 80 + len(filtrado) * 34)),
+        key="clientes_ranking_tabela",
+        mostrar_abrir_site=False,
+    )
+
+
 def mostrar_relatorios_clientes(sites, equipamentos):
     st.header("Relatórios de clientes")
     df_clientes = montar_base_clientes(sites, equipamentos)
@@ -647,6 +732,11 @@ def mostrar_clientes(sites, equipamentos):
             lambda: mostrar_resumo_assinaturas_clientes(sites, equipamentos)
         ),
         (
+            "clientes_ranking",
+            "Ranking de Clientes",
+            lambda: mostrar_ranking_clientes(sites, equipamentos)
+        ),
+        (
             "clientes_custos_sites",
             "Custos por Cliente",
             lambda: mostrar_custos_sites_cliente(sites)
@@ -660,7 +750,13 @@ def mostrar_clientes(sites, equipamentos):
     subabas = [
         item
         for item in subabas
-        if pode_ver(item[0]) or pode_ver("clientes")
+        if (
+            (pode_ver(item[0]) or pode_ver("clientes"))
+            and (
+                item[0] != "clientes_ranking"
+                or can_view_values(usuario_atual())
+            )
+        )
     ]
 
     if not subabas:

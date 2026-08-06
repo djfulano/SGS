@@ -15,6 +15,7 @@ class AuthModulesTest(unittest.TestCase):
         self.assertIn("clientes_consulta", chaves)
         self.assertIn("clientes_relatorios", chaves)
         self.assertIn("clientes_insights", chaves)
+        self.assertIn("clientes_ranking", chaves)
         self.assertIn("insights", chaves)
         self.assertIn("insights_visao_geral", chaves)
         self.assertIn("insights_financeiro", chaves)
