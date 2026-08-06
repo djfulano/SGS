@@ -418,6 +418,7 @@ class FinanceServiceTest(unittest.TestCase):
             resultado.set_index("ID SGS").loc["INEXISTENTE", "Favorecido"],
             "FAVORECIDO 999999",
         )
+        self.assertEqual(resultado.columns[0], "Favorecido")
 
     def test_historico_financeiro_site_separa_status_e_valores(self):
         pagamentos = pd.DataFrame([

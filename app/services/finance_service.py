@@ -1359,9 +1359,9 @@ CONCILIATION_COLUMNS = [
 ]
 
 PAYMENTS_WITHOUT_SITE_COLUMNS = [
+    "Favorecido",
     "Motivo",
     "ID SGS",
-    "Favorecido",
     "Microsiga extraído",
     "Tipo de despesa",
     "Competência",

@@ -3384,7 +3384,21 @@ def mostrar_pagamentos_sem_site(sites):
     if status:
         filtrado = filtrado[filtrado["Status"].isin(status)]
 
-    exibido = filtrado.reset_index(drop=True)
+    colunas_exibidas = [
+        "Favorecido",
+        "Motivo",
+        "Microsiga extraído",
+        "Tipo de despesa",
+        "Competência",
+        "Vencimento",
+        "Valor",
+        "Status",
+        "Prioridade",
+        "OC",
+        "Descrição",
+        "ID SGS",
+    ]
+    exibido = filtrado[colunas_exibidas].reset_index(drop=True)
     if not has_permission(_usuario_logado(), "visualizar_valores_custos"):
         exibido = exibido.drop(columns=["Valor"])
 
@@ -3395,7 +3409,7 @@ def mostrar_pagamentos_sem_site(sites):
     _mostrar_grid(
         exibido,
         height=min(680, max(180, 80 + len(exibido) * 34)),
-        key="pagamentos_sem_site_grid",
+        key="pagamentos_sem_site_grid_v2",
     )
 
 

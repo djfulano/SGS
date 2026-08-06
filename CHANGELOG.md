@@ -1,5 +1,10 @@
 # Histórico de versões
 
+## 1.3.42
+
+- A tabela de Análises e Conciliação > Pagamentos sem site passa a exibir Favorecido como primeira coluna.
+- As preferências da grade foram atualizadas para tornar a coluna visível também para usuários com configurações antigas salvas.
+
 ## 1.3.41
 
 - Corrigido o fluxo de autenticação que podia descartar a primeira tentativa de login quando havia um cookie expirado ou revogado.
