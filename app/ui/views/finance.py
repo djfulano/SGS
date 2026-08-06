@@ -309,6 +309,9 @@ def mostrar_prioridades_financeiras(sites):
         "Microsiga",
         "Custo mensal",
         "Receita (Total com sites filhos)",
+        "Data Vencimento Mensalidade",
+        "Data Vencimento Acordo",
+        "Quantidade de parcelas em atraso",
         "Passivo de acordos",
         "Passivo de mensalidades",
         "Criticidade",
@@ -353,6 +356,18 @@ def mostrar_prioridades_financeiras(sites):
         column_config={
             "Chave Site": None,
             "Possui Vencidos": None,
+            "Data Vencimento Mensalidade": st.column_config.DateColumn(
+                "Data Vencimento Mensalidade",
+                format="DD/MM/YYYY",
+            ),
+            "Data Vencimento Acordo": st.column_config.DateColumn(
+                "Data Vencimento Acordo",
+                format="DD/MM/YYYY",
+            ),
+            "Quantidade de parcelas em atraso": st.column_config.NumberColumn(
+                "Quantidade de parcelas em atraso",
+                format="%d",
+            ),
             "Importância": st.column_config.SelectboxColumn(
                 "Importância",
                 options=SITE_IMPORTANCE_OPTIONS,

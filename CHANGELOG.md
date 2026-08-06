@@ -1,5 +1,11 @@
 # Histórico de versões
 
+## 1.3.43
+
+- Financeiro > Prioridades passa a exibir as datas de vencimento da mensalidade e do acordo.
+- A tabela e a exportação Excel incluem a quantidade total de parcelas em atraso, somando mensalidades e acordos vencidos.
+- As datas exportadas são gravadas como datas do Excel no formato `DD/MM/AAAA`.
+
 ## 1.3.42
 
 - A tabela de Análises e Conciliação > Pagamentos sem site passa a exibir Favorecido como primeira coluna.

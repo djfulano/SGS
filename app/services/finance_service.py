@@ -39,6 +39,9 @@ SITE_PRIORITY_COLUMNS = [
     "Receita (Total com sites filhos)",
     "Passivo de acordos",
     "Passivo de mensalidades",
+    "Data Vencimento Mensalidade",
+    "Data Vencimento Acordo",
+    "Quantidade de parcelas em atraso",
     "Lista de Clientes",
     "Vencimento da Mensalidade",
     "Valor da Mensalidade Atual",
@@ -61,6 +64,9 @@ SITE_PRIORITY_EXPORT_COLUMNS = [
     "Receita (Total com sites filhos)",
     "Passivo de acordos",
     "Passivo de mensalidades",
+    "Data Vencimento Mensalidade",
+    "Data Vencimento Acordo",
+    "Quantidade de parcelas em atraso",
     "Criticidade",
     "Importância",
     "Lista de Clientes",
@@ -2042,6 +2048,11 @@ def montar_prioridades_financeiras(
             "Passivo de mensalidades": float(
                 recorrentes.get("_valor", pd.Series(dtype=float)).sum()
             ),
+            "Data Vencimento Mensalidade": vencimento_mensalidade,
+            "Data Vencimento Acordo": vencimento_acordo,
+            "Quantidade de parcelas em atraso": (
+                len(recorrentes_vencidas) + len(acordos_vencidos)
+            ),
             "Lista de Clientes": resumo_clientes["nomes"],
             "Vencimento da Mensalidade": vencimento_mensalidade,
             "Valor da Mensalidade Atual": valor_mensalidade,
@@ -2465,10 +2476,22 @@ def exportar_conciliacao_financeira_excel(df):
 
 def exportar_prioridades_financeiras_excel(df):
     dados = df.reindex(columns=SITE_PRIORITY_EXPORT_COLUMNS)
-    return dataframe_para_excel(dados, "Prioridades")
+    return dataframe_para_excel(
+        dados,
+        "Prioridades",
+        colunas_datas={
+            "Data Vencimento Mensalidade",
+            "Data Vencimento Acordo",
+        },
+    )
 
 
-def dataframe_para_excel(df, sheet_name="Dados", colunas_monetarias=None):
+def dataframe_para_excel(
+    df,
+    sheet_name="Dados",
+    colunas_monetarias=None,
+    colunas_datas=None,
+):
     buffer = BytesIO()
     with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
         nome_aba = sheet_name[:31] or "Dados"
@@ -2491,5 +2514,11 @@ def dataframe_para_excel(df, sheet_name="Dados", colunas_monetarias=None):
                 celula = planilha.cell(row=linha, column=indice)
                 if celula.value is not None and celula.data_type == "n":
                     celula.number_format = formato_reais
+        for coluna in set(colunas_datas or set()).intersection(cabecalhos):
+            indice = cabecalhos[coluna]
+            for linha in range(2, planilha.max_row + 1):
+                celula = planilha.cell(row=linha, column=indice)
+                if celula.value is not None:
+                    celula.number_format = "DD/MM/YYYY"
     buffer.seek(0)
     return buffer.getvalue()

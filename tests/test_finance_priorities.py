@@ -154,6 +154,15 @@ class FinancePrioritiesTest(unittest.TestCase):
         self.assertEqual(site_a["Passivo de mensalidades"], 220.0)
         self.assertEqual(site_a["Passivo de acordos"], 110.0)
         self.assertEqual(
+            site_a["Data Vencimento Mensalidade"],
+            date(2026, 7, 1),
+        )
+        self.assertEqual(
+            site_a["Data Vencimento Acordo"],
+            date(2026, 6, 1),
+        )
+        self.assertEqual(site_a["Quantidade de parcelas em atraso"], 2)
+        self.assertEqual(
             site_a["Lista de Clientes"],
             "Cliente Filho, Cliente Principal",
         )
@@ -210,6 +219,9 @@ class FinancePrioritiesTest(unittest.TestCase):
             "Receita (Total com sites filhos)": 2000.0,
             "Passivo de acordos": 78.9,
             "Passivo de mensalidades": 100.0,
+            "Data Vencimento Mensalidade": date(2026, 8, 10),
+            "Data Vencimento Acordo": date(2026, 8, 20),
+            "Quantidade de parcelas em atraso": 3,
             "Criticidade": "Bloqueia",
             "Importância": "Alta",
             "Lista de Clientes": "Cliente A, Cliente B",
@@ -234,6 +246,25 @@ class FinancePrioritiesTest(unittest.TestCase):
         self.assertIn("R$", custo.number_format)
         self.assertEqual(acordos.data_type, "n")
         self.assertIn("R$", acordos.number_format)
+        vencimento_mensalidade = planilha.cell(
+            row=2,
+            column=cabecalhos["Data Vencimento Mensalidade"],
+        )
+        vencimento_acordo = planilha.cell(
+            row=2,
+            column=cabecalhos["Data Vencimento Acordo"],
+        )
+        self.assertEqual(vencimento_mensalidade.value.date(), date(2026, 8, 10))
+        self.assertEqual(vencimento_acordo.value.date(), date(2026, 8, 20))
+        self.assertEqual(vencimento_mensalidade.number_format, "DD/MM/YYYY")
+        self.assertEqual(vencimento_acordo.number_format, "DD/MM/YYYY")
+        self.assertEqual(
+            planilha.cell(
+                row=2,
+                column=cabecalhos["Quantidade de parcelas em atraso"],
+            ).value,
+            3,
+        )
         self.assertEqual(
             list(cabecalhos),
             fs.SITE_PRIORITY_EXPORT_COLUMNS,
