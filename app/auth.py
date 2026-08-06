@@ -59,6 +59,7 @@ MODULES = [
     ("custos_receita", "Análises e Conciliação > Custos x Receita"),
     ("sites_deficitarios", "Análises e Conciliação > Sites Deficitários"),
     ("sites_documentos", "Análises e Conciliação > Sites x Documentos"),
+    ("pagamentos_sem_site", "Análises e Conciliação > Pagamentos sem site"),
     ("sem_vinculo", "Análises e Conciliação > Sem Vínculo"),
     ("sites_sem_clientes", "Análises e Conciliação > Sites sem Clientes"),
     ("clientes_snmpc_cancelados", "Análises e Conciliação > Clientes no SNMPc Cancelado"),

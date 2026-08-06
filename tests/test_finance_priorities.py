@@ -8,6 +8,8 @@ from unittest.mock import patch
 import pandas as pd
 from openpyxl import load_workbook
 
+from app.models.cliente import Cliente
+from app.models.site import Site
 from app.services import finance_service as fs
 
 
@@ -99,6 +101,23 @@ class FinancePrioritiesTest(unittest.TestCase):
             },
         ])
 
+    def sites_topologia(self):
+        principal = Site("SITE_A_POP_100_IP", "POP")
+        principal.codigo_topos = "100"
+        principal.microsiga = "12345"
+        principal.adicionar_cliente(
+            Cliente("Cliente Principal", 500, "10000001")
+        )
+        filho = Site("SITE_A_BH_101_IP", "BH")
+        filho.adicionar_cliente(
+            Cliente("Cliente Filho", 300, "10000002")
+        )
+        principal.adicionar_filho(filho)
+        return {
+            principal.nome: principal,
+            filho.nome: filho,
+        }
+
     def test_monta_lista_com_parcelas_e_fallback_do_cadastro(self):
         resultado = fs.montar_prioridades_financeiras(
             cadastro_sites=self.cadastro(),
@@ -109,6 +128,7 @@ class FinancePrioritiesTest(unittest.TestCase):
                 }
             },
             hoje=date(2026, 7, 31),
+            sites=self.sites_topologia(),
         )
 
         self.assertEqual(len(resultado), 2)
@@ -128,6 +148,15 @@ class FinancePrioritiesTest(unittest.TestCase):
         self.assertEqual(site_a["Valor dos Acordos Vencidos"], 50.0)
         self.assertEqual(site_a["Criticidade"], "Bloqueia")
         self.assertEqual(site_a["Importância"], "Alta")
+        self.assertEqual(site_a["Microsiga"], "012345")
+        self.assertEqual(site_a["Custo mensal"], 900.0)
+        self.assertEqual(site_a["Receita (Total com sites filhos)"], 800.0)
+        self.assertEqual(site_a["Passivo de mensalidades"], 220.0)
+        self.assertEqual(site_a["Passivo de acordos"], 110.0)
+        self.assertEqual(
+            site_a["Lista de Clientes"],
+            "Cliente Filho, Cliente Principal",
+        )
 
         site_b = resultado.set_index("Chave Site").loc["aquiles:200"]
         self.assertEqual(site_b["Vencimento da Mensalidade"], date(2026, 8, 10))
@@ -176,9 +205,14 @@ class FinancePrioritiesTest(unittest.TestCase):
         dados = pd.DataFrame([{
             "Chave Site": "aquiles:100",
             "Site": "SITE A - 100 / SITE A - 12345",
-            "Valor da Mensalidade Atual": 1234.56,
-            "Valor dos Acordos Vencidos": 78.9,
+            "Microsiga": "012345",
+            "Custo mensal": 1234.56,
+            "Receita (Total com sites filhos)": 2000.0,
+            "Passivo de acordos": 78.9,
+            "Passivo de mensalidades": 100.0,
+            "Criticidade": "Bloqueia",
             "Importância": "Alta",
+            "Lista de Clientes": "Cliente A, Cliente B",
             "Possui Vencidos": "Sim",
         }])
         arquivo = fs.exportar_prioridades_financeiras_excel(dados)
@@ -187,30 +221,41 @@ class FinancePrioritiesTest(unittest.TestCase):
             celula.value: celula.column
             for celula in planilha[1]
         }
-        mensalidade = planilha.cell(
+        custo = planilha.cell(
             row=2,
-            column=cabecalhos["Valor da Mensalidade Atual"],
+            column=cabecalhos["Custo mensal"],
         )
         acordos = planilha.cell(
             row=2,
-            column=cabecalhos["Valor dos Acordos Vencidos"],
+            column=cabecalhos["Passivo de acordos"],
         )
-        self.assertEqual(mensalidade.data_type, "n")
-        self.assertEqual(mensalidade.value, 1234.56)
-        self.assertIn("R$", mensalidade.number_format)
+        self.assertEqual(custo.data_type, "n")
+        self.assertEqual(custo.value, 1234.56)
+        self.assertIn("R$", custo.number_format)
         self.assertEqual(acordos.data_type, "n")
         self.assertIn("R$", acordos.number_format)
+        self.assertEqual(
+            list(cabecalhos),
+            fs.SITE_PRIORITY_EXPORT_COLUMNS,
+        )
         self.assertNotIn("Chave Site", cabecalhos)
         self.assertNotIn("Possui Vencidos", cabecalhos)
 
     def test_exportacao_preserva_valor_restrito_como_texto(self):
         dados = pd.DataFrame([{
             "Site": "SITE A",
-            "Valor da Mensalidade Atual": "Restrito",
+            "Custo mensal": "Restrito",
         }])
         arquivo = fs.exportar_prioridades_financeiras_excel(dados)
         planilha = load_workbook(BytesIO(arquivo))["Prioridades"]
-        valor = planilha.cell(row=2, column=2)
+        cabecalhos = {
+            celula.value: celula.column
+            for celula in planilha[1]
+        }
+        valor = planilha.cell(
+            row=2,
+            column=cabecalhos["Custo mensal"],
+        )
         self.assertEqual(valor.value, "Restrito")
         self.assertEqual(valor.data_type, "s")
 

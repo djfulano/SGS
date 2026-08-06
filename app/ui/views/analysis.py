@@ -20,6 +20,7 @@ from app.reports.site_financials import (
     montar_relatorio_custos_receita as montar_relatorio_custos_receita_relatorio
 )
 from app.services.contract_service import compare_sites_and_document_folders
+from app.services.finance_service import montar_pagamentos_sem_site
 from app.services.site_registry_service import duplicated_site_codes
 from app.services.site_registry_service import load_site_registry
 from app.services.site_metrics import clientes_indiretos_site
@@ -3312,6 +3313,92 @@ def pode_ver_relatorio_unificado(chave):
     )
 
 
+def mostrar_pagamentos_sem_site(sites):
+    st.header("Pagamentos sem site")
+    st.caption(
+        "Pagamentos cujo favorecido não pôde ser relacionado de forma única "
+        "ao cadastro de Sites pelo Código Microsiga."
+    )
+
+    with st.spinner("Carregando pagamentos sem site..."):
+        pagamentos = montar_pagamentos_sem_site(sites)
+
+    if pagamentos.empty:
+        st.success("Todos os pagamentos estão vinculados a um site.")
+        return
+
+    metricas = st.columns(3)
+    metricas[0].metric("Pagamentos", len(pagamentos))
+    metricas[1].metric(
+        "Favorecidos",
+        pagamentos["Favorecido"].replace("", pd.NA).nunique(dropna=True),
+    )
+    metricas[2].metric(
+        "Códigos identificados",
+        pagamentos["Microsiga extraído"].replace("", pd.NA).nunique(dropna=True),
+    )
+
+    busca = st.text_input(
+        "Buscar pagamento ou favorecido",
+        placeholder="Favorecido, Microsiga, ID, descrição ou OC",
+        key="pagamentos_sem_site_busca",
+    )
+    col1, col2, col3 = st.columns(3)
+    motivos = col1.multiselect(
+        "Motivo",
+        sorted(pagamentos["Motivo"].dropna().astype(str).unique()),
+        key="pagamentos_sem_site_motivos",
+    )
+    tipos = col2.multiselect(
+        "Tipo de despesa",
+        sorted(pagamentos["Tipo de despesa"].dropna().astype(str).unique()),
+        key="pagamentos_sem_site_tipos",
+    )
+    status = col3.multiselect(
+        "Status",
+        sorted(pagamentos["Status"].dropna().astype(str).unique()),
+        key="pagamentos_sem_site_status",
+    )
+
+    filtrado = pagamentos.copy()
+    if busca.strip():
+        termo = busca.strip().casefold()
+        colunas_busca = [
+            "Favorecido",
+            "Microsiga extraído",
+            "ID SGS",
+            "Descrição",
+            "OC",
+        ]
+        mascara = pd.Series(False, index=filtrado.index)
+        for coluna in colunas_busca:
+            mascara |= filtrado[coluna].fillna("").astype(str).str.casefold().str.contains(
+                termo,
+                regex=False,
+            )
+        filtrado = filtrado[mascara]
+    if motivos:
+        filtrado = filtrado[filtrado["Motivo"].isin(motivos)]
+    if tipos:
+        filtrado = filtrado[filtrado["Tipo de despesa"].isin(tipos)]
+    if status:
+        filtrado = filtrado[filtrado["Status"].isin(status)]
+
+    exibido = filtrado.reset_index(drop=True)
+    if not has_permission(_usuario_logado(), "visualizar_valores_custos"):
+        exibido = exibido.drop(columns=["Valor"])
+
+    if exibido.empty:
+        st.info("Nenhum pagamento atende aos filtros selecionados.")
+        return
+
+    _mostrar_grid(
+        exibido,
+        height=min(680, max(180, 80 + len(exibido) * 34)),
+        key="pagamentos_sem_site_grid",
+    )
+
+
 def mostrar_sites_x_documentos(sites):
     st.header("Sites x Documentos")
     st.caption(
@@ -3399,6 +3486,11 @@ def mostrar_analises_conciliacao(
             "sites_documentos",
             "Sites x Documentos",
             lambda: mostrar_sites_x_documentos(sites)
+        ),
+        (
+            "pagamentos_sem_site",
+            "Pagamentos sem site",
+            lambda: mostrar_pagamentos_sem_site(sites)
         ),
         (
             "sem_vinculo",

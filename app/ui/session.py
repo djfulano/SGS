@@ -2,7 +2,6 @@ import json
 
 import streamlit as st
 
-from app.auth import UsersFileError
 from app.auth import account_display_label
 from app.auth import authenticate
 from app.auth import authenticate_session
@@ -32,6 +31,19 @@ from app.version import get_app_version
 APP_VERSION = get_app_version()
 AUTH_COOKIE_NAME = "sgs_auth_token"
 AUTH_COOKIE_MAX_AGE = 12 * 60 * 60
+AUTH_NOTICE_LEVELS = {"error", "warning", "info", "success"}
+AUTH_NOTICE_MESSAGES = {
+    "expired": ("warning", "Sua sessão expirou. Entre novamente."),
+    "logout": ("info", "Sessão encerrada."),
+    "password_changed": (
+        "success",
+        "Senha atualizada. Entre novamente para continuar.",
+    ),
+    "session_error": (
+        "error",
+        "Não foi possível validar sua sessão. Entre novamente.",
+    ),
+}
 
 
 def usuario_logado():
@@ -53,31 +65,92 @@ def token_cookie():
 def registrar_sessao_autenticada(usuario, token, estado=None):
     estado = st.session_state if estado is None else estado
     estado.pop("limpar_auth_cookie", None)
+    estado.pop("motivo_limpar_auth_cookie", None)
+    estado.pop("feedback_login", None)
     estado["usuario"] = usuario
     estado["auth_token"] = token
 
 
-def script_limpar_cookie_auth():
+def definir_feedback_login(mensagem, nivel="error", estado=None):
+    estado = st.session_state if estado is None else estado
+    estado["feedback_login"] = {
+        "mensagem": str(mensagem or "").strip(),
+        "nivel": nivel if nivel in AUTH_NOTICE_LEVELS else "error",
+    }
+
+
+def agendar_limpeza_cookie_auth(motivo="", estado=None):
+    estado = st.session_state if estado is None else estado
+    estado.pop("usuario", None)
+    estado.pop("auth_token", None)
+    estado["limpar_auth_cookie"] = True
+    estado["motivo_limpar_auth_cookie"] = str(motivo or "").strip()
+
+
+def script_limpar_cookie_auth(motivo=""):
+    motivo = str(motivo or "").strip()
 
     return f"""
     <script>
         const cookieName = {json.dumps(AUTH_COOKIE_NAME)};
+        const notice = {json.dumps(motivo)};
         const secure = window.parent.location.protocol === "https:" ? "; Secure" : "";
         window.parent.document.cookie = `${{cookieName}}=; Max-Age=0; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/; SameSite=Strict${{secure}}`;
         const url = new URL(window.parent.location.href);
         url.searchParams.delete("logout");
+        if (notice) {{
+            url.searchParams.set("auth_notice", notice);
+        }} else {{
+            url.searchParams.delete("auth_notice");
+        }}
         window.parent.location.replace(url.toString());
     </script>
     """
 
 
-def renderizar_limpeza_cookie_auth():
+def renderizar_limpeza_cookie_auth(motivo=""):
 
-    st.info("Saindo...")
     st.html(
-        script_limpar_cookie_auth(),
+        script_limpar_cookie_auth(motivo),
         unsafe_allow_javascript=True
     )
+
+
+def consumir_aviso_auth_query():
+    aviso = st.query_params.get("auth_notice")
+    if isinstance(aviso, list):
+        aviso = aviso[-1] if aviso else ""
+    aviso = str(aviso or "").strip()
+
+    if not aviso:
+        return
+
+    nivel, mensagem = AUTH_NOTICE_MESSAGES.get(
+        aviso,
+        AUTH_NOTICE_MESSAGES["session_error"],
+    )
+    definir_feedback_login(mensagem, nivel)
+    st.html(
+        """
+        <script>
+            const url = new URL(window.parent.location.href);
+            url.searchParams.delete("auth_notice");
+            window.parent.history.replaceState({}, "", url.toString());
+        </script>
+        """,
+        unsafe_allow_javascript=True,
+    )
+
+
+def mostrar_feedback_login(destino=None):
+    feedback = st.session_state.get("feedback_login") or {}
+    mensagem = str(feedback.get("mensagem") or "").strip()
+    if not mensagem:
+        return
+
+    nivel = str(feedback.get("nivel") or "error")
+    destino = destino or st
+    getattr(destino, nivel if nivel in AUTH_NOTICE_LEVELS else "error")(mensagem)
 
 
 def sincronizar_token_navegador():
@@ -96,8 +169,14 @@ def sincronizar_token_navegador():
 
     if st.session_state.pop("limpar_auth_cookie", False):
 
-        renderizar_limpeza_cookie_auth()
+        motivo = st.session_state.pop(
+            "motivo_limpar_auth_cookie",
+            "",
+        )
+        renderizar_limpeza_cookie_auth(motivo)
         st.stop()
+
+    consumir_aviso_auth_query()
 
     if token:
 
@@ -219,28 +298,28 @@ def configurar_primeiro_master():
 
 def mostrar_login():
 
-    area_login = st.empty()
-    login_autenticado = False
+    st.markdown(
+        bloco_identidade_sgs("sgt-login-hero"),
+        unsafe_allow_html=True
+    )
+    st.subheader("Login")
+    area_feedback = st.empty()
+    mostrar_feedback_login(area_feedback)
 
-    with area_login.container():
-        st.markdown(
-            bloco_identidade_sgs("sgt-login-hero"),
-            unsafe_allow_html=True
+    with st.form("login"):
+        usuario = st.text_input("Usuário")
+        senha = st.text_input(
+            "Senha",
+            type="password"
         )
+        entrar = st.form_submit_button("Entrar")
 
-        st.subheader("Login")
+    if entrar:
+        st.session_state.pop("feedback_login", None)
+        area_feedback.empty()
+        login_autenticado = False
 
-        with st.form("login"):
-
-            usuario = st.text_input("Usuário")
-            senha = st.text_input(
-                "Senha",
-                type="password"
-            )
-            entrar = st.form_submit_button("Entrar")
-
-        if entrar:
-
+        try:
             bloqueado, segundos_restantes = login_lock_status(
                 usuario
             )
@@ -258,10 +337,12 @@ def mostrar_login():
                         "minutos_restantes": minutos
                     }
                 )
-                st.error(
+                definir_feedback_login(
                     "Muitas tentativas inválidas. "
-                    f"Tente novamente em {minutos} minuto(s)."
+                    f"Tente novamente em {minutos} minuto(s).",
+                    "error",
                 )
+                mostrar_feedback_login(area_feedback)
                 return False
 
             autenticado = authenticate(
@@ -300,12 +381,26 @@ def mostrar_login():
                         "falhas_consecutivas": falhas
                     }
                 )
-                st.error("Usuário ou senha inválidos.")
+                definir_feedback_login(
+                    "Usuário ou senha inválidos.",
+                    "error",
+                )
+                mostrar_feedback_login(area_feedback)
+        except Exception as erro:
+            registrar_log_sistema(
+                "login_indisponivel",
+                usuario=str(usuario or "").strip(),
+                status="erro",
+                detalhes={"erro": str(erro)},
+            )
+            definir_feedback_login(
+                "Não foi possível realizar o login agora. Tente novamente.",
+                "error",
+            )
+            mostrar_feedback_login(area_feedback)
 
-    if login_autenticado:
-        area_login.empty()
-        sincronizar_token_navegador()
-        return True
+        if login_autenticado:
+            st.rerun()
 
     return False
 
@@ -323,9 +418,15 @@ def exigir_login():
 
             autenticado = authenticate_session(token)
 
-        except UsersFileError as erro:
-
-            st.error(str(erro))
+        except Exception as erro:
+            registrar_log_sistema(
+                "validacao_sessao",
+                usuario=(usuario_logado() or {}).get("username", ""),
+                status="erro",
+                detalhes={"erro": str(erro)},
+            )
+            agendar_limpeza_cookie_auth("session_error")
+            sincronizar_token_navegador()
             st.stop()
 
         if autenticado:
@@ -342,23 +443,26 @@ def exigir_login():
 
             return True
 
-        st.session_state.pop(
-            "usuario",
-            None
-        )
-        st.session_state.pop(
-            "auth_token",
-            None
-        )
-        st.session_state["limpar_auth_cookie"] = True
+        agendar_limpeza_cookie_auth("expired")
+        sincronizar_token_navegador()
+        st.stop()
 
     try:
 
         users = load_users()
 
-    except UsersFileError as erro:
-
-        st.error(str(erro))
+    except Exception as erro:
+        registrar_log_sistema(
+            "carregamento_usuarios_login",
+            usuario="",
+            status="erro",
+            detalhes={"erro": str(erro)},
+        )
+        definir_feedback_login(
+            "Não foi possível carregar o acesso ao SGS. Tente novamente.",
+            "error",
+        )
+        mostrar_feedback_login()
         st.stop()
 
     if not users:
@@ -423,10 +527,7 @@ def mostrar_troca_senha_obrigatoria():
                     "origem": "primeiro_login"
                 }
             )
-            st.success(mensagem)
-            st.session_state.pop("usuario", None)
-            st.session_state.pop("auth_token", None)
-            st.session_state["limpar_auth_cookie"] = True
+            agendar_limpeza_cookie_auth("password_changed")
             st.rerun()
 
         registrar_log_usuario(
@@ -559,10 +660,7 @@ def mostrar_barra_superior_conta():
                                     "origem": "propria_conta"
                                 }
                             )
-                            st.success(mensagem)
-                            st.session_state.pop("usuario", None)
-                            st.session_state.pop("auth_token", None)
-                            st.session_state["limpar_auth_cookie"] = True
+                            agendar_limpeza_cookie_auth("password_changed")
                             st.rerun()
 
                         else:
@@ -579,19 +677,20 @@ def mostrar_barra_superior_conta():
                             st.error(mensagem)
 
             if st.button("Sair"):
-
-                revoke_session(
+                token = (
                     st.session_state.get("auth_token")
                     or token_cookie()
                 )
-                st.session_state.pop(
-                    "usuario",
-                    None
-                )
-                st.session_state.pop(
-                    "auth_token",
-                    None
-                )
+                try:
+                    revoke_session(token)
+                except Exception as erro:
+                    registrar_log_sistema(
+                        "logout",
+                        usuario=usuario.get("username", ""),
+                        status="erro",
+                        detalhes={"erro": str(erro)},
+                    )
+                agendar_limpeza_cookie_auth("logout")
                 st.rerun()
 
 

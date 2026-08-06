@@ -1,6 +1,7 @@
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import MagicMock
 from unittest.mock import patch
 
 from app.auth import create_session
@@ -22,7 +23,11 @@ from app.auth import validate_password
 from app.auth import verify_bootstrap_token
 from app.storage import read_json
 from app.storage import write_json_atomic
+from app.ui.session import agendar_limpeza_cookie_auth
+from app.ui.session import exigir_login
+from app.ui.session import mostrar_login
 from app.ui.session import registrar_sessao_autenticada
+from app.ui.session import script_limpar_cookie_auth
 
 
 class AuthSessionsTest(unittest.TestCase):
@@ -30,6 +35,8 @@ class AuthSessionsTest(unittest.TestCase):
     def test_novo_login_cancela_limpeza_pendente_do_cookie_antigo(self):
         estado = {
             "limpar_auth_cookie": True,
+            "motivo_limpar_auth_cookie": "expired",
+            "feedback_login": {"mensagem": "Sessão expirada"},
             "usuario": {"username": "antigo"},
             "auth_token": "token-antigo",
         }
@@ -42,8 +49,83 @@ class AuthSessionsTest(unittest.TestCase):
         )
 
         self.assertNotIn("limpar_auth_cookie", estado)
+        self.assertNotIn("motivo_limpar_auth_cookie", estado)
+        self.assertNotIn("feedback_login", estado)
         self.assertEqual(estado["usuario"], usuario)
         self.assertEqual(estado["auth_token"], "token-novo")
+
+    def test_logout_agenda_limpeza_e_remove_sessao_local(self):
+        estado = {
+            "usuario": {"username": "ana"},
+            "auth_token": "token-atual",
+        }
+
+        agendar_limpeza_cookie_auth("logout", estado)
+
+        self.assertNotIn("usuario", estado)
+        self.assertNotIn("auth_token", estado)
+        self.assertTrue(estado["limpar_auth_cookie"])
+        self.assertEqual(estado["motivo_limpar_auth_cookie"], "logout")
+
+    def test_limpeza_cookie_nao_exibe_saindo_e_preserva_aviso(self):
+        script = script_limpar_cookie_auth("expired")
+
+        self.assertNotIn("Saindo", script)
+        self.assertIn('const notice = "expired"', script)
+        self.assertIn('url.searchParams.set("auth_notice", notice)', script)
+
+    def test_cookie_expirado_e_limpo_antes_de_exibir_login(self):
+        streamlit = MagicMock()
+        streamlit.session_state = {"auth_token": "token-expirado"}
+        streamlit.query_params = {}
+        streamlit.stop.side_effect = RuntimeError("stop")
+
+        with patch("app.ui.session.st", streamlit), patch(
+            "app.ui.session.authenticate_session",
+            return_value=None,
+        ), patch(
+            "app.ui.session.mostrar_login",
+        ) as mostrar_login_mock:
+            with self.assertRaisesRegex(RuntimeError, "stop"):
+                exigir_login()
+
+        mostrar_login_mock.assert_not_called()
+        self.assertNotIn("auth_token", streamlit.session_state)
+        streamlit.html.assert_called_once()
+        html = streamlit.html.call_args.args[0]
+        self.assertIn('const notice = "expired"', html)
+
+    def test_login_valido_faz_um_unico_rerun(self):
+        streamlit = MagicMock()
+        streamlit.session_state = {}
+        streamlit.text_input.side_effect = ["ana", "senha-segura"]
+        streamlit.form_submit_button.return_value = True
+        streamlit.rerun.side_effect = RuntimeError("rerun")
+        area_feedback = MagicMock()
+        streamlit.empty.return_value = area_feedback
+
+        with patch("app.ui.session.st", streamlit), patch(
+            "app.ui.session.bloco_identidade_sgs",
+            return_value="identidade",
+        ), patch(
+            "app.ui.session.login_lock_status",
+            return_value=(False, 0),
+        ), patch(
+            "app.ui.session.authenticate",
+            return_value={"username": "ana", "profile": "Master"},
+        ), patch(
+            "app.ui.session.clear_login_failures",
+        ), patch(
+            "app.ui.session.create_session",
+            return_value="token-novo",
+        ), patch(
+            "app.ui.session.registrar_log_usuario",
+        ):
+            with self.assertRaisesRegex(RuntimeError, "rerun"):
+                mostrar_login()
+
+        streamlit.rerun.assert_called_once_with()
+        self.assertEqual(streamlit.session_state["auth_token"], "token-novo")
 
     def test_create_session_expires_in_12_hours_and_tracks_inactivity(self):
         with tempfile.TemporaryDirectory() as temp_dir:

@@ -34,6 +34,12 @@ SITE_IMPORTANCE_OPTIONS = [
 SITE_PRIORITY_COLUMNS = [
     "Chave Site",
     "Site",
+    "Microsiga",
+    "Custo mensal",
+    "Receita (Total com sites filhos)",
+    "Passivo de acordos",
+    "Passivo de mensalidades",
+    "Lista de Clientes",
     "Vencimento da Mensalidade",
     "Valor da Mensalidade Atual",
     "Tem Acordo",
@@ -46,6 +52,18 @@ SITE_PRIORITY_COLUMNS = [
     "Criticidade",
     "Importância",
     "Possui Vencidos",
+]
+
+SITE_PRIORITY_EXPORT_COLUMNS = [
+    "Site",
+    "Microsiga",
+    "Custo mensal",
+    "Receita (Total com sites filhos)",
+    "Passivo de acordos",
+    "Passivo de mensalidades",
+    "Criticidade",
+    "Importância",
+    "Lista de Clientes",
 ]
 
 PAYMENT_STATUSES = [
@@ -219,6 +237,10 @@ FINANCE_EXPORT_CURRENCY_COLUMNS = {
     "Valor da Parcela do Acordo",
     "Valor das Mensalidades Vencidas",
     "Valor dos Acordos Vencidos",
+    "Custo mensal",
+    "Receita (Total com sites filhos)",
+    "Passivo de acordos",
+    "Passivo de mensalidades",
 }
 
 FINANCE_AUDIT_COLUMNS = {
@@ -1336,6 +1358,21 @@ CONCILIATION_COLUMNS = [
     "Ação sugerida",
 ]
 
+PAYMENTS_WITHOUT_SITE_COLUMNS = [
+    "Motivo",
+    "ID SGS",
+    "Favorecido",
+    "Microsiga extraído",
+    "Tipo de despesa",
+    "Competência",
+    "Vencimento",
+    "Valor",
+    "Status",
+    "Prioridade",
+    "OC",
+    "Descrição",
+]
+
 
 def _linha_conciliacao(
     problema,
@@ -1533,6 +1570,75 @@ def analisar_conciliacao_financeira(
         return pd.DataFrame(columns=CONCILIATION_COLUMNS)
     return pd.DataFrame(problemas, columns=CONCILIATION_COLUMNS).sort_values(
         ["Tipo do problema", "Origem", "Favorecido", "ID SGS"],
+        kind="stable",
+    ).reset_index(drop=True)
+
+
+def montar_pagamentos_sem_site(
+    sites,
+    pagamentos=None,
+    cadastro_sites=None,
+    hoje=None,
+):
+    cadastro_sites = (
+        load_site_registry() if cadastro_sites is None else cadastro_sites.copy()
+    )
+    pagamentos = preparar_pagamentos_exibicao(
+        pagamentos,
+        hoje=hoje,
+        enriquecer=False,
+    )
+    pagamentos = enriquecer_vinculos_financeiros(
+        pagamentos,
+        sites=sites,
+        cadastro_sites=cadastro_sites,
+        forcar=True,
+    )
+    indice_sites = _sites_por_microsiga(sites, cadastro_sites)
+    registros = []
+
+    for registro in pagamentos.to_dict(orient="records"):
+        microsiga = _codigo_microsiga_registro(registro)
+        candidatos = indice_sites.get(microsiga, []) if microsiga else []
+
+        if not microsiga:
+            motivo = "Sem Código Microsiga"
+        elif not candidatos:
+            motivo = "Código Microsiga não encontrado"
+        elif len(candidatos) > 1:
+            motivo = "Código Microsiga duplicado no cadastro"
+        else:
+            continue
+
+        registros.append({
+            "Motivo": motivo,
+            "ID SGS": _texto(registro.get("ID SGS")),
+            "Favorecido": _texto(
+                registro.get("Favorecido")
+                or registro.get("Nome")
+                or registro.get("Fornecedor")
+            ),
+            "Microsiga extraído": microsiga,
+            "Tipo de despesa": _texto(registro.get("Tipo de despesa")),
+            "Competência": _texto(registro.get("Competência")),
+            "Vencimento": _texto(registro.get("Data de vencimento")),
+            "Valor": _numero(registro.get("Subtotal")),
+            "Status": _texto(
+                registro.get("Status Atual") or registro.get("Status")
+            ),
+            "Prioridade": _texto(registro.get("Prioridade")),
+            "OC": _texto(registro.get("OC")),
+            "Descrição": _texto(registro.get("Descrição")),
+        })
+
+    if not registros:
+        return pd.DataFrame(columns=PAYMENTS_WITHOUT_SITE_COLUMNS)
+
+    return pd.DataFrame(
+        registros,
+        columns=PAYMENTS_WITHOUT_SITE_COLUMNS,
+    ).sort_values(
+        ["Favorecido", "Vencimento", "ID SGS"],
         kind="stable",
     ).reset_index(drop=True)
 
@@ -1770,15 +1876,72 @@ def _parcela_prioritaria(parcelas):
     return registro, data_parcela
 
 
+def _indice_sites_topologia_prioridades(sites):
+    indices = {
+        "aquiles": {},
+        "snmpc": {},
+        "microsiga": {},
+    }
+
+    valores = sites.values() if isinstance(sites, dict) else (sites or [])
+    for site in valores:
+        codigo = _codigo_site_texto(getattr(site, "codigo_topos", ""))
+        nome = _texto(getattr(site, "nome", "")).casefold()
+        microsiga = normalizar_codigo_microsiga(
+            getattr(site, "microsiga", "")
+        )
+        if codigo:
+            indices["aquiles"].setdefault(codigo, site)
+        if nome:
+            indices["snmpc"].setdefault(nome, site)
+        if microsiga:
+            indices["microsiga"].setdefault(microsiga, site)
+    return indices
+
+
+def _localizar_site_topologia_prioridade(site, indices):
+    codigo = _codigo_site_texto(site.get("CÓDIGO AQUILES"))
+    nome = _texto(site.get("SMNPC")).casefold()
+    microsiga = normalizar_codigo_microsiga(site.get("CÓDIGO MICROSIGA"))
+    return (
+        indices["aquiles"].get(codigo)
+        or indices["snmpc"].get(nome)
+        or indices["microsiga"].get(microsiga)
+    )
+
+
+def _resumo_clientes_prioridade(site):
+    if site is None:
+        return {"receita": 0.0, "nomes": ""}
+    clientes = _clientes_unicos_sites(sites_descendentes(site))
+    nomes = sorted(
+        {
+            _texto(getattr(cliente, "nome", ""))
+            for cliente in clientes.values()
+            if _texto(getattr(cliente, "nome", ""))
+        },
+        key=str.casefold,
+    )
+    return {
+        "receita": sum(
+            _numero(getattr(cliente, "receita", 0))
+            for cliente in clientes.values()
+        ),
+        "nomes": ", ".join(nomes),
+    }
+
+
 def montar_prioridades_financeiras(
     cadastro_sites=None,
     pagamentos=None,
     prioridades=None,
     hoje=None,
+    sites=None,
 ):
     hoje = hoje or date.today()
     cadastro = load_site_registry() if cadastro_sites is None else cadastro_sites.copy()
     prioridades = prioridades or carregar_prioridades_sites()
+    indices_topologia = _indice_sites_topologia_prioridades(sites)
     if cadastro is None or cadastro.empty:
         return pd.DataFrame(columns=SITE_PRIORITY_COLUMNS)
 
@@ -1857,10 +2020,29 @@ def montar_prioridades_financeiras(
         ) or ("Crítico" if site_critico else "Não crítico")
         chave = chave_prioridade_site(site)
         possui_vencidos = not recorrentes_vencidas.empty or not acordos_vencidos.empty
+        site_topologia = _localizar_site_topologia_prioridade(
+            site,
+            indices_topologia,
+        )
+        resumo_clientes = _resumo_clientes_prioridade(site_topologia)
+        custo_mensal = sum(
+            _numero(site.get(coluna))
+            for coluna in ["LOCAÇÃO", "ENERGIA", "OUTROS"]
+        )
 
         registros.append({
             "Chave Site": chave,
             "Site": _rotulo_site_prioridade(site),
+            "Microsiga": microsiga,
+            "Custo mensal": custo_mensal,
+            "Receita (Total com sites filhos)": resumo_clientes["receita"],
+            "Passivo de acordos": float(
+                acordos.get("_valor", pd.Series(dtype=float)).sum()
+            ),
+            "Passivo de mensalidades": float(
+                recorrentes.get("_valor", pd.Series(dtype=float)).sum()
+            ),
+            "Lista de Clientes": resumo_clientes["nomes"],
             "Vencimento da Mensalidade": vencimento_mensalidade,
             "Valor da Mensalidade Atual": valor_mensalidade,
             "Tem Acordo": "Sim" if not acordos.empty else "Não",
@@ -2282,13 +2464,7 @@ def exportar_conciliacao_financeira_excel(df):
 
 
 def exportar_prioridades_financeiras_excel(df):
-    dados = df.drop(
-        columns=[
-            coluna
-            for coluna in ["Chave Site", "Possui Vencidos"]
-            if coluna in df.columns
-        ],
-    )
+    dados = df.reindex(columns=SITE_PRIORITY_EXPORT_COLUMNS)
     return dataframe_para_excel(dados, "Prioridades")
 
 

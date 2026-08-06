@@ -234,7 +234,7 @@ def mostrar_dashboard_financeiro():
         _mostrar_grid(formatar_tabela_financeira(vencidos.head(200)), height=420, key="financeiro_dashboard_vencidos")
 
 
-def mostrar_prioridades_financeiras():
+def mostrar_prioridades_financeiras(sites):
     st.header("Prioridades financeiras")
     st.caption(
         "Acompanhamento dos compromissos dos sites ativos. A importância é "
@@ -242,7 +242,7 @@ def mostrar_prioridades_financeiras():
         "de Sites e pelas parcelas financeiras abertas."
     )
 
-    dados = montar_prioridades_financeiras()
+    dados = montar_prioridades_financeiras(sites=sites)
     if dados.empty:
         st.info("Nenhum site ativo foi encontrado.")
         return
@@ -304,18 +304,35 @@ def mostrar_prioridades_financeiras():
         st.info("Nenhum site atende aos filtros selecionados.")
         return
 
-    colunas_valores = [
-        "Valor da Mensalidade Atual",
-        "Valor da Parcela do Acordo",
-        "Valor das Mensalidades Vencidas",
-        "Valor dos Acordos Vencidos",
+    colunas_tabela = [
+        "Site",
+        "Microsiga",
+        "Custo mensal",
+        "Receita (Total com sites filhos)",
+        "Passivo de acordos",
+        "Passivo de mensalidades",
+        "Criticidade",
+        "Importância",
+        "Lista de Clientes",
     ]
-    exibido = filtrado.copy()
-    pode_ver_valores = pode("visualizar_valores_custos")
-    if not pode_ver_valores:
-        for coluna in colunas_valores:
+    exibido = filtrado[[
+        "Chave Site",
+        *colunas_tabela,
+        "Possui Vencidos",
+    ]].copy()
+    pode_ver_custos = pode("visualizar_valores_custos")
+    pode_ver_receita = pode("visualizar_valores_clientes")
+    colunas_custos = [
+        "Custo mensal",
+        "Passivo de acordos",
+        "Passivo de mensalidades",
+    ]
+    if not pode_ver_custos:
+        for coluna in colunas_custos:
             if coluna in exibido.columns:
                 exibido[coluna] = "Restrito"
+    if not pode_ver_receita:
+        exibido["Receita (Total com sites filhos)"] = "Restrito"
 
     colunas_ocultas = ["Chave Site", "Possui Vencidos"]
     colunas_editaveis = {"Importância"}
@@ -341,22 +358,24 @@ def mostrar_prioridades_financeiras():
                 options=SITE_IMPORTANCE_OPTIONS,
                 required=True,
             ),
-            "Vencimento da Mensalidade": st.column_config.DateColumn(
-                "Vencimento da Mensalidade",
-                format="DD/MM/YYYY",
-            ),
-            "Vencimento do Acordo": st.column_config.DateColumn(
-                "Vencimento do Acordo",
-                format="DD/MM/YYYY",
-            ),
             **{
                 coluna: st.column_config.NumberColumn(
                     coluna,
                     format="R$ %.2f",
                 )
-                for coluna in colunas_valores
-                if coluna in exibido.columns and pode_ver_valores
+                for coluna in colunas_custos
+                if coluna in exibido.columns and pode_ver_custos
             },
+            **({
+                "Receita (Total com sites filhos)": st.column_config.NumberColumn(
+                    "Receita (Total com sites filhos)",
+                    format="R$ %.2f",
+                )
+            } if pode_ver_receita else {}),
+            "Lista de Clientes": st.column_config.TextColumn(
+                "Lista de Clientes",
+                width="large",
+            ),
         },
         disabled=desabilitadas,
         key=(
@@ -1134,7 +1153,7 @@ def mostrar_financeiro(sites):
         itens.append((
             "financeiro_prioridades",
             "Prioridades",
-            mostrar_prioridades_financeiras,
+            lambda: mostrar_prioridades_financeiras(sites),
         ))
     if pode("financeiro_historico_site") or pode("financeiro"):
         itens.append((

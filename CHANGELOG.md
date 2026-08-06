@@ -1,5 +1,23 @@
 # Histórico de versões
 
+## 1.3.41
+
+- Corrigido o fluxo de autenticação que podia descartar a primeira tentativa de login quando havia um cookie expirado ou revogado.
+- Login, logout e troca de senha passam a usar transições controladas, removendo o aviso transitório "Saindo..." e evitando a renderização simultânea do formulário e da aplicação.
+- Avisos de sessão expirada e falhas de acesso permanecem visíveis na tela de login sem expor detalhes técnicos.
+
+## 1.3.40
+
+- Análises e Conciliação ganha a subaba Pagamentos sem site, com registros financeiros cujo Código Microsiga não pôde ser vinculado de forma única ao cadastro.
+- A listagem apresenta favorecido, código extraído, vencimento, valor, tipo de despesa, status e motivo da ausência de vínculo.
+- A nova permissão `pagamentos_sem_site` controla o acesso, e valores permanecem restritos conforme a permissão de custos.
+
+## 1.3.39
+
+- Financeiro > Prioridades passa a consolidar custo mensal, receita com sites filhos e passivos abertos de acordos e mensalidades.
+- A tabela inclui Código Microsiga e a lista textual dos clientes do site e de seus descendentes, sem duplicar assinaturas.
+- A exportação Excel usa as novas colunas e mantém os valores financeiros numéricos formatados em Reais.
+
 ## 1.3.38
 
 - A importação do SNMPc passa a bloquear arquivos CSV truncados, registros com colunas ausentes ou extras e aspas sem fechamento.

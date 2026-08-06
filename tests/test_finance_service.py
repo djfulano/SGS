@@ -342,6 +342,83 @@ class FinanceServiceTest(unittest.TestCase):
         pd.testing.assert_frame_equal(pagamentos, pagamentos_antes)
         pd.testing.assert_frame_equal(acordos, acordos_antes)
 
+    def test_pagamentos_sem_site_lista_somente_vinculos_nao_resolvidos(self):
+        sites = {
+            "ATIVO": SimpleNamespace(
+                microsiga="1", codigo_topos="101", nome="ATIVO",
+                nome_cadastro="Site Ativo", status_cadastro="Ativo",
+            ),
+            "DUP_A": SimpleNamespace(
+                microsiga="3", codigo_topos="103", nome="DUP_A",
+                nome_cadastro="Duplicado A", status_cadastro="Ativo",
+            ),
+            "DUP_B": SimpleNamespace(
+                microsiga="000003", codigo_topos="104", nome="DUP_B",
+                nome_cadastro="Duplicado B", status_cadastro="Ativo",
+            ),
+        }
+        pagamentos = pd.DataFrame([
+            {
+                **{c: "" for c in fs.PAYMENT_COLUMNS},
+                "ID SGS": "SEM-CODIGO",
+                "Status": "Pendente",
+                "Favorecido": "FAVORECIDO SEM CODIGO",
+                "Data de vencimento": "2026-08-10",
+                "Subtotal": 100.0,
+            },
+            {
+                **{c: "" for c in fs.PAYMENT_COLUMNS},
+                "ID SGS": "INEXISTENTE",
+                "Status": "Pendente",
+                "Favorecido": "FAVORECIDO 999999",
+                "Data de vencimento": "2026-08-11",
+                "Subtotal": 200.0,
+            },
+            {
+                **{c: "" for c in fs.PAYMENT_COLUMNS},
+                "ID SGS": "DUPLICADO",
+                "Status": "Pendente",
+                "Microsiga": "3",
+                "Favorecido": "FAVORECIDO DUPLICADO",
+                "Data de vencimento": "2026-08-12",
+                "Subtotal": 300.0,
+            },
+            {
+                **{c: "" for c in fs.PAYMENT_COLUMNS},
+                "ID SGS": "VALIDO",
+                "Status": "Pendente",
+                "Microsiga": "1",
+                "Favorecido": "FAVORECIDO VALIDO",
+                "Data de vencimento": "2026-08-13",
+                "Subtotal": 400.0,
+                "Site localizado": "Não",
+            },
+        ])
+
+        resultado = fs.montar_pagamentos_sem_site(
+            sites,
+            pagamentos=pagamentos,
+            cadastro_sites=pd.DataFrame(),
+            hoje=date(2026, 8, 6),
+        )
+
+        self.assertEqual(
+            set(resultado["ID SGS"]),
+            {"SEM-CODIGO", "INEXISTENTE", "DUPLICADO"},
+        )
+        self.assertEqual(
+            set(resultado["Motivo"]),
+            {
+                "Sem Código Microsiga",
+                "Código Microsiga não encontrado",
+                "Código Microsiga duplicado no cadastro",
+            },
+        )
+        self.assertEqual(
+            resultado.set_index("ID SGS").loc["INEXISTENTE", "Favorecido"],
+            "FAVORECIDO 999999",
+        )
+
     def test_historico_financeiro_site_separa_status_e_valores(self):
         pagamentos = pd.DataFrame([
             {**{c: "" for c in fs.PAYMENT_COLUMNS}, "ID SGS": "V", "Status": "Pendente", "Microsiga": "1", "Data de vencimento": "2026-06-01", "Subtotal": 100.0},
