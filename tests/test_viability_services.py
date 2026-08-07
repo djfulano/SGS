@@ -105,6 +105,19 @@ class ViabilityServicesTest(unittest.TestCase):
             ["POP_A"]
         )
 
+    def test_sites_candidatos_exclui_sites_do_cancelamento(self):
+        pop_a = self.site_com_coordenada("POP_A", "POP")
+        pop_b = self.site_com_coordenada("POP_B", "POP")
+
+        candidatos = sites_candidatos(
+            {"POP_A": pop_a, "POP_B": pop_b},
+            {"Latitude": -23.001, "Longitude": -46.001},
+            raio_km=5,
+            sites_excluidos=["POP_A"],
+        )
+
+        self.assertEqual([item[0].nome for item in candidatos], ["POP_B"])
+
     def test_ponto_migracao_zera_altitude_para_open_elevation(self):
         ponto = {
             "Latitude": -23.1,

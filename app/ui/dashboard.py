@@ -90,6 +90,8 @@ from app.ui.views.support import configurar_suporte
 from app.ui.views.support import mostrar_suporte
 from app.ui.views.viability import configurar_viabilidade
 from app.ui.views.viability import mostrar_viabilidade
+from app.ui.views.site_cancellation import configurar_cancelamentos
+from app.ui.views.site_cancellation import mostrar_cancelamentos
 from app.ui.views.feasibility_management import configurar_gestao_viabilidades
 from app.ui.views.finance import configurar_financeiro
 from app.ui.views.finance import mostrar_financeiro
@@ -964,6 +966,11 @@ configurar_viabilidade(
     usuario_logado,
     mostrar_grid
 )
+configurar_cancelamentos(
+    usuario_logado,
+    mostrar_grid,
+    mostrar_botao_copiar_texto,
+)
 configurar_gestao_viabilidades(
     usuario_logado,
     mostrar_grid,
@@ -1522,6 +1529,14 @@ abas_disponiveis = [
         )
     ),
     (
+        "cancelamentos_sites",
+        "Cancelamento de Sites",
+        lambda: mostrar_cancelamentos(
+            sites,
+            equipamentos
+        )
+    ),
+    (
         "financeiro",
         "Financeiro",
         lambda: mostrar_financeiro(
@@ -1659,6 +1674,21 @@ def permissao_aba(aba):
                 "financeiro_importar",
                 "financeiro_exportacoes",
                 "financeiro_editar"
+            ]
+        )
+
+    if chave == "cancelamentos_sites":
+
+        return any(
+            has_permission(
+                usuario_logado(),
+                permissao_cancelamento
+            )
+            for permissao_cancelamento in [
+                "cancelamentos_sites",
+                "cancelamentos_consulta",
+                "cancelamentos_editar",
+                "cancelamentos_concluir"
             ]
         )
 

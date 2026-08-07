@@ -1,5 +1,13 @@
 # Histórico de versões
 
+## 1.4.0
+
+- Criado o módulo Cancelamento de Sites com Dashboard, Processos e Agenda para acompanhar o encerramento completo de sites.
+- Processos preservam snapshots de clientes, vínculos, sites filhos, financeiro e equipamentos, com conciliação e auditoria de alterações.
+- O fluxo integra estudos de migração em lote, chamados técnicos, notificações, tarefas, referências externas, retirada de equipamentos e conclusão controlada.
+- Relatórios podem ser copiados para email ou exportados em Excel, respeitando as permissões de receitas e custos.
+- A conclusão pode registrar pendências justificadas e marca somente o site principal como Cancelado; processos concluídos podem ser reabertos com justificativa.
+
 ## 1.3.44
 
 - Clientes ganha a subaba Ranking de Clientes, ordenada pelo maior faturamento total.

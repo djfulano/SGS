@@ -62,6 +62,10 @@ CLIENT_VIABILITY_FILE = env_path(
     "SNMPC_CLIENT_VIABILITY_FILE",
     str(CONFIG_DIR / "client_viability.json")
 )
+SITE_CANCELLATIONS_FILE = env_path(
+    "SNMPC_SITE_CANCELLATIONS_FILE",
+    str(CONFIG_DIR / "site_cancellations" / "processes.json")
+)
 
 CLIENTES_FILE = env_path("SNMPC_CLIENTES_FILE", str(IMPORTS_DIR / "clientes.xlsx"))
 GEOCODING_CACHE_FILE = env_path(

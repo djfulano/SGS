@@ -145,11 +145,20 @@ def ponto_migracao_cliente(ponto, latitude, longitude, altura):
     }
 
 
-def sites_candidatos(sites, ponto_origem, raio_km, sites_forcados=None):
+def sites_candidatos(
+    sites,
+    ponto_origem,
+    raio_km,
+    sites_forcados=None,
+    sites_excluidos=None,
+):
     candidatos = []
     sites_forcados = set(sites_forcados or [])
+    sites_excluidos = set(sites_excluidos or [])
 
     for site in (sites or {}).values():
+        if getattr(site, "nome", "") in sites_excluidos:
+            continue
         if (
             not site_pode_atender_outros_enderecos(site)
             and getattr(site, "nome", "") not in sites_forcados
@@ -219,7 +228,8 @@ def montar_resultados_viabilidade(
     ponto_origem,
     raio_km,
     limite_sites=10,
-    sites_atuais=None
+    sites_atuais=None,
+    sites_excluidos=None,
 ):
     if not coordenada_valida(ponto_origem.get("Latitude"), ponto_origem.get("Longitude")):
         return pd.DataFrame(), {}
@@ -233,7 +243,8 @@ def montar_resultados_viabilidade(
         sites,
         ponto_origem,
         raio_km,
-        sites_forcados=sites_atuais
+        sites_forcados=sites_atuais,
+        sites_excluidos=sites_excluidos,
     )
     selecionados = candidatos[:int(limite_sites)]
     nomes_selecionados = {

@@ -476,6 +476,7 @@ ORDEM_GRUPOS_PERMISSAO = {
     "Equipamentos": 70,
     "Suporte": 80,
     "Viabilidade": 85,
+    "Cancelamento de Sites": 87,
     "Financeiro": 89,
     "Mapa": 90,
     "Produtos": 100,
