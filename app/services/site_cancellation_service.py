@@ -27,7 +27,9 @@ PROCESS_STATUSES = [
     "Suspenso",
     "Pronto para conclusão",
     "Concluído",
+    "Cancelado",
 ]
+TERMINAL_PROCESS_STATUSES = {"Concluído", "Cancelado"}
 PROCESS_PRIORITIES = ["Crítica", "Alta", "Média", "Baixa"]
 PROCESS_SCOPES = ["Somente site", "Site e descendentes"]
 TEAMS = [
@@ -117,6 +119,15 @@ DEFAULT_PHASES = [
 
 def _agora():
     return datetime.now().isoformat(timespec="seconds")
+
+
+def is_terminal_process(process_or_status):
+    status = (
+        process_or_status.get("status")
+        if isinstance(process_or_status, dict)
+        else process_or_status
+    )
+    return _texto(status) in TERMINAL_PROCESS_STATUSES
 
 
 def _texto(value):
@@ -277,6 +288,10 @@ def _client_snapshot(scope_sites):
                 "study_message": "",
                 "study_candidates": [],
                 "study_updated_at": "",
+                "study_source": "",
+                "study_corrected_at": "",
+                "study_corrected_by": "",
+                "study_correction_reason": "",
                 "stage": "Pendente de estudo",
                 "destination_site": "",
                 "final_result": "Pendente",
@@ -473,6 +488,9 @@ def create_cancellation_process(
         "completed_at": "",
         "completed_by": "",
         "completion_justification": "",
+        "canceled_at": "",
+        "canceled_by": "",
+        "cancellation_reason": "",
         "reopened_at": "",
         "reopened_by": "",
         "history": [],
@@ -491,7 +509,7 @@ def create_cancellation_process(
         for current in processes.values():
             current_site = current.get("site", {})
             current_key = current_site.get("aquiles") or _texto(current_site.get("site_name")).casefold()
-            if current_key == site_key and current.get("status") != "Concluído":
+            if current_key == site_key and not is_terminal_process(current):
                 raise ValueError("Já existe um processo ativo para este site.")
         processes[process_id] = process
         data["schema_version"] = SCHEMA_VERSION
@@ -514,7 +532,9 @@ def update_cancellation_process(process_id, mutator, *, event, user, details=Non
         process = data.get("processes", {}).get(process_id)
         if process is None:
             raise ValueError("Processo de cancelamento não encontrado.")
-        if process.get("status") == "Concluído" and event != "process_reopened":
+        if process.get("status") == "Cancelado":
+            raise ValueError("Processos cancelados não podem ser alterados.")
+        if process.get("status") == "Concluído":
             raise ValueError("Reabra o processo antes de realizar alterações.")
         mutator(process)
         _append_history(process, event, user, details)
@@ -532,6 +552,8 @@ def update_process_fields(process_id, fields, *, user, path=None):
         raise ValueError("Prioridade inválida.")
     if "status" in normalized and normalized["status"] not in PROCESS_STATUSES:
         raise ValueError("Status inválido.")
+    if normalized.get("status") in TERMINAL_PROCESS_STATUSES:
+        raise ValueError("Use a ação específica para concluir ou cancelar o processo.")
     if "planned_date" in normalized:
         normalized["planned_date"] = _data(normalized["planned_date"])
     return update_cancellation_process(
@@ -764,7 +786,20 @@ def pending_migration_clients(process, limit=10):
     return pending[:max(1, int(limit or 10))]
 
 
+def _refresh_migration_batch(process, status="", message=""):
+    batch = process.setdefault("migration_batch", {})
+    batch["processed"] = sum(
+        1 for item in process.get("clients", [])
+        if item.get("study_status") in {"Migrável", "Condicional", "Não migrável"}
+    )
+    batch["total"] = len(process.get("clients", []))
+    batch["status"] = "Concluído" if batch["processed"] >= batch["total"] else "Em andamento"
+    batch["last_error"] = _texto(message) if status == "Erro" else ""
+
+
 def save_migration_study(process_id, signature, candidates, status, message, *, user, path=None):
+    if status not in CLIENT_STUDY_STATUSES:
+        raise ValueError("Resultado de estudo inválido.")
     candidates = [
         {key: _json_value(value) for key, value in item.items()}
         for item in candidates
@@ -776,16 +811,13 @@ def save_migration_study(process_id, signature, candidates, status, message, *, 
             "study_message": _texto(message),
             "study_candidates": candidates,
             "study_updated_at": _agora(),
+            "study_source": "Automático",
+            "study_corrected_at": "",
+            "study_corrected_by": "",
+            "study_correction_reason": "",
             "stage": "Estudo concluído" if status not in {"Pendente", "Em processamento"} else "Pendente de estudo",
         }, id_field="signature")
-        batch = process.setdefault("migration_batch", {})
-        batch["processed"] = sum(
-            1 for item in process.get("clients", [])
-            if item.get("study_status") in {"Migrável", "Condicional", "Não migrável"}
-        )
-        batch["total"] = len(process.get("clients", []))
-        batch["status"] = "Concluído" if batch["processed"] >= batch["total"] else "Em andamento"
-        batch["last_error"] = _texto(message) if status == "Erro" else ""
+        _refresh_migration_batch(process, status, message)
 
     return update_cancellation_process(
         process_id,
@@ -795,6 +827,83 @@ def save_migration_study(process_id, signature, candidates, status, message, *, 
         details={"signature": signature, "status": status, "candidates": len(candidates)},
         path=path,
     )
+
+
+def correct_migration_study(
+    process_id,
+    signature,
+    status,
+    destination_site="",
+    reason="",
+    *,
+    user,
+    path=None,
+):
+    if status not in CLIENT_STUDY_STATUSES or status == "Em processamento":
+        raise ValueError("Resultado de estudo inválido para correção manual.")
+    reason = _texto(reason)
+    if not reason:
+        raise ValueError("Informe o motivo da correção manual.")
+
+    def mutate(process):
+        _update_item(process.get("clients", []), signature, {
+            "study_status": status,
+            "study_source": "Correção manual",
+            "study_corrected_at": _agora(),
+            "study_corrected_by": _texto(user),
+            "study_correction_reason": reason,
+            "destination_site": _texto(destination_site),
+            "stage": "Estudo concluído" if status not in {"Pendente", "Erro"} else "Pendente de estudo",
+        }, id_field="signature")
+        _refresh_migration_batch(process, status)
+
+    return update_cancellation_process(
+        process_id,
+        mutate,
+        event="migration_study_corrected",
+        user=user,
+        details={
+            "signature": signature,
+            "status": status,
+            "destination_site": _texto(destination_site),
+            "reason": reason,
+        },
+        path=path,
+    )
+
+
+def migration_study_rows(processes, include_completed=False):
+    rows = []
+    for process in processes or []:
+        if not include_completed and is_terminal_process(process):
+            continue
+        site = process.get("site", {})
+        for client in process.get("clients", []):
+            current_sites = []
+            for link in client.get("current_links", []):
+                site_name = _texto(link.get("site"))
+                if site_name and site_name not in current_sites:
+                    current_sites.append(site_name)
+            rows.append({
+                "process_id": _texto(process.get("id")),
+                "process_code": _texto(process.get("code")),
+                "process_status": _texto(process.get("status")),
+                "cancellation_site": _texto(site.get("site_name")),
+                "signature": _texto(client.get("signature")),
+                "client": _texto(client.get("name")),
+                "current_sites": ", ".join(current_sites),
+                "study_status": _texto(client.get("study_status")) or "Pendente",
+                "study_source": _texto(client.get("study_source")) or "Não processado",
+                "study_updated_at": _texto(client.get("study_updated_at")),
+                "study_message": _texto(client.get("study_message")),
+                "correction_reason": _texto(client.get("study_correction_reason")),
+                "corrected_at": _texto(client.get("study_corrected_at")),
+                "corrected_by": _texto(client.get("study_corrected_by")),
+                "candidate_count": len(client.get("study_candidates", []) or []),
+                "destination_site": _texto(client.get("destination_site")),
+                "final_result": _texto(client.get("final_result")) or "Pendente",
+            })
+    return rows
 
 
 def compare_process_snapshot(process, sites, equipments):
@@ -918,6 +1027,10 @@ def complete_process(process_id, *, justification, user, path=None):
     process = get_cancellation_process(process_id, path)
     if not process:
         raise ValueError("Processo de cancelamento não encontrado.")
+    if process.get("status") == "Cancelado":
+        raise ValueError("Processos cancelados não podem ser concluídos.")
+    if process.get("status") == "Concluído":
+        raise ValueError("O processo já está concluído.")
     pending = completion_pending_items(process)
     justification = _texto(justification)
     if pending and not justification:
@@ -947,6 +1060,45 @@ def complete_process(process_id, *, justification, user, path=None):
     return completed
 
 
+def cancel_process(process_id, *, reason, user, path=None):
+    reason = _texto(reason)
+    if not reason:
+        raise ValueError("Informe a justificativa do cancelamento do processo.")
+    current = get_cancellation_process(process_id, path)
+    if not current:
+        raise ValueError("Processo de cancelamento não encontrado.")
+    if current.get("status") == "Concluído":
+        raise ValueError("Processos concluídos não podem ser cancelados.")
+    if current.get("status") == "Cancelado":
+        raise ValueError("O processo já está cancelado.")
+
+    def mutate(process):
+        process["status"] = "Cancelado"
+        process["canceled_at"] = _agora()
+        process["canceled_by"] = _texto(user)
+        process["cancellation_reason"] = reason
+
+    canceled = update_cancellation_process(
+        process_id,
+        mutate,
+        event="process_canceled",
+        user=user,
+        details={"reason": reason},
+        path=path,
+    )
+    registrar_log_sistema(
+        "cancelamento_processo_cancelado",
+        usuario=user,
+        status="sucesso",
+        detalhes={
+            "processo": canceled.get("code"),
+            "site": canceled.get("site", {}).get("site_name"),
+            "justificativa": reason,
+        },
+    )
+    return canceled
+
+
 def reopen_process(process_id, *, justification, user, path=None):
     justification = _texto(justification)
     if not justification:
@@ -970,7 +1122,7 @@ def reopen_process(process_id, *, justification, user, path=None):
         site = process.get("site", {})
         site_key = site.get("aquiles") or _texto(site.get("site_name")).casefold()
         for other_id, other in data.get("processes", {}).items():
-            if other_id == process_id or other.get("status") == "Concluído":
+            if other_id == process_id or is_terminal_process(other):
                 continue
             other_site = other.get("site", {})
             other_key = other_site.get("aquiles") or _texto(other_site.get("site_name")).casefold()
@@ -993,7 +1145,7 @@ def reopen_process(process_id, *, justification, user, path=None):
 
 def process_metrics(processes, today=None):
     today = today or date.today()
-    active = [item for item in processes if item.get("status") != "Concluído"]
+    active = [item for item in processes if not is_terminal_process(item)]
     activities = agenda_items(active, today=today)
     clients = [client for item in active for client in item.get("clients", [])]
     equipments = [equipment for item in active for equipment in item.get("equipments", [])]
@@ -1041,6 +1193,8 @@ def agenda_items(processes, today=None):
         })
 
     for process in processes:
+        if is_terminal_process(process):
+            continue
         for phase in process.get("phases", []):
             add(process, "Etapa", phase.get("name"), phase.get("due_date"), phase.get("status"), phase.get("responsible"), phase.get("team"))
         for task in process.get("extra_tasks", []):
@@ -1067,6 +1221,14 @@ def cancellation_email_text(process, show_client_values=True, show_cost_values=T
         f"Prioridade: {process.get('priority', '')}",
         f"Cancelamento previsto: {process.get('planned_date') or 'Não informado'}",
         f"Responsável: {process.get('responsible') or 'Não informado'}",
+    ]
+    if process.get("status") == "Cancelado":
+        lines.extend([
+            f"Processo cancelado em: {process.get('canceled_at') or 'Não informado'}",
+            f"Processo cancelado por: {process.get('canceled_by') or 'Não informado'}",
+            f"Justificativa do cancelamento: {process.get('cancellation_reason') or 'Não informada'}",
+        ])
+    lines.extend([
         "",
         f"Clientes impactados: {len(clients)}",
         f"Migrados: {sum(1 for item in clients if item.get('final_result') == 'Migrado')}",
@@ -1076,7 +1238,7 @@ def cancellation_email_text(process, show_client_values=True, show_cost_values=T
         f"Custo mensal do site: {_currency(process.get('site', {}).get('cost')) if show_cost_values else 'Restrito'}",
         "",
         "CLIENTES",
-    ]
+    ])
     for client in sorted(clients, key=lambda item: (_texto(item.get("name")).casefold(), item.get("signature", ""))):
         revenue = _currency(client.get("revenue")) if show_client_values else "Restrito"
         lines.append(
@@ -1103,6 +1265,9 @@ def export_cancellation_excel(process, show_client_values=True, show_cost_values
         "Data prevista": process.get("planned_date"),
         "Responsável": process.get("responsible"),
         "Equipe": process.get("team"),
+        "Cancelado em": process.get("canceled_at"),
+        "Cancelado por": process.get("canceled_by"),
+        "Justificativa do cancelamento": process.get("cancellation_reason"),
         "Custo mensal": process.get("site", {}).get("cost") if show_cost_values else "Restrito",
     }])
     clients = pd.DataFrame([{

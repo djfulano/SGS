@@ -12,6 +12,7 @@ from app.services.line_of_sight import coordenada_valida
 from app.services.site_cancellation_service import ACTIVITY_STATUSES
 from app.services.site_cancellation_service import CLIENT_RESULTS
 from app.services.site_cancellation_service import CLIENT_STAGES
+from app.services.site_cancellation_service import CLIENT_STUDY_STATUSES
 from app.services.site_cancellation_service import EQUIPMENT_RESULTS
 from app.services.site_cancellation_service import LINK_CATEGORIES
 from app.services.site_cancellation_service import NOTIFICATION_CHANNELS
@@ -25,13 +26,17 @@ from app.services.site_cancellation_service import add_extra_task
 from app.services.site_cancellation_service import add_ticket
 from app.services.site_cancellation_service import agenda_items
 from app.services.site_cancellation_service import cancellation_email_text
+from app.services.site_cancellation_service import cancel_process
 from app.services.site_cancellation_service import compare_process_snapshot
 from app.services.site_cancellation_service import complete_process
 from app.services.site_cancellation_service import completion_pending_items
+from app.services.site_cancellation_service import correct_migration_study
 from app.services.site_cancellation_service import create_cancellation_process
 from app.services.site_cancellation_service import export_cancellation_excel
 from app.services.site_cancellation_service import get_cancellation_process
+from app.services.site_cancellation_service import is_terminal_process
 from app.services.site_cancellation_service import list_cancellation_processes
+from app.services.site_cancellation_service import migration_study_rows
 from app.services.site_cancellation_service import pending_migration_clients
 from app.services.site_cancellation_service import process_metrics
 from app.services.site_cancellation_service import reconcile_process
@@ -45,6 +50,7 @@ from app.services.site_cancellation_service import update_financial_checklist
 from app.services.site_cancellation_service import update_phase
 from app.services.site_cancellation_service import update_process_fields
 from app.services.site_cancellation_service import update_ticket
+from app.services.site_registry_service import site_pode_atender_outros_enderecos
 from app.ui.components.site_selector import rotulo_busca_site
 from app.ui.components.site_selector import selecionar_site_pesquisavel
 from app.ui.navigation import mostrar_subnavegacao
@@ -92,6 +98,10 @@ def pode_editar():
 
 def pode_concluir():
     return pode("cancelamentos_concluir")
+
+
+def processo_encerrado(process):
+    return is_terminal_process(process)
 
 
 def pode_ver_receita():
@@ -183,7 +193,7 @@ def mostrar_dashboard_cancelamentos():
         _moeda(metrics["monthly_savings"]) if pode_ver_custos() else "Restrito",
     )
 
-    active = [item for item in processes if item.get("status") != "Concluído"]
+    active = [item for item in processes if not processo_encerrado(item)]
     st.subheader("Processos em andamento")
     df = _process_dataframe(active, pode_ver_custos())
     if df.empty:
@@ -257,10 +267,11 @@ def _overview(process):
     cols[3].metric("Sites filhos", len(process.get("child_sites", [])))
     cols[4].metric("Equipamentos", len(process.get("equipments", [])))
 
-    if pode_editar() and process.get("status") != "Concluído":
+    if pode_editar() and not processo_encerrado(process):
         with st.form(f"cancelamento_editar_geral_{process['id']}"):
             col1, col2, col3 = st.columns(3)
-            status = col1.selectbox("Status", PROCESS_STATUSES[:-1], index=max(0, PROCESS_STATUSES[:-1].index(process.get("status")) if process.get("status") in PROCESS_STATUSES[:-1] else 0))
+            editable_statuses = [item for item in PROCESS_STATUSES if item not in {"Concluído", "Cancelado"}]
+            status = col1.selectbox("Status", editable_statuses, index=max(0, editable_statuses.index(process.get("status")) if process.get("status") in editable_statuses else 0))
             priority = col2.selectbox("Prioridade", PROCESS_PRIORITIES, index=PROCESS_PRIORITIES.index(process.get("priority")) if process.get("priority") in PROCESS_PRIORITIES else 1)
             planned = col3.date_input("Data prevista", value=_date_value(process.get("planned_date")), format="DD/MM/YYYY")
             col1, col2 = st.columns(2)
@@ -291,58 +302,248 @@ def _overview(process):
     )
 
 
+def _run_client_study(process, item, sites):
+    signature = item.get("signature")
+    excluded = [item.get("site_name") for item in process.get("scope_sites", [])]
+    try:
+        current_site, client = cliente_por_assinatura(sites, signature)
+        if client is None:
+            message = "Cliente não localizado na base atual."
+            save_migration_study(process["id"], signature, [], "Erro", message, user=nome_usuario())
+            return "Erro", message, False
+        point = ponto_cliente(current_site, client)
+        if not coordenada_valida(point.get("Latitude"), point.get("Longitude")):
+            message = "Cliente sem coordenadas válidas."
+            save_migration_study(process["id"], signature, [], "Erro", message, user=nome_usuario())
+            return "Erro", message, False
+        results, _profiles = montar_resultados_viabilidade(
+            sites, point,
+            process.get("migration_batch", {}).get("radius_km", 10),
+            limite_sites=process.get("migration_batch", {}).get("site_limit", 10),
+            sites_atuais=point.get("Sites Atuais") or [],
+            sites_excluidos=excluded,
+        )
+        records = results.to_dict(orient="records") if not results.empty else []
+        statuses = {str(row.get("Status") or "") for row in records}
+        if "Livre" in statuses:
+            status = "Migrável"
+        elif "Parcial" in statuses:
+            status = "Condicional"
+        else:
+            status = "Não migrável"
+        save_migration_study(process["id"], signature, records, status, "", user=nome_usuario())
+        return status, "", False
+    except Exception as error:
+        message = str(error)
+        save_migration_study(process["id"], signature, [], "Erro", message, user=nome_usuario())
+        return "Erro", message, True
+
+
 def _process_study_batch(process, sites):
     pending = pending_migration_clients(process, process.get("migration_batch", {}).get("batch_size", 10))
     if not pending:
         st.success("Todos os clientes possuem resultado de estudo.")
         return
-    excluded = [item.get("site_name") for item in process.get("scope_sites", [])]
     progress = st.progress(0, text="Preparando estudo em lote...")
     processed = 0
     for index, item in enumerate(pending, start=1):
         signature = item.get("signature")
         progress.progress((index - 1) / len(pending), text=f"Analisando {item.get('name')} ({signature})")
-        try:
-            current_site, client = cliente_por_assinatura(sites, signature)
-            if client is None:
-                save_migration_study(process["id"], signature, [], "Erro", "Cliente não localizado na base atual.", user=nome_usuario())
-                processed += 1
-                continue
-            point = ponto_cliente(current_site, client)
-            if not coordenada_valida(point.get("Latitude"), point.get("Longitude")):
-                save_migration_study(process["id"], signature, [], "Erro", "Cliente sem coordenadas válidas.", user=nome_usuario())
-                processed += 1
-                continue
-            results, _profiles = montar_resultados_viabilidade(
-                sites, point,
-                process.get("migration_batch", {}).get("radius_km", 10),
-                limite_sites=process.get("migration_batch", {}).get("site_limit", 10),
-                sites_atuais=point.get("Sites Atuais") or [],
-                sites_excluidos=excluded,
-            )
-            records = results.to_dict(orient="records") if not results.empty else []
-            statuses = {str(row.get("Status") or "") for row in records}
-            if "Livre" in statuses:
-                status = "Migrável"
-            elif "Parcial" in statuses:
-                status = "Condicional"
-            else:
-                status = "Não migrável"
-            save_migration_study(process["id"], signature, records, status, "", user=nome_usuario())
-            processed += 1
-        except Exception as error:
-            save_migration_study(process["id"], signature, [], "Erro", str(error), user=nome_usuario())
-            st.error(f"O lote foi interrompido em {signature}: {error}")
+        _status, message, interrupted = _run_client_study(process, item, sites)
+        processed += 1
+        if interrupted:
+            st.error(f"O lote foi interrompido em {signature}: {message}")
             break
     progress.progress(1.0, text=f"{processed} cliente(s) processado(s).")
     st.rerun()
+
+
+def _eligible_destination_sites(process, sites):
+    excluded = {item.get("site_name") for item in process.get("scope_sites", [])}
+    return {
+        name: site for name, site in (sites or {}).items()
+        if name not in excluded
+        and str(getattr(site, "status_cadastro", "") or "").strip().casefold() == "ativo"
+        and site_pode_atender_outros_enderecos(site)
+    }
+
+
+def mostrar_estudos_migracao(sites):
+    st.header("Estudos de Migração")
+    st.caption("Revise os resultados automáticos, consulte os candidatos e registre correções justificadas.")
+    notice = st.session_state.pop("cancelamentos_estudos_aviso", None)
+    if notice:
+        getattr(st, notice.get("type", "success"))(notice.get("message", ""))
+    include_completed = st.checkbox("Incluir processos encerrados", key="cancelamentos_estudos_incluir_concluidos")
+    processes = list_cancellation_processes()
+    rows = migration_study_rows(processes, include_completed=include_completed)
+    if not rows:
+        st.info("Nenhum estudo de migração foi encontrado.")
+        return
+
+    metrics = st.columns(6)
+    metrics[0].metric("Estudos", len(rows))
+    for column, status in zip(metrics[1:], ["Pendente", "Erro", "Migrável", "Condicional", "Não migrável"]):
+        column.metric(status, sum(1 for item in rows if item["study_status"] == status))
+
+    process_labels = {
+        process["id"]: f"{process.get('code', '')} - {process.get('site', {}).get('site_name', '')}"
+        for process in processes
+        if include_completed or not processo_encerrado(process)
+    }
+    col1, col2, col3 = st.columns([2, 1.4, 1.4])
+    search = col1.text_input(
+        "Buscar cliente", placeholder="Nome, assinatura, site atual ou site em cancelamento",
+        key="cancelamentos_estudos_busca",
+    )
+    process_filter = col2.multiselect(
+        "Processos", list(process_labels), format_func=lambda value: process_labels[value],
+        key="cancelamentos_estudos_processos",
+    )
+    status_filter = col3.multiselect(
+        "Resultado", CLIENT_STUDY_STATUSES, key="cancelamentos_estudos_status",
+    )
+    filtered = []
+    for item in rows:
+        searchable = " ".join([
+            item["client"], item["signature"], item["current_sites"],
+            item["cancellation_site"], item["process_code"],
+        ]).casefold()
+        if search and search.casefold() not in searchable:
+            continue
+        if process_filter and item["process_id"] not in process_filter:
+            continue
+        if status_filter and item["study_status"] not in status_filter:
+            continue
+        filtered.append(item)
+
+    display = pd.DataFrame([{
+        "Processo": item["process_code"],
+        "Status do processo": item["process_status"],
+        "Site em cancelamento": item["cancellation_site"],
+        "Assinatura": item["signature"],
+        "Cliente": item["client"],
+        "Sites atuais": item["current_sites"],
+        "Resultado": item["study_status"],
+        "Origem": item["study_source"],
+        "Atualizado em": item["study_updated_at"],
+        "Corrigido em": item["corrected_at"],
+        "Corrigido por": item["corrected_by"],
+        "Candidatos": item["candidate_count"],
+        "Site destino": item["destination_site"],
+        "Resultado final": item["final_result"],
+        "Mensagem": item["study_message"],
+    } for item in filtered])
+    if display.empty:
+        st.info("Nenhum estudo atende aos filtros selecionados.")
+        return
+    _grid(display, "cancelamentos_estudos_lista", min(620, 100 + len(display) * 34))
+
+    row_by_key = {f"{item['process_id']}|{item['signature']}": item for item in filtered}
+    labels = {
+        key: f"{item['client']} - {item['signature']} / {item['process_code']}"
+        for key, item in row_by_key.items()
+    }
+    selected_key = st.selectbox(
+        "Estudo para verificar", list(labels), index=None,
+        placeholder="Digite para pesquisar e selecione um estudo",
+        format_func=lambda value: labels[value], key="cancelamentos_estudo_selecionado",
+    )
+    if not selected_key:
+        return
+    row = row_by_key[selected_key]
+    process = get_cancellation_process(row["process_id"])
+    if not process:
+        st.error("O processo selecionado não está mais disponível.")
+        return
+    client = next(
+        (item for item in process.get("clients", []) if item.get("signature") == row["signature"]),
+        None,
+    )
+    if not client:
+        st.error("O cliente selecionado não está mais disponível neste processo.")
+        return
+
+    st.markdown(f"### {client.get('name')} - {client.get('signature')}")
+    detail_columns = st.columns(4)
+    detail_columns[0].metric("Resultado", client.get("study_status") or "Pendente")
+    detail_columns[1].metric("Origem", client.get("study_source") or "Não processado")
+    detail_columns[2].metric("Candidatos", len(client.get("study_candidates", []) or []))
+    detail_columns[3].metric("Site destino", client.get("destination_site") or "Não definido")
+    if client.get("study_message"):
+        st.warning(f"Mensagem do processamento: {client['study_message']}")
+    if client.get("study_correction_reason"):
+        st.info(
+            f"Correção de {client.get('study_corrected_by') or 'usuário não informado'}: "
+            f"{client['study_correction_reason']}"
+        )
+
+    candidates = pd.DataFrame(client.get("study_candidates", []) or [])
+    st.markdown("**Candidatos calculados**")
+    if candidates.empty:
+        st.caption("O processamento não salvou sites candidatos para esta assinatura.")
+    else:
+        st.dataframe(candidates, use_container_width=True, hide_index=True)
+
+    if not pode_editar() or processo_encerrado(process):
+        return
+    if st.button("Reprocessar estudo selecionado", key=f"cancelamento_reprocessar_{selected_key}"):
+        with st.spinner("Reprocessando estudo de migração..."):
+            status, message, _interrupted = _run_client_study(process, client, sites)
+        if status == "Erro":
+            st.session_state["cancelamentos_estudos_aviso"] = {
+                "type": "error", "message": f"O estudo retornou erro: {message}",
+            }
+        else:
+            st.session_state["cancelamentos_estudos_aviso"] = {
+                "type": "success", "message": f"Estudo reprocessado: {status}.",
+            }
+        st.rerun()
+
+    eligible_sites = _eligible_destination_sites(process, sites)
+    site_options = [""] + sorted(eligible_sites, key=lambda name: rotulo_busca_site(eligible_sites[name]).casefold())
+    current_destination = client.get("destination_site", "")
+    if current_destination and current_destination not in site_options:
+        site_options.append(current_destination)
+    site_labels = {"": "Não definido"}
+    site_labels.update({name: rotulo_busca_site(site) for name, site in eligible_sites.items()})
+    site_labels.setdefault(current_destination, current_destination)
+    manual_statuses = [status for status in CLIENT_STUDY_STATUSES if status != "Em processamento"]
+    with st.form(f"cancelamento_correcao_estudo_{selected_key}"):
+        st.markdown("**Correção manual**")
+        st.caption("A correção preserva os candidatos técnicos calculados e fica registrada no histórico do processo.")
+        col1, col2 = st.columns(2)
+        current_status = client.get("study_status")
+        status = col1.selectbox(
+            "Resultado revisado", manual_statuses,
+            index=manual_statuses.index(current_status) if current_status in manual_statuses else 0,
+        )
+        destination = col2.selectbox(
+            "Site destino", site_options,
+            index=site_options.index(current_destination) if current_destination in site_options else 0,
+            format_func=lambda value: site_labels.get(value, value),
+        )
+        reason = st.text_area("Motivo da correção", height=90)
+        submit = st.form_submit_button("Salvar correção manual")
+    if submit:
+        try:
+            correct_migration_study(
+                process["id"], client["signature"], status, destination, reason,
+                user=nome_usuario(),
+            )
+            st.session_state["cancelamentos_estudos_aviso"] = {
+                "type": "success", "message": "Correção manual registrada.",
+            }
+            st.rerun()
+        except Exception as error:
+            st.error(f"Falha ao registrar correção: {error}")
 
 
 def _clients_section(process, sites):
     clients = process.get("clients", [])
     batch = process.get("migration_batch", {})
     st.caption(f"Estudos processados: {batch.get('processed', 0)} de {batch.get('total', len(clients))}")
-    if pode_editar() and process.get("status") != "Concluído":
+    if pode_editar() and not processo_encerrado(process):
         if st.button("Processar próximo lote de estudos", key=f"cancelamento_lote_{process['id']}"):
             _process_study_batch(process, sites)
     rows = []
@@ -363,7 +564,7 @@ def _clients_section(process, sites):
     else:
         st.info("Nenhum cliente foi identificado no escopo.")
         return
-    if not pode_editar() or process.get("status") == "Concluído":
+    if not pode_editar() or processo_encerrado(process):
         return
     labels = {item["signature"]: f"{item.get('name')} - {item['signature']}" for item in clients}
     signature = st.selectbox("Cliente para atualizar", list(labels), format_func=lambda value: labels[value], key=f"cancelamento_cliente_sel_{process['id']}")
@@ -416,7 +617,7 @@ def _children_section(process):
         "Responsável": item.get("responsible"), "Equipe": item.get("team"),
     } for item in children])
     _grid(df, f"cancelamento_filhos_{process['id']}", min(500, 90 + len(df) * 34))
-    if not pode_editar() or process.get("status") == "Concluído":
+    if not pode_editar() or processo_encerrado(process):
         return
     labels = {item["site_name"]: rotulo_busca_site({
         "Site SNMPc": item.get("site_name"), "Codigo": item.get("aquiles"),
@@ -460,7 +661,7 @@ def _financial_section(process):
             if not items.empty:
                 with st.expander(title, expanded=False):
                     st.dataframe(items, use_container_width=True, hide_index=True)
-    if pode_editar() and process.get("status") != "Concluído":
+    if pode_editar() and not processo_encerrado(process):
         with st.form(f"cancelamento_financeiro_{process['id']}"):
             survey = st.checkbox("Levantamento financeiro conferido", value=bool(financial.get("survey_confirmed")))
             settlement = st.checkbox("Regularização financeira concluída ou encaminhada", value=bool(financial.get("settlement_confirmed")))
@@ -486,7 +687,7 @@ def _equipment_section(process):
         "Data": item.get("date"), "Responsável": item.get("responsible"), "Situação na base": item.get("current_state"),
     } for item in equipments])
     _grid(df, f"cancelamento_equipamentos_{process['id']}", min(600, 100 + len(df) * 32))
-    if not pode_editar() or process.get("status") == "Concluído":
+    if not pode_editar() or processo_encerrado(process):
         return
     labels = {item["id"]: f"{item.get('equipment') or item.get('icon') or 'Equipamento'} / {item.get('address') or '-'} / {item.get('site') or '-'}" for item in equipments}
     equipment_id = st.selectbox("Equipamento para atualizar", list(labels), format_func=lambda value: labels[value], key=f"cancelamento_equip_sel_{process['id']}")
@@ -519,7 +720,7 @@ def _tasks_section(process):
         "Observações": item.get("notes"),
     } for item in rows])
     _grid(df, f"cancelamento_tarefas_{process['id']}", min(560, 100 + len(df) * 34))
-    if not pode_editar() or process.get("status") == "Concluído":
+    if not pode_editar() or processo_encerrado(process):
         return
     labels = {}
     for item in phases:
@@ -573,7 +774,7 @@ def _tickets_links_section(process):
         } for item in tickets]), f"cancelamento_chamados_{process['id']}", min(400, 80 + len(tickets) * 34))
     else:
         st.caption("Nenhum chamado registrado.")
-    if pode_editar() and process.get("status") != "Concluído":
+    if pode_editar() and not processo_encerrado(process):
         with st.expander("Adicionar chamado", expanded=False):
             with st.form(f"cancelamento_novo_chamado_{process['id']}"):
                 col1, col2 = st.columns(2)
@@ -611,7 +812,7 @@ def _tickets_links_section(process):
             st.markdown(f"- **{item.get('category')}**: [{item.get('title')}]({item.get('url')})")
     else:
         st.caption("Nenhuma referência externa registrada.")
-    if pode_editar() and process.get("status") != "Concluído":
+    if pode_editar() and not processo_encerrado(process):
         with st.expander("Adicionar referência externa", expanded=False):
             with st.form(f"cancelamento_novo_link_{process['id']}"):
                 col1, col2 = st.columns(2)
@@ -637,13 +838,20 @@ def _reconciliation_section(process, sites, equipments):
         st.error("O site principal não existe na base técnica atual.")
     if comparison["new_clients"]:
         st.dataframe(pd.DataFrame(comparison["new_clients"])[["signature", "name", "product"]], use_container_width=True, hide_index=True)
-    if pode_editar() and process.get("status") != "Concluído" and st.button("Aplicar conciliação", key=f"cancelamento_reconciliar_{process['id']}"):
+    if pode_editar() and not processo_encerrado(process) and st.button("Aplicar conciliação", key=f"cancelamento_reconciliar_{process['id']}"):
         reconcile_process(process["id"], sites, equipments, user=nome_usuario())
         st.success("Snapshot conciliado sem remover o histórico.")
         st.rerun()
 
 
 def _completion_section(process):
+    if process.get("status") == "Cancelado":
+        st.warning("Processo cancelado. Os dados foram preservados somente para consulta.")
+        st.markdown(f"**Cancelado em:** {process.get('canceled_at') or 'Não informado'}")
+        st.markdown(f"**Cancelado por:** {process.get('canceled_by') or 'Não informado'}")
+        st.markdown(f"**Justificativa:** {process.get('cancellation_reason') or 'Não informada'}")
+        st.caption("Este processo não pode ser reativado. Abra um novo processo para retomar o trabalho do site.")
+        return
     pending = completion_pending_items(process)
     if pending:
         st.warning("O processo possui pendências:")
@@ -669,7 +877,7 @@ def _completion_section(process):
                     st.rerun()
         return
     if not pode_concluir():
-        st.caption("Seu usuário não possui permissão para concluir este processo.")
+        st.caption("Seu usuário não possui permissão para concluir ou cancelar este processo.")
         return
     with st.form(f"cancelamento_concluir_{process['id']}"):
         justification = st.text_area("Justificativa para conclusão com pendências", help="Obrigatória somente quando houver pendências.")
@@ -685,6 +893,26 @@ def _completion_section(process):
             st.rerun()
         except Exception as error:
             st.error(f"Falha ao concluir processo: {error}")
+
+    st.divider()
+    st.markdown("**Processo aberto por engano**")
+    st.caption("O cancelamento preserva o histórico, não altera o site e libera uma nova abertura para o mesmo local.")
+    with st.form(f"cancelamento_cancelar_processo_{process['id']}"):
+        cancellation_reason = st.text_area("Justificativa do cancelamento do processo")
+        cancellation_confirmation = st.text_input("Digite CANCELAR para confirmar")
+        cancel = st.form_submit_button("Cancelar processo")
+    if cancel:
+        if cancellation_confirmation.strip().upper() != "CANCELAR":
+            st.error("Digite CANCELAR para confirmar.")
+            return
+        try:
+            cancel_process(
+                process["id"], reason=cancellation_reason, user=nome_usuario()
+            )
+            st.success("Processo cancelado. O cadastro do site não foi alterado.")
+            st.rerun()
+        except Exception as error:
+            st.error(f"Falha ao cancelar processo: {error}")
 
 
 def _process_detail(process, sites, equipments):
@@ -783,7 +1011,7 @@ def _calendar_dataframe(items, year, month):
 def mostrar_agenda_cancelamentos():
     st.header("Agenda de Cancelamentos")
     processes = list_cancellation_processes()
-    items = agenda_items([item for item in processes if item.get("status") != "Concluído"])
+    items = agenda_items([item for item in processes if not processo_encerrado(item)])
     reference = st.date_input("Mês", value=date.today(), format="DD/MM/YYYY", key="cancelamento_agenda_mes")
     col1, col2, col3 = st.columns(3)
     teams = col1.multiselect("Equipe", TEAMS)
@@ -814,6 +1042,7 @@ def mostrar_cancelamentos(sites, equipments):
     items = [
         ("cancelamentos_dashboard", "Dashboard", mostrar_dashboard_cancelamentos),
         ("cancelamentos_processos", "Processos", lambda: mostrar_processos_cancelamento(sites, equipments)),
+        ("cancelamentos_estudos", "Estudos de Migração", lambda: mostrar_estudos_migracao(sites)),
         ("cancelamentos_agenda", "Agenda", mostrar_agenda_cancelamentos),
     ]
     function = mostrar_subnavegacao(items, key="cancelamentos_subaba")

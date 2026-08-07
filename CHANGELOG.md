@@ -1,5 +1,19 @@
 # Histórico de versões
 
+## 1.4.2
+
+- Processos de cancelamento de sites abertos por engano podem ser cancelados logicamente por usuários com permissão de conclusão.
+- O cancelamento exige justificativa e confirmação textual, preserva todos os dados para auditoria e não altera o cadastro do site.
+- Processos cancelados ficam somente para consulta, não podem ser reativados e liberam o site para abertura de um novo processo.
+- Agenda, dashboard e estudos de migração deixam de considerar processos cancelados como ativos.
+
+## 1.4.1
+
+- Cancelamento de Sites ganha a subaba Estudos de Migração para verificar resultados automáticos de todos os processos em uma visão consolidada.
+- A revisão mostra erros, mensagens do processamento e candidatos técnicos, com filtros por processo, cliente e resultado.
+- Estudos podem ser reprocessados individualmente ou corrigidos manualmente com justificativa, site de destino e auditoria de usuário e data.
+- O reprocessamento preserva a separação entre resultado automático e correção manual, facilitando a conferência técnica.
+
 ## 1.4.0
 
 - Criado o módulo Cancelamento de Sites com Dashboard, Processos e Agenda para acompanhar o encerramento completo de sites.

@@ -110,9 +110,65 @@ class SiteCancellationServiceTests(unittest.TestCase):
         )
         client = updated["clients"][0]
         self.assertEqual(client["study_status"], "Migrável")
+        self.assertEqual(client["study_source"], "Automático")
         self.assertEqual(client["stage"], "Estudo concluído")
         self.assertEqual(updated["migration_batch"]["processed"], 1)
         self.assertEqual(updated["history"][-1]["event"], "migration_study_saved")
+
+    def test_manual_study_correction_is_audited_and_keeps_candidates(self):
+        process = self.create()
+        service.save_migration_study(
+            process["id"], "111",
+            [{"Site": "OTHER_POP", "Status": "Parcial", "Distância km": 2.0}],
+            "Condicional", "", user="engenheiro", path=self.path,
+        )
+        corrected = service.correct_migration_study(
+            process["id"], "111", "Migrável", "OTHER_POP",
+            "Visada confirmada em campo", user="supervisor", path=self.path,
+        )
+        client = corrected["clients"][0]
+        self.assertEqual(client["study_status"], "Migrável")
+        self.assertEqual(client["study_source"], "Correção manual")
+        self.assertEqual(client["destination_site"], "OTHER_POP")
+        self.assertEqual(client["study_corrected_by"], "supervisor")
+        self.assertTrue(client["study_corrected_at"])
+        self.assertEqual(client["study_correction_reason"], "Visada confirmada em campo")
+        self.assertEqual(len(client["study_candidates"]), 1)
+        self.assertEqual(corrected["history"][-1]["event"], "migration_study_corrected")
+
+    def test_manual_study_correction_requires_reason(self):
+        process = self.create()
+        with self.assertRaisesRegex(ValueError, "motivo"):
+            service.correct_migration_study(
+                process["id"], "111", "Não migrável", reason="",
+                user="supervisor", path=self.path,
+            )
+
+    def test_automatic_reprocessing_clears_manual_correction_metadata(self):
+        process = self.create()
+        service.correct_migration_study(
+            process["id"], "111", "Não migrável", reason="Revisão inicial",
+            user="supervisor", path=self.path,
+        )
+        updated = service.save_migration_study(
+            process["id"], "111", [{"Site": "OTHER_POP", "Status": "Livre"}],
+            "Migrável", "", user="engenheiro", path=self.path,
+        )
+        client = updated["clients"][0]
+        self.assertEqual(client["study_source"], "Automático")
+        self.assertEqual(client["study_corrected_at"], "")
+        self.assertEqual(client["study_corrected_by"], "")
+        self.assertEqual(client["study_correction_reason"], "")
+
+    def test_migration_study_rows_omit_completed_processes_by_default(self):
+        process = self.create()
+        rows = service.migration_study_rows([process])
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["signature"], "111")
+        self.assertEqual(rows[0]["cancellation_site"], "ROOT_POP")
+        completed = dict(process, status="Concluído")
+        self.assertEqual(service.migration_study_rows([completed]), [])
+        self.assertEqual(len(service.migration_study_rows([completed], include_completed=True)), 1)
 
     def test_reconciliation_preserves_missing_and_adds_new(self):
         process = self.create()
@@ -153,6 +209,72 @@ class SiteCancellationServiceTests(unittest.TestCase):
             service.reopen_process(
                 first["id"], justification="Reabrir", user="gestor", path=self.path
             )
+
+    def test_cancel_process_preserves_data_and_releases_site(self):
+        process = self.create()
+        with patch.object(service, "_cancel_site_registry") as cancel_registry:
+            canceled = service.cancel_process(
+                process["id"], reason="Processo aberto para o site incorreto",
+                user="gestor", path=self.path,
+            )
+        cancel_registry.assert_not_called()
+        self.assertEqual(canceled["status"], "Cancelado")
+        self.assertEqual(canceled["canceled_by"], "gestor")
+        self.assertTrue(canceled["canceled_at"])
+        self.assertEqual(canceled["cancellation_reason"], "Processo aberto para o site incorreto")
+        self.assertEqual(canceled["clients"], process["clients"])
+        self.assertEqual(canceled["equipments"], process["equipments"])
+        self.assertEqual(canceled["history"][-1]["event"], "process_canceled")
+        replacement = self.create()
+        self.assertNotEqual(replacement["id"], process["id"])
+
+    def test_cancel_process_requires_reason_and_only_accepts_active_process(self):
+        process = self.create()
+        with self.assertRaisesRegex(ValueError, "justificativa"):
+            service.cancel_process(
+                process["id"], reason="", user="gestor", path=self.path
+            )
+        with patch.object(service, "_cancel_site_registry"):
+            completed = service.complete_process(
+                process["id"], justification="Concluir com pendências",
+                user="gestor", path=self.path,
+            )
+        with self.assertRaisesRegex(ValueError, "concluídos"):
+            service.cancel_process(
+                completed["id"], reason="Tentativa tardia",
+                user="gestor", path=self.path,
+            )
+
+    def test_cancelled_process_is_read_only_and_excluded_from_active_views(self):
+        process = self.create()
+        service.update_phase(
+            process["id"], "planejamento",
+            {"due_date": "2026-08-01", "status": "Em andamento"},
+            user="operador", path=self.path,
+        )
+        canceled = service.cancel_process(
+            process["id"], reason="Cadastro indevido", user="gestor", path=self.path
+        )
+        with self.assertRaisesRegex(ValueError, "não podem ser alterados"):
+            service.update_process_fields(
+                process["id"], {"priority": "Baixa"}, user="operador", path=self.path
+            )
+        with patch.object(service, "_cancel_site_registry") as cancel_registry:
+            with self.assertRaisesRegex(ValueError, "não podem ser concluídos"):
+                service.complete_process(
+                    process["id"], justification="", user="gestor", path=self.path
+                )
+        cancel_registry.assert_not_called()
+        with self.assertRaisesRegex(ValueError, "Somente processos concluídos"):
+            service.reopen_process(
+                process["id"], justification="Reativar", user="gestor", path=self.path
+            )
+        self.assertEqual(service.agenda_items([canceled], today=date(2026, 8, 7)), [])
+        self.assertEqual(service.process_metrics([canceled])["active_processes"], 0)
+        self.assertEqual(service.migration_study_rows([canceled]), [])
+        self.assertEqual(
+            len(service.migration_study_rows([canceled], include_completed=True)), 1
+        )
 
     def test_cancel_registry_sets_only_main_site_status(self):
         process = self.create()
