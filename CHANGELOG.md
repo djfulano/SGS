@@ -1,5 +1,27 @@
 # Histórico de versões
 
+## 1.4.5
+
+- Cancelamento de Sites passa a ter subabas separadas para Resumo, Processos, Clientes e Sites.
+- O acompanhamento foi reduzido a abertura e encerramento do processo, status dos clientes, candidatos por distância e três atividades do site.
+- O Resumo permite alternar entre processos abertos, concluídos, cancelados ou todos, com quantidades e receitas mensais por resultado.
+- O schema dos cancelamentos foi simplificado; processos do formato anterior são removidos automaticamente uma única vez, sem backup legado.
+
+## 1.4.4
+
+- O módulo Cancelamento de Sites foi simplificado para abertura do processo, acompanhamento dos clientes e atividades do próprio site.
+- Ao abrir um processo, o SGS calcula e salva automaticamente os dez sites ativos mais próximos de cada cliente, sem análise de visada ou elevação.
+- Processos antigos recebem o cálculo de distância automaticamente na primeira abertura do novo detalhe.
+- Cada cliente passa a ter um único status operacional e detalhe com produto, gerente de contas, equipamentos, IPs e candidatos ordenados por distância.
+- O processo passa a controlar diretamente as atividades Enviar distrato, Aguardar prazo de aviso e Retirar equipamentos.
+- A conclusão considera somente os status dos clientes e essas três atividades, mantendo compatibilidade com os dados históricos existentes.
+
+## 1.4.3
+
+- O campo Site destino nas etapas dos clientes em Cancelamento de Sites passa a usar uma lista pesquisável no padrão de identificação dos sites.
+- A lista mostra somente sites ativos aptos ao atendimento, exclui o escopo cancelado e preserva destinos antigos já registrados.
+- A mesma regra de destinos passa a ser compartilhada entre a atualização do cliente e a correção dos estudos de migração.
+
 ## 1.4.2
 
 - Processos de cancelamento de sites abertos por engano podem ser cancelados logicamente por usuários com permissão de conclusão.

@@ -1,6 +1,8 @@
+from copy import deepcopy
+from datetime import date
+import json
 import tempfile
 import unittest
-from datetime import date
 from pathlib import Path
 from unittest.mock import patch
 
@@ -9,21 +11,7 @@ import pandas as pd
 from app.models.cliente import Cliente
 from app.models.site import Site
 from app.services import site_cancellation_service as service
-
-
-def financial_history(*_args, **_kwargs):
-    return {
-        "microsiga": "000123",
-        "valor_em_atraso": 100.0,
-        "parcelas_vencidas": 1,
-        "valor_futuro": 200.0,
-        "parcelas_futuras": 2,
-        "valor_acordos_abertos": 300.0,
-        "quantidade_acordos_abertos": 1,
-        "vencidas": pd.DataFrame([{"ID SGS": "P1", "Subtotal": 100.0}]),
-        "futuras": pd.DataFrame(),
-        "acordos_abertos": pd.DataFrame(),
-    }
+from app.ui.views import site_cancellation as cancellation_ui
 
 
 class SiteCancellationServiceTests(unittest.TestCase):
@@ -31,36 +19,80 @@ class SiteCancellationServiceTests(unittest.TestCase):
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.path = Path(self.temp_dir.name) / "processes.json"
+
         self.root = Site("ROOT_POP", "POP")
         self.root.codigo_topos = "100"
         self.root.microsiga = "123"
         self.root.nome_cadastro = "Site raiz"
         self.root.status_cadastro = "Ativo"
-        self.root.custo = 1000.0
+        self.root.latitude = -23.5000
+        self.root.longitude = -46.6000
+
         self.child = Site("CHILD_BH", "BH")
         self.child.codigo_topos = "101"
         self.child.microsiga = "124"
         self.child.nome_cadastro = "Site filho"
         self.child.status_cadastro = "Ativo"
+        self.child.latitude = -23.5100
+        self.child.longitude = -46.6000
         self.root.adicionar_filho(self.child)
+
+        self.nearby = Site("OTHER_POP", "POP")
+        self.nearby.codigo_topos = "102"
+        self.nearby.microsiga = "125"
+        self.nearby.nome_cadastro = "Site candidato"
+        self.nearby.status_cadastro = "Ativo"
+        self.nearby.latitude = -23.5200
+        self.nearby.longitude = -46.6000
 
         client_a = Cliente("Cliente A", 500, "111")
         client_a.produto = "Internet 100M"
+        client_a.gerente_contas = "Gerente A"
+        client_a.latitude = -23.5000
+        client_a.longitude = -46.6000
         self.root.adicionar_cliente(client_a, "ROOT_S1")
+
         client_b = Cliente("Cliente B", 700, "222")
+        client_b.produto = "Internet 200M"
+        client_b.gerente_contas = "Gerente B"
+        client_b.latitude = -23.5100
+        client_b.longitude = -46.6000
         self.child.adicionar_cliente(client_b, "CHILD_S1")
         self.child.adicionar_cliente_adicional(client_a, "CHILD_S2")
-        self.sites = {self.root.nome: self.root, self.child.nome: self.child}
+
+        self.sites = {
+            self.root.nome: self.root,
+            self.child.nome: self.child,
+            self.nearby.nome: self.nearby,
+        }
         self.equipments = [
-            {"Site": "ROOT_POP", "Assinatura": "111", "Icone": "AP", "Equipamento": "AP-A", "Endereco": "10.0.0.1", "Arvore": "ROOT_POP > AP-A"},
-            {"Site": "CHILD_BH", "Assinatura": "222", "Icone": "ONU", "Equipamento": "ONU-B", "Endereco": "10.0.0.2", "Arvore": "CHILD_BH > ONU-B"},
+            {
+                "Site": "ROOT_POP",
+                "Assinatura": "111",
+                "Icone": "AP",
+                "Equipamento": "AP-A",
+                "Endereco": "10.0.0.1",
+                "Arvore": "ROOT_POP > AP-A",
+            },
+            {
+                "Site": "CHILD_BH",
+                "Assinatura": "222",
+                "Icone": "ONU",
+                "Equipamento": "ONU-B",
+                "Endereco": "10.0.0.2",
+                "Arvore": "CHILD_BH > ONU-B",
+            },
         ]
 
     def tearDown(self):
         self.temp_dir.cleanup()
 
     def create(self, scope="Somente site"):
-        with patch.object(service, "historico_financeiro_site", side_effect=financial_history):
+        with patch.object(
+            service, "carregar_clientes_viabilidade", return_value={}
+        ), patch.object(
+            service, "carregar_cache_geocoding", return_value={}
+        ):
             return service.create_cancellation_process(
                 self.root,
                 self.sites,
@@ -75,23 +107,59 @@ class SiteCancellationServiceTests(unittest.TestCase):
                 path=self.path,
             )
 
-    def test_create_direct_scope(self):
+    def test_legacy_schema_is_deleted_once_without_backup(self):
+        self.path.write_text(json.dumps({
+            "schema_version": 1,
+            "processes": {"old": {"id": "old", "status": "Em andamento"}},
+        }), encoding="utf-8")
+        backup = self.path.with_name("processes.json.bak")
+        backup.write_text("legacy", encoding="utf-8")
+        with patch.object(service, "registrar_log_sistema") as log:
+            data = service.load_cancellation_processes(self.path)
+            second = service.load_cancellation_processes(self.path)
+        self.assertEqual(data, {"schema_version": 2, "processes": {}})
+        self.assertEqual(second, data)
+        self.assertFalse(backup.exists())
+        self.assertEqual(log.call_count, 1)
+        self.assertEqual(
+            log.call_args.kwargs["detalhes"]["processos_removidos"],
+            1,
+        )
+
+    def test_create_direct_scope_uses_simplified_schema(self):
         process = self.create()
+        self.assertEqual(process["status"], "Aberto")
         self.assertEqual(process["site"]["aquiles"], "100")
         self.assertEqual([item["signature"] for item in process["clients"]], ["111"])
-        self.assertEqual(len(process["equipments"]), 1)
-        self.assertEqual(process["financial"]["overdue_value"], 100.0)
-        self.assertEqual(len(process["phases"]), 6)
+        self.assertEqual(process["clients"][0]["equipments"][0]["name"], "AP-A")
+        self.assertEqual(
+            [item["name"] for item in process["site_activities"]],
+            ["Enviar distrato", "Aguardar prazo de aviso", "Retirar equipamentos"],
+        )
+        self.assertEqual(
+            [item["site"] for item in process["clients"][0]["candidate_sites"]],
+            ["CHILD_BH", "OTHER_POP"],
+        )
+        for removed in [
+            "phases", "tickets", "links", "financial", "child_sites",
+            "extra_tasks", "migration_batch", "equipments",
+        ]:
+            self.assertNotIn(removed, process)
 
-    def test_tree_scope_deduplicates_clients_and_includes_children(self):
+    def test_tree_scope_deduplicates_clients_and_excludes_scope_candidates(self):
         process = self.create("Site e descendentes")
-        self.assertEqual({item["signature"] for item in process["clients"]}, {"111", "222"})
-        self.assertEqual(len(process["child_sites"]), 1)
-        self.assertEqual(len(process["equipments"]), 2)
+        self.assertEqual(
+            {item["signature"] for item in process["clients"]},
+            {"111", "222"},
+        )
         client_a = next(item for item in process["clients"] if item["signature"] == "111")
         self.assertEqual(len(client_a["affected_links"]), 2)
+        self.assertEqual(
+            [item["site"] for item in client_a["candidate_sites"]],
+            ["OTHER_POP"],
+        )
 
-    def test_only_one_active_process_per_site(self):
+    def test_only_one_open_process_per_site(self):
         self.create()
         with self.assertRaisesRegex(ValueError, "processo ativo"):
             self.create()
@@ -101,134 +169,139 @@ class SiteCancellationServiceTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Somente sites ativos"):
             self.create()
 
-    def test_study_result_is_persisted_and_audited(self):
+    def test_missing_client_coordinates_do_not_break_candidate_calculation(self):
+        clients = [{
+            "signature": "999",
+            "address": "",
+            "latitude": 0,
+            "longitude": 0,
+            "current_links": [],
+        }]
+        result = service.calculate_client_distance_candidates(
+            clients,
+            self.sites,
+            geocoding_cache={},
+        )
+        self.assertEqual(result[0]["candidate_status"], "Sem coordenadas")
+        self.assertEqual(result[0]["candidate_sites"], [])
+
+    def test_candidates_can_be_recalculated(self):
         process = self.create()
-        updated = service.save_migration_study(
-            process["id"], "111",
-            [{"Site": "OTHER_POP", "Status": "Livre", "Distância km": 2.0}],
-            "Migrável", "", user="engenheiro", path=self.path,
+
+        def remove_candidates(item):
+            item["clients"][0]["candidate_sites"] = []
+            item["clients"][0]["candidate_calculated_at"] = ""
+
+        service.update_cancellation_process(
+            process["id"],
+            remove_candidates,
+            event="test_candidates_removed",
+            user="teste",
+            path=self.path,
+        )
+        with patch.object(service, "carregar_cache_geocoding", return_value={}):
+            updated = service.recalculate_process_distance_candidates(
+                process["id"], self.sites, user="operador", path=self.path
+            )
+        self.assertTrue(updated["clients"][0]["candidate_calculated_at"])
+        self.assertTrue(updated["clients"][0]["candidate_sites"])
+        self.assertEqual(updated["history"][-1]["event"], "distance_candidates_recalculated")
+
+    def test_client_update_keeps_single_status_and_is_audited(self):
+        process = self.create()
+        updated = service.update_client(
+            process["id"],
+            "111",
+            {
+                "status": "Migrado",
+                "destination_site": "OTHER_POP",
+                "notes": "Atividade concluída",
+            },
+            user="operador",
+            path=self.path,
         )
         client = updated["clients"][0]
-        self.assertEqual(client["study_status"], "Migrável")
-        self.assertEqual(client["study_source"], "Automático")
-        self.assertEqual(client["stage"], "Estudo concluído")
-        self.assertEqual(updated["migration_batch"]["processed"], 1)
-        self.assertEqual(updated["history"][-1]["event"], "migration_study_saved")
-
-    def test_manual_study_correction_is_audited_and_keeps_candidates(self):
-        process = self.create()
-        service.save_migration_study(
-            process["id"], "111",
-            [{"Site": "OTHER_POP", "Status": "Parcial", "Distância km": 2.0}],
-            "Condicional", "", user="engenheiro", path=self.path,
-        )
-        corrected = service.correct_migration_study(
-            process["id"], "111", "Migrável", "OTHER_POP",
-            "Visada confirmada em campo", user="supervisor", path=self.path,
-        )
-        client = corrected["clients"][0]
-        self.assertEqual(client["study_status"], "Migrável")
-        self.assertEqual(client["study_source"], "Correção manual")
+        self.assertEqual(service.client_process_status(client), "Migrado")
         self.assertEqual(client["destination_site"], "OTHER_POP")
-        self.assertEqual(client["study_corrected_by"], "supervisor")
-        self.assertTrue(client["study_corrected_at"])
-        self.assertEqual(client["study_correction_reason"], "Visada confirmada em campo")
-        self.assertEqual(len(client["study_candidates"]), 1)
-        self.assertEqual(corrected["history"][-1]["event"], "migration_study_corrected")
+        self.assertEqual(client["updated_by"], "operador")
+        self.assertEqual(updated["history"][-1]["event"], "client_updated")
+        self.assertNotIn("final_result", client)
 
-    def test_manual_study_correction_requires_reason(self):
+    def test_invalid_client_status_is_rejected(self):
         process = self.create()
-        with self.assertRaisesRegex(ValueError, "motivo"):
-            service.correct_migration_study(
-                process["id"], "111", "Não migrável", reason="",
-                user="supervisor", path=self.path,
+        with self.assertRaisesRegex(ValueError, "Status do cliente inválido"):
+            service.update_client(
+                process["id"],
+                "111",
+                {"status": "Inventado"},
+                user="operador",
+                path=self.path,
             )
 
-    def test_automatic_reprocessing_clears_manual_correction_metadata(self):
+    def test_site_activity_is_updated_and_used_by_completion_check(self):
         process = self.create()
-        service.correct_migration_study(
-            process["id"], "111", "Não migrável", reason="Revisão inicial",
-            user="supervisor", path=self.path,
+        updated = service.update_site_activity(
+            process["id"],
+            "send_termination",
+            {
+                "status": "Concluído",
+                "responsible": "juridico",
+                "due_date": "2026-08-20",
+                "notes": "Distrato enviado",
+            },
+            user="operador",
+            path=self.path,
         )
-        updated = service.save_migration_study(
-            process["id"], "111", [{"Site": "OTHER_POP", "Status": "Livre"}],
-            "Migrável", "", user="engenheiro", path=self.path,
+        activity = next(
+            item for item in updated["site_activities"]
+            if item["id"] == "send_termination"
         )
-        client = updated["clients"][0]
-        self.assertEqual(client["study_source"], "Automático")
-        self.assertEqual(client["study_corrected_at"], "")
-        self.assertEqual(client["study_corrected_by"], "")
-        self.assertEqual(client["study_correction_reason"], "")
-
-    def test_migration_study_rows_omit_completed_processes_by_default(self):
-        process = self.create()
-        rows = service.migration_study_rows([process])
-        self.assertEqual(len(rows), 1)
-        self.assertEqual(rows[0]["signature"], "111")
-        self.assertEqual(rows[0]["cancellation_site"], "ROOT_POP")
-        completed = dict(process, status="Concluído")
-        self.assertEqual(service.migration_study_rows([completed]), [])
-        self.assertEqual(len(service.migration_study_rows([completed], include_completed=True)), 1)
-
-    def test_reconciliation_preserves_missing_and_adds_new(self):
-        process = self.create()
-        self.root.clientes.clear()
-        self.root.adicionar_cliente(Cliente("Cliente C", 900, "333"))
-        reconciled = service.reconcile_process(
-            process["id"], self.sites, self.equipments,
-            user="operador", path=self.path,
+        self.assertEqual(activity["status"], "Concluído")
+        self.assertTrue(activity["completed_at"])
+        self.assertIn(
+            "2 atividade(s) do site pendente(s)",
+            service.completion_pending_items(updated),
         )
-        clients = {item["signature"]: item for item in reconciled["clients"]}
-        self.assertEqual(clients["111"]["current_state"], "Ausente da base atual")
-        self.assertEqual(clients["333"]["current_state"], "Atual")
 
     def test_completion_with_pending_items_requires_justification(self):
         process = self.create()
         with patch.object(service, "_cancel_site_registry"):
             with self.assertRaisesRegex(ValueError, "justificativa"):
-                service.complete_process(process["id"], justification="", user="gestor", path=self.path)
+                service.complete_process(
+                    process["id"], justification="", user="gestor", path=self.path
+                )
             completed = service.complete_process(
-                process["id"], justification="Aprovado com pendências", user="gestor", path=self.path
+                process["id"],
+                justification="Aprovado com pendências",
+                user="gestor",
+                path=self.path,
             )
         self.assertEqual(completed["status"], "Concluído")
-        reopened = service.reopen_process(
-            process["id"], justification="Nova pendência", user="gestor", path=self.path
-        )
-        self.assertEqual(reopened["status"], "Em andamento")
-        self.assertEqual(reopened["history"][-1]["event"], "process_reopened")
-
-    def test_reopen_blocks_second_active_process_for_same_site(self):
-        first = self.create()
-        with patch.object(service, "_cancel_site_registry"):
-            service.complete_process(
-                first["id"], justification="Aprovado", user="gestor", path=self.path
-            )
-        second = self.create()
-        self.assertNotEqual(first["id"], second["id"])
-        with self.assertRaisesRegex(ValueError, "outro processo ativo"):
-            service.reopen_process(
-                first["id"], justification="Reabrir", user="gestor", path=self.path
+        with self.assertRaisesRegex(ValueError, "não podem ser alterados"):
+            service.update_client(
+                process["id"],
+                "111",
+                {"status": "Migrado"},
+                user="operador",
+                path=self.path,
             )
 
-    def test_cancel_process_preserves_data_and_releases_site(self):
+    def test_cancel_preserves_data_and_releases_site_for_new_process(self):
         process = self.create()
-        with patch.object(service, "_cancel_site_registry") as cancel_registry:
+        with patch.object(service, "_cancel_site_registry") as registry:
             canceled = service.cancel_process(
-                process["id"], reason="Processo aberto para o site incorreto",
-                user="gestor", path=self.path,
+                process["id"],
+                reason="Processo aberto incorretamente",
+                user="gestor",
+                path=self.path,
             )
-        cancel_registry.assert_not_called()
+        registry.assert_not_called()
         self.assertEqual(canceled["status"], "Cancelado")
-        self.assertEqual(canceled["canceled_by"], "gestor")
-        self.assertTrue(canceled["canceled_at"])
-        self.assertEqual(canceled["cancellation_reason"], "Processo aberto para o site incorreto")
         self.assertEqual(canceled["clients"], process["clients"])
-        self.assertEqual(canceled["equipments"], process["equipments"])
-        self.assertEqual(canceled["history"][-1]["event"], "process_canceled")
         replacement = self.create()
         self.assertNotEqual(replacement["id"], process["id"])
 
-    def test_cancel_process_requires_reason_and_only_accepts_active_process(self):
+    def test_cancel_requires_reason_and_rejects_completed_process(self):
         process = self.create()
         with self.assertRaisesRegex(ValueError, "justificativa"):
             service.cancel_process(
@@ -236,45 +309,18 @@ class SiteCancellationServiceTests(unittest.TestCase):
             )
         with patch.object(service, "_cancel_site_registry"):
             completed = service.complete_process(
-                process["id"], justification="Concluir com pendências",
-                user="gestor", path=self.path,
+                process["id"],
+                justification="Concluir com pendências",
+                user="gestor",
+                path=self.path,
             )
         with self.assertRaisesRegex(ValueError, "concluídos"):
             service.cancel_process(
-                completed["id"], reason="Tentativa tardia",
-                user="gestor", path=self.path,
+                completed["id"],
+                reason="Tentativa tardia",
+                user="gestor",
+                path=self.path,
             )
-
-    def test_cancelled_process_is_read_only_and_excluded_from_active_views(self):
-        process = self.create()
-        service.update_phase(
-            process["id"], "planejamento",
-            {"due_date": "2026-08-01", "status": "Em andamento"},
-            user="operador", path=self.path,
-        )
-        canceled = service.cancel_process(
-            process["id"], reason="Cadastro indevido", user="gestor", path=self.path
-        )
-        with self.assertRaisesRegex(ValueError, "não podem ser alterados"):
-            service.update_process_fields(
-                process["id"], {"priority": "Baixa"}, user="operador", path=self.path
-            )
-        with patch.object(service, "_cancel_site_registry") as cancel_registry:
-            with self.assertRaisesRegex(ValueError, "não podem ser concluídos"):
-                service.complete_process(
-                    process["id"], justification="", user="gestor", path=self.path
-                )
-        cancel_registry.assert_not_called()
-        with self.assertRaisesRegex(ValueError, "Somente processos concluídos"):
-            service.reopen_process(
-                process["id"], justification="Reativar", user="gestor", path=self.path
-            )
-        self.assertEqual(service.agenda_items([canceled], today=date(2026, 8, 7)), [])
-        self.assertEqual(service.process_metrics([canceled])["active_processes"], 0)
-        self.assertEqual(service.migration_study_rows([canceled]), [])
-        self.assertEqual(
-            len(service.migration_study_rows([canceled], include_completed=True)), 1
-        )
 
     def test_cancel_registry_sets_only_main_site_status(self):
         process = self.create()
@@ -284,28 +330,74 @@ class SiteCancellationServiceTests(unittest.TestCase):
         registry.at[0, "CÓDIGO AQUILES"] = "100"
         registry.at[0, "SMNPC"] = "ROOT_POP"
         registry.at[0, "Status"] = "Ativo"
-        with patch.object(service, "load_site_registry", return_value=registry), patch.object(
-            service, "upsert_site"
-        ) as upsert:
+        with patch.object(
+            service, "load_site_registry", return_value=registry
+        ), patch.object(service, "upsert_site") as upsert:
             service._cancel_site_registry(process)
         record = upsert.call_args.args[0]
         self.assertEqual(record["Status"], "Cancelado")
         self.assertEqual(upsert.call_args.kwargs["original_code"], "100")
 
-    def test_agenda_metrics_email_and_excel(self):
+    def test_process_filters_use_three_simplified_statuses(self):
+        processes = [
+            {"status": "Aberto"},
+            {"status": "Concluído"},
+            {"status": "Cancelado"},
+        ]
+        self.assertEqual(len(service.filter_processes_by_scope(processes, "Abertos")), 1)
+        self.assertEqual(len(service.filter_processes_by_scope(processes, "Concluídos")), 1)
+        self.assertEqual(len(service.filter_processes_by_scope(processes, "Cancelados")), 1)
+        self.assertEqual(len(service.filter_processes_by_scope(processes, "Todos")), 3)
+
+    def test_summary_deduplicates_signature_using_latest_activity(self):
+        first = self.create()
+        second = deepcopy(first)
+        second["id"] = "second"
+        second["site"] = {**second["site"], "aquiles": "200", "site_name": "SECOND_POP"}
+        first["clients"][0]["status"] = "Cancelado"
+        first["clients"][0]["updated_at"] = "2026-08-01T10:00:00"
+        second["clients"][0]["status"] = "Migrado"
+        second["clients"][0]["updated_at"] = "2026-08-02T10:00:00"
+        metrics = service.process_metrics([first, second], today=date(2026, 8, 7))
+        self.assertEqual(metrics["processes"], 2)
+        self.assertEqual(metrics["sites"], 2)
+        self.assertEqual(metrics["clients"], 1)
+        self.assertEqual(metrics["results"]["Migrados"]["count"], 1)
+        self.assertEqual(metrics["results"]["Migrados"]["revenue"], 500.0)
+        self.assertEqual(metrics["results"]["Cancelados"]["count"], 0)
+
+    def test_summary_groups_results_and_counts_overdue_site_activities(self):
         process = self.create()
-        service.update_phase(
-            process["id"], "planejamento",
-            {"due_date": "2026-08-01", "status": "Em andamento"},
-            user="operador", path=self.path,
-        )
-        current = service.get_cancellation_process(process["id"], self.path)
-        agenda = service.agenda_items([current], today=date(2026, 8, 7))
-        self.assertEqual(agenda[0]["situation"], "Atrasado")
-        metrics = service.process_metrics([current], today=date(2026, 8, 7))
+        process["clients"][0]["status"] = "Cancelamento em andamento"
+        process["site_activities"][0]["status"] = "Em andamento"
+        process["site_activities"][0]["due_date"] = "2026-08-01"
+        metrics = service.process_metrics([process], today=date(2026, 8, 7))
+        self.assertEqual(metrics["results"]["Em andamento"]["count"], 1)
+        self.assertEqual(metrics["results"]["Em andamento"]["revenue"], 500.0)
+        self.assertEqual(metrics["activity_statuses"]["Em andamento"], 1)
+        self.assertEqual(metrics["activity_statuses"]["Não iniciado"], 2)
         self.assertEqual(metrics["overdue_activities"], 1)
-        self.assertIn("Cliente A", service.cancellation_email_text(current))
-        self.assertTrue(service.export_cancellation_excel(current).startswith(b"PK"))
+
+    def test_destination_options_prioritize_candidates_and_keep_legacy_value(self):
+        process = self.create()
+        client_site = Site("CLIENT_SITE", "Cliente")
+        client_site.codigo_topos = "103"
+        client_site.status_cadastro = "Ativo"
+        sites = {**self.sites, client_site.nome: client_site}
+        client = process["clients"][0]
+        options, labels = cancellation_ui._destination_site_options(
+            process,
+            sites,
+            "LEGACY_SITE",
+            client,
+        )
+        self.assertEqual(options[0], "")
+        self.assertEqual(options[1:3], ["CHILD_BH", "OTHER_POP"])
+        self.assertNotIn("ROOT_POP", options)
+        self.assertNotIn("CLIENT_SITE", options)
+        self.assertIn("LEGACY_SITE", options)
+        self.assertIn("101", labels["CHILD_BH"])
+        self.assertIn("km", labels["CHILD_BH"])
 
 
 if __name__ == "__main__":
