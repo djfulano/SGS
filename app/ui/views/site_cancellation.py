@@ -177,7 +177,12 @@ def mostrar_resumo_cancelamentos():
     columns = st.columns(4)
     for column, label in zip(
         columns,
-        ["Em andamento", "Migrados", "Cancelados", "Sem solução"],
+        [
+            "Em andamento",
+            "Migrados",
+            "Cancelados",
+            "Cancelamentos em andamento",
+        ],
     ):
         result = metrics["results"][label]
         column.metric(label, result["count"])

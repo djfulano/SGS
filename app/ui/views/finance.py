@@ -310,10 +310,15 @@ def mostrar_prioridades_financeiras(sites):
         "Custo mensal",
         "Receita (Total com sites filhos)",
         "Data Vencimento Mensalidade",
+        "Valor da Mensalidade Atual",
+        "Total de Mensalidades em Atraso",
+        "Quantidade de Mensalidades em Atraso",
+        "Valor Médio das Mensalidades em Atraso",
         "Data Vencimento Acordo",
-        "Quantidade de parcelas em atraso",
-        "Passivo de acordos",
-        "Passivo de mensalidades",
+        "Total de Acordos Atrasados",
+        "Quantidade de Parcelas de Acordos Atrasados",
+        "Média de Valores de Acordos Atrasados",
+        "Valor Total em Atraso",
         "Criticidade",
         "Importância",
         "Lista de Clientes",
@@ -327,8 +332,12 @@ def mostrar_prioridades_financeiras(sites):
     pode_ver_receita = pode("visualizar_valores_clientes")
     colunas_custos = [
         "Custo mensal",
-        "Passivo de acordos",
-        "Passivo de mensalidades",
+        "Valor da Mensalidade Atual",
+        "Total de Mensalidades em Atraso",
+        "Valor Médio das Mensalidades em Atraso",
+        "Total de Acordos Atrasados",
+        "Média de Valores de Acordos Atrasados",
+        "Valor Total em Atraso",
     ]
     if not pode_ver_custos:
         for coluna in colunas_custos:
@@ -364,8 +373,12 @@ def mostrar_prioridades_financeiras(sites):
                 "Data Vencimento Acordo",
                 format="DD/MM/YYYY",
             ),
-            "Quantidade de parcelas em atraso": st.column_config.NumberColumn(
-                "Quantidade de parcelas em atraso",
+            "Quantidade de Mensalidades em Atraso": st.column_config.NumberColumn(
+                "Quantidade de Mensalidades em Atraso",
+                format="%d",
+            ),
+            "Quantidade de Parcelas de Acordos Atrasados": st.column_config.NumberColumn(
+                "Quantidade de Parcelas de Acordos Atrasados",
                 format="%d",
             ),
             "Importância": st.column_config.SelectboxColumn(

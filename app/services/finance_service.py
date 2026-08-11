@@ -45,9 +45,16 @@ SITE_PRIORITY_COLUMNS = [
     "Lista de Clientes",
     "Vencimento da Mensalidade",
     "Valor da Mensalidade Atual",
+    "Total de Mensalidades em Atraso",
+    "Quantidade de Mensalidades em Atraso",
+    "Valor Médio das Mensalidades em Atraso",
     "Tem Acordo",
     "Vencimento do Acordo",
     "Valor da Parcela do Acordo",
+    "Total de Acordos Atrasados",
+    "Quantidade de Parcelas de Acordos Atrasados",
+    "Média de Valores de Acordos Atrasados",
+    "Valor Total em Atraso",
     "Mensalidades Vencidas",
     "Valor das Mensalidades Vencidas",
     "Acordos Vencidos",
@@ -62,11 +69,16 @@ SITE_PRIORITY_EXPORT_COLUMNS = [
     "Microsiga",
     "Custo mensal",
     "Receita (Total com sites filhos)",
-    "Passivo de acordos",
-    "Passivo de mensalidades",
     "Data Vencimento Mensalidade",
+    "Valor da Mensalidade Atual",
+    "Total de Mensalidades em Atraso",
+    "Quantidade de Mensalidades em Atraso",
+    "Valor Médio das Mensalidades em Atraso",
     "Data Vencimento Acordo",
-    "Quantidade de parcelas em atraso",
+    "Total de Acordos Atrasados",
+    "Quantidade de Parcelas de Acordos Atrasados",
+    "Média de Valores de Acordos Atrasados",
+    "Valor Total em Atraso",
     "Criticidade",
     "Importância",
     "Lista de Clientes",
@@ -247,6 +259,11 @@ FINANCE_EXPORT_CURRENCY_COLUMNS = {
     "Receita (Total com sites filhos)",
     "Passivo de acordos",
     "Passivo de mensalidades",
+    "Total de Mensalidades em Atraso",
+    "Valor Médio das Mensalidades em Atraso",
+    "Total de Acordos Atrasados",
+    "Média de Valores de Acordos Atrasados",
+    "Valor Total em Atraso",
 }
 
 FINANCE_AUDIT_COLUMNS = {
@@ -1882,6 +1899,28 @@ def _parcela_prioritaria(parcelas):
     return registro, data_parcela
 
 
+def _mensalidade_atual(parcelas, hoje):
+    if parcelas is None or parcelas.empty:
+        return None, None
+    validas = parcelas[parcelas["_data"].notna()].copy()
+    if validas.empty:
+        return None, None
+    referencia = pd.Timestamp(hoje)
+    atuais_futuras = validas[validas["_data"].dt.normalize().ge(referencia)]
+    if not atuais_futuras.empty:
+        registro = atuais_futuras.sort_values(
+            ["_data", "ID SGS"],
+            kind="stable",
+        ).iloc[0]
+    else:
+        registro = validas.sort_values(
+            ["_data", "ID SGS"],
+            ascending=[False, True],
+            kind="stable",
+        ).iloc[0]
+    return registro, registro["_data"].date()
+
+
 def _indice_sites_topologia_prioridades(sites):
     indices = {
         "aquiles": {},
@@ -1998,7 +2037,10 @@ def montar_prioridades_financeiras(
         )
         recorrentes = parcelas[parcelas.get("_tipo").eq(TOPO_RECURRING_TYPE)]
         acordos = parcelas[parcelas.get("_tipo").eq(TOPO_AGREEMENT_TYPE)]
-        mensalidade, vencimento_mensalidade = _parcela_prioritaria(recorrentes)
+        mensalidade, vencimento_mensalidade = _mensalidade_atual(
+            recorrentes,
+            hoje,
+        )
         acordo, vencimento_acordo = _parcela_prioritaria(acordos)
 
         if vencimento_mensalidade is None:
@@ -2016,6 +2058,24 @@ def montar_prioridades_financeiras(
             recorrentes.get("Status Atual").eq("Vencido")
         ]
         acordos_vencidos = acordos[acordos.get("Status Atual").eq("Vencido")]
+        quantidade_mensalidades_atrasadas = len(recorrentes_vencidas)
+        total_mensalidades_atrasadas = float(
+            recorrentes_vencidas.get("_valor", pd.Series(dtype=float)).sum()
+        )
+        media_mensalidades_atrasadas = (
+            total_mensalidades_atrasadas / quantidade_mensalidades_atrasadas
+            if quantidade_mensalidades_atrasadas
+            else 0.0
+        )
+        quantidade_acordos_atrasados = len(acordos_vencidos)
+        total_acordos_atrasados = float(
+            acordos_vencidos.get("_valor", pd.Series(dtype=float)).sum()
+        )
+        media_acordos_atrasados = (
+            total_acordos_atrasados / quantidade_acordos_atrasados
+            if quantidade_acordos_atrasados
+            else 0.0
+        )
         site_critico = _texto(site.get("SITE CRÍTICO")).casefold() in {
             "sim", "s", "true", "1"
         }
@@ -2056,19 +2116,24 @@ def montar_prioridades_financeiras(
             "Lista de Clientes": resumo_clientes["nomes"],
             "Vencimento da Mensalidade": vencimento_mensalidade,
             "Valor da Mensalidade Atual": valor_mensalidade,
+            "Total de Mensalidades em Atraso": total_mensalidades_atrasadas,
+            "Quantidade de Mensalidades em Atraso": quantidade_mensalidades_atrasadas,
+            "Valor Médio das Mensalidades em Atraso": media_mensalidades_atrasadas,
             "Tem Acordo": "Sim" if not acordos.empty else "Não",
             "Vencimento do Acordo": vencimento_acordo,
             "Valor da Parcela do Acordo": (
                 _numero(acordo.get("Subtotal")) if acordo is not None else 0.0
             ),
-            "Mensalidades Vencidas": len(recorrentes_vencidas),
-            "Valor das Mensalidades Vencidas": float(
-                recorrentes_vencidas.get("_valor", pd.Series(dtype=float)).sum()
+            "Total de Acordos Atrasados": total_acordos_atrasados,
+            "Quantidade de Parcelas de Acordos Atrasados": quantidade_acordos_atrasados,
+            "Média de Valores de Acordos Atrasados": media_acordos_atrasados,
+            "Valor Total em Atraso": (
+                total_mensalidades_atrasadas + total_acordos_atrasados
             ),
-            "Acordos Vencidos": len(acordos_vencidos),
-            "Valor dos Acordos Vencidos": float(
-                acordos_vencidos.get("_valor", pd.Series(dtype=float)).sum()
-            ),
+            "Mensalidades Vencidas": quantidade_mensalidades_atrasadas,
+            "Valor das Mensalidades Vencidas": total_mensalidades_atrasadas,
+            "Acordos Vencidos": quantidade_acordos_atrasados,
+            "Valor dos Acordos Vencidos": total_acordos_atrasados,
             "Criticidade": criticidade,
             "Importância": _importancia_prioridade(prioridades, chave),
             "Possui Vencidos": "Sim" if possui_vencidos else "Não",

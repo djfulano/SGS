@@ -372,8 +372,15 @@ class SiteCancellationServiceTests(unittest.TestCase):
         process["site_activities"][0]["status"] = "Em andamento"
         process["site_activities"][0]["due_date"] = "2026-08-01"
         metrics = service.process_metrics([process], today=date(2026, 8, 7))
-        self.assertEqual(metrics["results"]["Em andamento"]["count"], 1)
-        self.assertEqual(metrics["results"]["Em andamento"]["revenue"], 500.0)
+        self.assertEqual(metrics["results"]["Em andamento"]["count"], 0)
+        self.assertEqual(
+            metrics["results"]["Cancelamentos em andamento"]["count"],
+            1,
+        )
+        self.assertEqual(
+            metrics["results"]["Cancelamentos em andamento"]["revenue"],
+            500.0,
+        )
         self.assertEqual(metrics["activity_statuses"]["Em andamento"], 1)
         self.assertEqual(metrics["activity_statuses"]["Não iniciado"], 2)
         self.assertEqual(metrics["overdue_activities"], 1)

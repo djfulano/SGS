@@ -137,8 +137,8 @@ class FinancePrioritiesTest(unittest.TestCase):
             site_a["Site"],
             "SITE_A_POP_100_IP - 100 / SITE A - 12345",
         )
-        self.assertEqual(site_a["Vencimento da Mensalidade"], date(2026, 7, 1))
-        self.assertEqual(site_a["Valor da Mensalidade Atual"], 100.0)
+        self.assertEqual(site_a["Vencimento da Mensalidade"], date(2026, 8, 1))
+        self.assertEqual(site_a["Valor da Mensalidade Atual"], 120.0)
         self.assertEqual(site_a["Tem Acordo"], "Sim")
         self.assertEqual(site_a["Vencimento do Acordo"], date(2026, 6, 1))
         self.assertEqual(site_a["Valor da Parcela do Acordo"], 50.0)
@@ -146,6 +146,16 @@ class FinancePrioritiesTest(unittest.TestCase):
         self.assertEqual(site_a["Valor das Mensalidades Vencidas"], 100.0)
         self.assertEqual(site_a["Acordos Vencidos"], 1)
         self.assertEqual(site_a["Valor dos Acordos Vencidos"], 50.0)
+        self.assertEqual(site_a["Total de Mensalidades em Atraso"], 100.0)
+        self.assertEqual(site_a["Quantidade de Mensalidades em Atraso"], 1)
+        self.assertEqual(site_a["Valor Médio das Mensalidades em Atraso"], 100.0)
+        self.assertEqual(site_a["Total de Acordos Atrasados"], 50.0)
+        self.assertEqual(
+            site_a["Quantidade de Parcelas de Acordos Atrasados"],
+            1,
+        )
+        self.assertEqual(site_a["Média de Valores de Acordos Atrasados"], 50.0)
+        self.assertEqual(site_a["Valor Total em Atraso"], 150.0)
         self.assertEqual(site_a["Criticidade"], "Bloqueia")
         self.assertEqual(site_a["Importância"], "Alta")
         self.assertEqual(site_a["Microsiga"], "012345")
@@ -155,7 +165,7 @@ class FinancePrioritiesTest(unittest.TestCase):
         self.assertEqual(site_a["Passivo de acordos"], 110.0)
         self.assertEqual(
             site_a["Data Vencimento Mensalidade"],
-            date(2026, 7, 1),
+            date(2026, 8, 1),
         )
         self.assertEqual(
             site_a["Data Vencimento Acordo"],
@@ -184,6 +194,40 @@ class FinancePrioritiesTest(unittest.TestCase):
         self.assertEqual(set(resultado["Chave Site"]), {"aquiles:100", "aquiles:200"})
         self.assertEqual(int(resultado["Mensalidades Vencidas"].sum()), 0)
         self.assertEqual(int(resultado["Acordos Vencidos"].sum()), 0)
+        self.assertEqual(float(resultado["Valor Médio das Mensalidades em Atraso"].sum()), 0.0)
+        self.assertEqual(float(resultado["Média de Valores de Acordos Atrasados"].sum()), 0.0)
+        self.assertEqual(float(resultado["Valor Total em Atraso"].sum()), 0.0)
+
+    def test_mensalidade_atual_usa_vencida_mais_recente_sem_parcela_futura(self):
+        pagamentos = pd.DataFrame([
+            {
+                "ID SGS": "R1",
+                "Status": "Pendente",
+                "Microsiga": "012345",
+                "Tipo de despesa": "RECORRENTE",
+                "Data de vencimento": "2026-05-01",
+                "Subtotal": 100.0,
+                "Site localizado": "Sim",
+            },
+            {
+                "ID SGS": "R2",
+                "Status": "Pendente",
+                "Microsiga": "012345",
+                "Tipo de despesa": "RECORRENTE",
+                "Data de vencimento": "2026-07-01",
+                "Subtotal": 130.0,
+                "Site localizado": "Sim",
+            },
+        ])
+        resultado = fs.montar_prioridades_financeiras(
+            cadastro_sites=self.cadastro(),
+            pagamentos=pagamentos,
+            prioridades={"sites": {}},
+            hoje=date(2026, 8, 11),
+        )
+        site_a = resultado.set_index("Chave Site").loc["aquiles:100"]
+        self.assertEqual(site_a["Data Vencimento Mensalidade"], date(2026, 7, 1))
+        self.assertEqual(site_a["Valor da Mensalidade Atual"], 130.0)
 
     def test_salva_importancia_com_auditoria_e_recarrega(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -217,11 +261,16 @@ class FinancePrioritiesTest(unittest.TestCase):
             "Microsiga": "012345",
             "Custo mensal": 1234.56,
             "Receita (Total com sites filhos)": 2000.0,
-            "Passivo de acordos": 78.9,
-            "Passivo de mensalidades": 100.0,
             "Data Vencimento Mensalidade": date(2026, 8, 10),
+            "Valor da Mensalidade Atual": 900.0,
+            "Total de Mensalidades em Atraso": 300.0,
+            "Quantidade de Mensalidades em Atraso": 3,
+            "Valor Médio das Mensalidades em Atraso": 100.0,
             "Data Vencimento Acordo": date(2026, 8, 20),
-            "Quantidade de parcelas em atraso": 3,
+            "Total de Acordos Atrasados": 150.0,
+            "Quantidade de Parcelas de Acordos Atrasados": 2,
+            "Média de Valores de Acordos Atrasados": 75.0,
+            "Valor Total em Atraso": 450.0,
             "Criticidade": "Bloqueia",
             "Importância": "Alta",
             "Lista de Clientes": "Cliente A, Cliente B",
@@ -239,13 +288,20 @@ class FinancePrioritiesTest(unittest.TestCase):
         )
         acordos = planilha.cell(
             row=2,
-            column=cabecalhos["Passivo de acordos"],
+            column=cabecalhos["Total de Acordos Atrasados"],
         )
         self.assertEqual(custo.data_type, "n")
         self.assertEqual(custo.value, 1234.56)
         self.assertIn("R$", custo.number_format)
         self.assertEqual(acordos.data_type, "n")
         self.assertIn("R$", acordos.number_format)
+        self.assertIn(
+            "R$",
+            planilha.cell(
+                row=2,
+                column=cabecalhos["Valor Total em Atraso"],
+            ).number_format,
+        )
         vencimento_mensalidade = planilha.cell(
             row=2,
             column=cabecalhos["Data Vencimento Mensalidade"],
@@ -261,9 +317,16 @@ class FinancePrioritiesTest(unittest.TestCase):
         self.assertEqual(
             planilha.cell(
                 row=2,
-                column=cabecalhos["Quantidade de parcelas em atraso"],
+                column=cabecalhos["Quantidade de Mensalidades em Atraso"],
             ).value,
             3,
+        )
+        self.assertEqual(
+            planilha.cell(
+                row=2,
+                column=cabecalhos["Quantidade de Parcelas de Acordos Atrasados"],
+            ).value,
+            2,
         )
         self.assertEqual(
             list(cabecalhos),
@@ -271,6 +334,8 @@ class FinancePrioritiesTest(unittest.TestCase):
         )
         self.assertNotIn("Chave Site", cabecalhos)
         self.assertNotIn("Possui Vencidos", cabecalhos)
+        self.assertNotIn("Passivo de acordos", cabecalhos)
+        self.assertNotIn("Passivo de mensalidades", cabecalhos)
 
     def test_exportacao_preserva_valor_restrito_como_texto(self):
         dados = pd.DataFrame([{

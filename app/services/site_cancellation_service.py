@@ -777,6 +777,8 @@ def _client_result_group(client):
         return "Migrados"
     if status in {"Cancelado", "Desistência do cliente"}:
         return "Cancelados"
+    if status == "Cancelamento em andamento":
+        return "Cancelamentos em andamento"
     if status == "Sem solução":
         return "Sem solução"
     return "Em andamento"
@@ -797,7 +799,13 @@ def process_metrics(processes, today=None):
 
     results = {
         label: {"count": 0, "revenue": 0.0}
-        for label in ["Em andamento", "Migrados", "Cancelados", "Sem solução"]
+        for label in [
+            "Em andamento",
+            "Migrados",
+            "Cancelados",
+            "Cancelamentos em andamento",
+            "Sem solução",
+        ]
     }
     for _updated_at, client in latest_clients.values():
         group = _client_result_group(client)

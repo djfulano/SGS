@@ -1,5 +1,17 @@
 # Histórico de versões
 
+## 1.4.7
+
+- Financeiro > Prioridades passa a detalhar totais, quantidades e médias das mensalidades e parcelas de acordos em atraso.
+- A tabela inclui o valor da mensalidade atual e o valor total vencido, mantendo os passivos com parcelas futuras apenas para compatibilidade interna.
+- A mensalidade atual prioriza a próxima parcela recorrente e usa a vencida mais recente ou a locação como fallback.
+- A exportação Excel mantém valores numéricos formatados em Reais e quantidades inteiras.
+
+## 1.4.6
+
+- O Resumo de Cancelamento de Sites substitui o indicador Sem solução por Cancelamentos em andamento.
+- Clientes em cancelamento deixam de ser somados no indicador genérico Em andamento e passam a ter quantidade e receita mensal próprias.
+
 ## 1.4.5
 
 - Cancelamento de Sites passa a ter subabas separadas para Resumo, Processos, Clientes e Sites.
