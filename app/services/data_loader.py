@@ -126,6 +126,7 @@ def aplicar_cadastro_topos(sites, df_topos):
             site.relacionamento = topo.get("Relacionamento") or ""
             site.favorecido = topo.get("Favorecido") or ""
             site.contrato = topo.get("Contrato") or ""
+            site.qtdo = float(topo.get("Qtdo") or 0)
             site.categoria = topo.get("Categoria") or ""
             site.perfil = topo.get("Perfil") or ""
             site.endereco = topo.get("Endereco") or ""
@@ -169,6 +170,7 @@ def aplicar_cadastro_topos(sites, df_topos):
             site.relacionamento = ""
             site.favorecido = ""
             site.contrato = ""
+            site.qtdo = 0.0
             site.categoria = ""
             site.perfil = ""
             site.endereco = ""

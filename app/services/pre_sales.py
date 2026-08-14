@@ -58,6 +58,26 @@ def _normalizar_codigo(valor):
     return re.sub(r"\D+", "", texto) or texto.casefold()
 
 
+def _quantidade(valor):
+    if not _texto(valor):
+        return None
+
+    numero = _numero(valor)
+    return int(numero) if numero.is_integer() else numero
+
+
+def formatar_quantidade_pre_venda(valor):
+    if valor is None or _texto(valor) == "":
+        return "Não informado"
+
+    numero = _numero(valor)
+
+    if numero.is_integer():
+        return str(int(numero))
+
+    return f"{numero:g}".replace(".", ",")
+
+
 def _indices_sites_topologia(sites):
     indices = {
         "aquiles": {},
@@ -121,6 +141,17 @@ def montar_opcoes_sites_pre_venda(sites, cadastro=None):
                 "microsiga": _texto(linha.get("CÓDIGO MICROSIGA")),
                 "status_cadastro": _texto(linha.get("Status")),
                 "tipo": _texto(linha.get("TIPO")),
+                "tipo_contrato": _texto(linha.get("CONTRATO")),
+                "quantidade": _quantidade(linha.get("QTDO")),
+                "site_critico": _normalizar(
+                    linha.get("SITE CRÍTICO")
+                ) in {"sim", "s", "true", "1"},
+                "tipo_criticidade": _texto(
+                    linha.get("TIPO CRITICIDADE")
+                ),
+                "restricao": _texto(linha.get("RESTRIÇÃO")),
+                "detalhe": _texto(linha.get("Detalhe")),
+                "observacao": _texto(linha.get("OBSERVAÇÃO:")),
                 "custo_direto": sum(
                     _numero(linha.get(coluna))
                     for coluna in ["LOCAÇÃO", "ENERGIA", "OUTROS"]
@@ -147,6 +178,15 @@ def montar_opcoes_sites_pre_venda(sites, cadastro=None):
                 getattr(site, "status_cadastro", "")
             ),
             "tipo": _texto(getattr(site, "tipo", "")),
+            "tipo_contrato": _texto(getattr(site, "contrato", "")),
+            "quantidade": _quantidade(getattr(site, "qtdo", None)),
+            "site_critico": bool(getattr(site, "site_critico", False)),
+            "tipo_criticidade": _texto(
+                getattr(site, "tipo_criticidade", "")
+            ),
+            "restricao": _texto(getattr(site, "restricao", "")),
+            "detalhe": _texto(getattr(site, "detalhe", "")),
+            "observacao": _texto(getattr(site, "observacao", "")),
             "custo_direto": custo_site(site),
             "site_topologia": site,
         }
@@ -244,6 +284,39 @@ def identificar_radio_principal(site, radios=None, catalogo=None):
     return "Não localizado"
 
 
+def _identificacao_site(site):
+    if site is None:
+        return None
+
+    return {
+        "nome": _texto(getattr(site, "nome", "")),
+        "codigo_topos": _texto(getattr(site, "codigo_topos", "")),
+        "nome_cadastro": _texto(getattr(site, "nome_cadastro", "")),
+        "microsiga": _texto(getattr(site, "microsiga", "")),
+    }
+
+
+def _tipo_criticidade(registro):
+    if not registro.get("site_critico"):
+        return "Não crítico"
+
+    return _texto(registro.get("tipo_criticidade")) or "Crítico"
+
+
+def _dados_cadastrais_resumo(registro, site):
+    return {
+        "site_pai": _identificacao_site(getattr(site, "pai", None)),
+        "tipo_contrato": (
+            _texto(registro.get("tipo_contrato")) or "Não informado"
+        ),
+        "quantidade": registro.get("quantidade"),
+        "tipo_criticidade": _tipo_criticidade(registro),
+        "restricao": _texto(registro.get("restricao")) or "Não informado",
+        "detalhe": _texto(registro.get("detalhe")) or "Não informado",
+        "observacao": _texto(registro.get("observacao")) or "Não informado",
+    }
+
+
 def montar_resumo_pre_venda(
     registro,
     catalogo_produtos=None,
@@ -251,9 +324,11 @@ def montar_resumo_pre_venda(
 ):
     site = registro.get("site_topologia")
     status = _texto(registro.get("status_cadastro")) or "Não informado"
+    dados_cadastrais = _dados_cadastrais_resumo(registro, site)
 
     if site is None:
         return {
+            **dados_cadastrais,
             "status": status,
             "clientes_total": 0,
             "receita_total": 0.0,
@@ -293,6 +368,7 @@ def montar_resumo_pre_venda(
     radios = listar_radios_infraestrutura_site(site, catalogo_equipamentos)
 
     return {
+        **dados_cadastrais,
         "status": status,
         "clientes_total": clientes_diretos + clientes_indiretos,
         "receita_total": receita_direta + receita_indireta,

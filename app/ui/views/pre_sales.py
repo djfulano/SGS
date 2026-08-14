@@ -1,6 +1,7 @@
 import streamlit as st
 
 from app.auth import has_permission
+from app.services.pre_sales import formatar_quantidade_pre_venda
 from app.services.pre_sales import montar_opcoes_sites_pre_venda
 from app.services.pre_sales import montar_resumo_pre_venda
 from app.services.site_metrics import formatar_banda_mbps
@@ -30,6 +31,41 @@ def _moeda(valor, permissao):
         return "Restrito"
 
     return _formatar_moeda(valor)
+
+
+def montar_texto_resumo_pre_venda(
+    rotulo_site,
+    resumo,
+    valores_formatados,
+):
+    site_pai = valores_formatados["site_pai"]
+
+    return "\n".join([
+        f"Site\t{rotulo_site}",
+        f"Site Pai\t{site_pai}",
+        f"Status\t{resumo['status']}",
+        f"Tipo de contrato\t{resumo['tipo_contrato']}",
+        f"Quantidade\t{valores_formatados['quantidade']}",
+        f"Tipo de Criticidade\t{resumo['tipo_criticidade']}",
+        f"Restrição\t{resumo['restricao']}",
+        f"Detalhe\t{resumo['detalhe']}",
+        f"Observação\t{resumo['observacao']}",
+        f"Total de clientes\t{resumo['clientes_total']}",
+        f"Total de receita\t{valores_formatados['receita_total']}",
+        f"Sites filhos\t{resumo['sites_filhos']}",
+        f"Clientes diretos\t{resumo['clientes_diretos']}",
+        f"Receita direta\t{valores_formatados['receita_direta']}",
+        f"Clientes indiretos\t{resumo['clientes_indiretos']}",
+        f"Receita indireta\t{valores_formatados['receita_indireta']}",
+        f"Custo direto\t{valores_formatados['custo_direto']}",
+        f"Custo indireto\t{valores_formatados['custo_indireto']}",
+        f"Custo total\t{valores_formatados['custo_total']}",
+        f"Maior banda Telecom ativa\t{valores_formatados['maior_banda']}",
+        f"Somatória das bandas ativas\t{valores_formatados['soma_banda']}",
+        f"Produtos a partir de 100 Mbps\t{resumo['produtos_100_mbps']}",
+        f"Rádio Principal\t{resumo['radio_principal']}",
+        f"Rádios instalados\t{resumo['radios_instalados']}",
+    ])
 
 
 def mostrar_pre_venda(sites):
@@ -89,6 +125,12 @@ def mostrar_pre_venda(sites):
         resumo["custo_total"],
         "visualizar_valores_custos",
     )
+    site_pai = (
+        rotulo_busca_site(resumo["site_pai"])
+        if resumo["site_pai"]
+        else "Não localizado"
+    )
+    quantidade = formatar_quantidade_pre_venda(resumo["quantidade"])
 
     st.subheader(rotulos[chave_site])
 
@@ -121,25 +163,49 @@ def mostrar_pre_venda(sites):
     col1.metric("Rádio Principal", resumo["radio_principal"])
     col2.metric("Rádios instalados", resumo["radios_instalados"])
 
-    texto = "\n".join([
-        f"Site\t{rotulos[chave_site]}",
-        f"Status\t{resumo['status']}",
-        f"Total de clientes\t{resumo['clientes_total']}",
-        f"Total de receita\t{receita_total}",
-        f"Sites filhos\t{resumo['sites_filhos']}",
-        f"Clientes diretos\t{resumo['clientes_diretos']}",
-        f"Receita direta\t{receita_direta}",
-        f"Clientes indiretos\t{resumo['clientes_indiretos']}",
-        f"Receita indireta\t{receita_indireta}",
-        f"Custo direto\t{custo_direto}",
-        f"Custo indireto\t{custo_indireto}",
-        f"Custo total\t{custo_total}",
-        f"Maior banda Telecom ativa\t{maior_banda}",
-        f"Somatória das bandas ativas\t{soma_banda}",
-        f"Produtos a partir de 100 Mbps\t{resumo['produtos_100_mbps']}",
-        f"Rádio Principal\t{resumo['radio_principal']}",
-        f"Rádios instalados\t{resumo['radios_instalados']}",
-    ])
+    st.markdown("**Cadastro e contrato**")
+    col1, col2, col3, col4 = st.columns([2, 1, 0.7, 1])
+    with col1:
+        st.caption("Site Pai")
+        st.markdown(f"**{site_pai}**")
+    with col2:
+        st.caption("Tipo de contrato")
+        st.markdown(f"**{resumo['tipo_contrato']}**")
+    with col3:
+        st.caption("Quantidade")
+        st.markdown(f"**{quantidade}**")
+    with col4:
+        st.caption("Tipo de Criticidade")
+        st.markdown(f"**{resumo['tipo_criticidade']}**")
+
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.caption("Restrição")
+        st.write(resumo["restricao"])
+    with col2:
+        st.caption("Detalhe")
+        st.write(resumo["detalhe"])
+    with col3:
+        st.caption("Observação")
+        st.write(resumo["observacao"])
+
+    valores_formatados = {
+        "site_pai": site_pai,
+        "quantidade": quantidade,
+        "receita_total": receita_total,
+        "receita_direta": receita_direta,
+        "receita_indireta": receita_indireta,
+        "custo_direto": custo_direto,
+        "custo_indireto": custo_indireto,
+        "custo_total": custo_total,
+        "maior_banda": maior_banda,
+        "soma_banda": soma_banda,
+    }
+    texto = montar_texto_resumo_pre_venda(
+        rotulos[chave_site],
+        resumo,
+        valores_formatados,
+    )
     mostrar_botao_copiar_texto(
         texto,
         rotulo="Copiar resumo",

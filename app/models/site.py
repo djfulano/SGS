@@ -52,6 +52,8 @@ class Site:
 
         self.contrato = ""
 
+        self.qtdo = 0.0
+
         self.categoria = ""
 
         self.perfil = ""

@@ -1,5 +1,11 @@
 # Histórico de versões
 
+## 1.4.9
+
+- O resumo de Pré-Venda passa a mostrar Site Pai, tipo de contrato, quantidade e tipo de criticidade.
+- Restrição, detalhe e observação são exibidos em campos próprios e incluídos no conteúdo de Copiar resumo.
+- A quantidade contratual da coluna QTDO passa a integrar o modelo carregado dos sites.
+
 ## 1.4.8
 
 - Criado o módulo Pré-Venda com busca padronizada por site e resumo comercial, técnico e financeiro.

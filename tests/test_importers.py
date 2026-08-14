@@ -418,7 +418,8 @@ class ImportersTest(unittest.TestCase):
         cadastro = pd.DataFrame([{
             "Codigo": "94500",
             "SNMPc": "WIN_POP_94500_IP",
-            "Nome Cadastro": "CASTELO DE WINDSOR"
+            "Nome Cadastro": "CASTELO DE WINDSOR",
+            "Qtdo": 3,
         }])
 
         aplicar_cadastro_topos(sites, cadastro)
@@ -434,6 +435,7 @@ class ImportersTest(unittest.TestCase):
         self.assertEqual(equipamentos[0]["Site"], "WIN_POP_94500_IP")
         self.assertEqual(equipamentos[0]["Arvore"].split(" > ")[0], "WIN_POP_94500_IP")
         self.assertIsNone(sites["WIN_POP_94500_IP"].pai)
+        self.assertEqual(sites["WIN_POP_94500_IP"].qtdo, 3)
 
     @unittest.skipIf(
         consolidar_sites_duplicados_cadastro is None,
