@@ -1,6 +1,7 @@
 import streamlit as st
 
 from app.auth import has_permission
+from app.services.feasibility_history import cached_site_activity_metrics
 from app.services.pre_sales import formatar_quantidade_pre_venda
 from app.services.pre_sales import montar_opcoes_sites_pre_venda
 from app.services.pre_sales import montar_resumo_pre_venda
@@ -65,6 +66,9 @@ def montar_texto_resumo_pre_venda(
         f"Produtos a partir de 100 Mbps\t{resumo['produtos_100_mbps']}",
         f"Rádio Principal\t{resumo['radio_principal']}",
         f"Rádios instalados\t{resumo['radios_instalados']}",
+        f"Período das viabilidades\t{valores_formatados['periodo_viabilidades']}",
+        f"Viabilidades nos últimos 12 meses\t{resumo['viabilidades_12_meses']}",
+        f"Vistorias nos últimos 12 meses\t{resumo['vistorias_12_meses']}",
     ])
 
 
@@ -95,6 +99,17 @@ def mostrar_pre_venda(sites):
 
     registro = opcoes[chave_site]
     resumo = montar_resumo_pre_venda(registro)
+    historico = cached_site_activity_metrics(sites)
+    atividade = historico["sites"].get(
+        registro.get("nome", ""),
+        {"viabilidades": 0, "vistorias": 0},
+    )
+    resumo["viabilidades_12_meses"] = atividade["viabilidades"]
+    resumo["vistorias_12_meses"] = atividade["vistorias"]
+    periodo_viabilidades = (
+        f"{historico['inicio'][8:10]}/{historico['inicio'][5:7]}/{historico['inicio'][:4]}"
+        f" a {historico['fim'][8:10]}/{historico['fim'][5:7]}/{historico['fim'][:4]}"
+    )
     maior_banda = (
         formatar_banda_mbps(resumo["maior_banda_mbps"])
         if resumo["maior_banda_mbps"]
@@ -163,6 +178,17 @@ def mostrar_pre_venda(sites):
     col1.metric("Rádio Principal", resumo["radio_principal"])
     col2.metric("Rádios instalados", resumo["radios_instalados"])
 
+    col1, col2 = st.columns(2)
+    col1.metric(
+        "Viabilidades nos últimos 12 meses",
+        resumo["viabilidades_12_meses"],
+    )
+    col2.metric(
+        "Vistorias nos últimos 12 meses",
+        resumo["vistorias_12_meses"],
+    )
+    st.caption(f"Período considerado: {periodo_viabilidades}")
+
     st.markdown("**Cadastro e contrato**")
     col1, col2, col3, col4 = st.columns([2, 1, 0.7, 1])
     with col1:
@@ -200,6 +226,7 @@ def mostrar_pre_venda(sites):
         "custo_total": custo_total,
         "maior_banda": maior_banda,
         "soma_banda": soma_banda,
+        "periodo_viabilidades": periodo_viabilidades,
     }
     texto = montar_texto_resumo_pre_venda(
         rotulos[chave_site],

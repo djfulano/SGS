@@ -217,6 +217,8 @@ class PreSalesTest(unittest.TestCase):
             "produtos_100_mbps": 1,
             "radio_principal": "PowerBeam",
             "radios_instalados": 2,
+            "viabilidades_12_meses": 7,
+            "vistorias_12_meses": 3,
         }
         valores = {
             "site_pai": "PAI - 100 / Site Pai - 900100",
@@ -229,6 +231,7 @@ class PreSalesTest(unittest.TestCase):
             "custo_total": "R$ 100,00",
             "maior_banda": "100 Mbps",
             "soma_banda": "100 Mbps",
+            "periodo_viabilidades": "14/08/2025 a 14/08/2026",
         }
 
         texto = montar_texto_resumo_pre_venda("FILHO", resumo, valores)
@@ -240,6 +243,15 @@ class PreSalesTest(unittest.TestCase):
         self.assertIn("Restrição\tNÃO", texto)
         self.assertIn("Detalhe\tDetalhe operacional", texto)
         self.assertIn("Observação\tObservação contratual", texto)
+        self.assertIn(
+            "Viabilidades nos últimos 12 meses\t7",
+            texto,
+        )
+        self.assertIn("Vistorias nos últimos 12 meses\t3", texto)
+        self.assertIn(
+            "Período das viabilidades\t14/08/2025 a 14/08/2026",
+            texto,
+        )
 
 
 if __name__ == "__main__":

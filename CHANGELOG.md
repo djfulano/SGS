@@ -1,5 +1,11 @@
 # Histórico de versões
 
+## 1.4.10
+
+- O resumo de Pré-Venda passa a mostrar as viabilidades e vistorias que apontaram para o site nos últimos 12 meses.
+- As contagens usam o histórico conciliado, evitam repetição do mesmo site na solicitação e integram o conteúdo de Copiar resumo.
+- A agregação do histórico é cacheada por versão dos dados e data para preservar o desempenho da consulta.
+
 ## 1.4.9
 
 - O resumo de Pré-Venda passa a mostrar Site Pai, tipo de contrato, quantidade e tipo de criticidade.

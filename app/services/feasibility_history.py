@@ -554,6 +554,7 @@ def save_import(preview):
     )
     _load_records_cached.cache_clear()
     _records_dataframe_cached.cache_clear()
+    _site_activity_metrics_cached.cache_clear()
     from app.services.feasibility_opportunities import synchronize_addresses
     synchronize_addresses(
         preview["merged_records"],
@@ -655,6 +656,115 @@ def _records_dataframe_cached(version, site_snapshot):
 def cached_records_dataframe(sites=None):
     """Return the shared read-only history frame for the current data version."""
     return _records_dataframe_cached(records_version(), _site_snapshot(sites))
+
+
+def site_activity_metrics_12_months(df, today=None):
+    if df is None or df.empty or "Sites localizados" not in df.columns:
+        return site_activity_metrics_from_records_12_months([], today=today)
+
+    records = []
+    for row in df.to_dict(orient="records"):
+        site_names = {
+            _text(name)
+            for name in _text(row.get("Sites localizados")).split(";")
+            if _text(name)
+        }
+        date_value = row.get("Data Início")
+        if not _text(date_value):
+            date_value = row.get("_Data Início TS")
+        records.append({
+            "ID SGS": row.get("ID SGS"),
+            "Data Início": date_value,
+            "Classificação": row.get("Classificação"),
+            "Condições": row.get("Condições"),
+            "Sites Candidatos": [{"Site": name} for name in site_names],
+        })
+    return site_activity_metrics_from_records_12_months(records, today=today)
+
+
+def site_activity_metrics_from_records_12_months(records, sites=None, today=None):
+    end = pd.Timestamp(today or date.today()).normalize().date()
+    start = (pd.Timestamp(end) - pd.DateOffset(months=12)).date()
+    result = {
+        "inicio": start.isoformat(),
+        "fim": end.isoformat(),
+        "sites": {},
+    }
+    indexes = None
+
+    for record in records or []:
+        date_text = _text(record.get("Data Início"))
+        try:
+            record_date = date.fromisoformat(date_text[:10])
+        except (TypeError, ValueError):
+            continue
+        if record_date < start or record_date > end:
+            continue
+
+        candidates = record.get("Sites Candidatos") or []
+        site_names = {
+            _text(candidate.get("Site"))
+            for candidate in candidates
+            if _text(candidate.get("Site"))
+        }
+        if not site_names and record.get("Sites localizados"):
+            site_names = {
+                _text(name)
+                for name in _text(record.get("Sites localizados")).split(";")
+                if _text(name)
+            }
+        if not site_names and record.get("Caminho"):
+            indexes = indexes or _site_indexes(sites)
+            site_names = {
+                _text(candidate.get("Site"))
+                for candidate in resolve_candidates(
+                    record.get("Caminho", ""),
+                    indexes=indexes,
+                )
+                if _text(candidate.get("Site"))
+            }
+        if not site_names:
+            continue
+
+        viable = record.get("Classificação") in {
+            "Viável direto",
+            "Viável condicional",
+        }
+        conditions = record.get("Condições") or []
+        if not isinstance(conditions, (list, tuple, set)):
+            conditions = str(conditions).split(";")
+        inspection = any(
+            normalize_text(condition) == "VISTORIA"
+            for condition in conditions
+        )
+
+        for site_name in site_names:
+            metrics = result["sites"].setdefault(
+                site_name,
+                {"viabilidades": 0, "vistorias": 0},
+            )
+            metrics["viabilidades"] += int(viable)
+            metrics["vistorias"] += int(inspection)
+
+    return result
+
+
+@lru_cache(maxsize=8)
+def _site_activity_metrics_cached(version, site_snapshot, end_date):
+    return site_activity_metrics_from_records_12_months(
+        _load_records_cached(version),
+        sites=_sites_from_snapshot(site_snapshot),
+        today=end_date,
+    )
+
+
+def cached_site_activity_metrics(sites=None, today=None):
+    end = pd.Timestamp(today or date.today()).normalize().date().isoformat()
+    return _site_activity_metrics_cached(
+        records_version(),
+        _site_snapshot(sites),
+        end,
+    )
 
 
 def load_record(record_id):

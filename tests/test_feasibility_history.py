@@ -196,6 +196,105 @@ class FeasibilityHistoryTest(unittest.TestCase):
         )
         self.assertEqual(int(ranking.iloc[0]["Solicitações viáveis"]), 2)
 
+    def test_site_activity_metrics_uses_rolling_period_and_deduplicates_site(self):
+        frame = pd.DataFrame([
+            {
+                "ID SGS": "1",
+                "Projeto": "P1",
+                "Data Início": "2026-08-01",
+                "Sites localizados": "AAA_POP_12345_IP; AAA_POP_12345_IP",
+                "Classificação": "Viável direto",
+                "Condições": "",
+            },
+            {
+                "ID SGS": "2",
+                "Projeto": "P1",
+                "Data Início": "2026-07-01",
+                "Sites localizados": "AAA_POP_12345_IP; BBB_BH_67890_IP",
+                "Classificação": "Viável condicional",
+                "Condições": "Custo adicional; Vistoria",
+            },
+            {
+                "ID SGS": "3",
+                "Projeto": "P2",
+                "Data Início": "2026-06-01",
+                "Sites localizados": "AAA_POP_12345_IP",
+                "Classificação": "Não viável",
+                "Condições": "Vistoria",
+            },
+            {
+                "ID SGS": "4",
+                "Projeto": "P3",
+                "Data Início": "2025-07-01",
+                "Sites localizados": "AAA_POP_12345_IP",
+                "Classificação": "Viável direto",
+                "Condições": "Vistoria",
+            },
+            {
+                "ID SGS": "5",
+                "Projeto": "P4",
+                "Data Início": "inválida",
+                "Sites localizados": "AAA_POP_12345_IP",
+                "Classificação": "Viável direto",
+                "Condições": "Vistoria",
+            },
+        ])
+
+        metrics = fh.site_activity_metrics_12_months(
+            frame,
+            today="2026-08-14",
+        )
+
+        self.assertEqual(metrics["inicio"], "2025-08-14")
+        self.assertEqual(metrics["fim"], "2026-08-14")
+        self.assertEqual(
+            metrics["sites"]["AAA_POP_12345_IP"],
+            {"viabilidades": 2, "vistorias": 2},
+        )
+        self.assertEqual(
+            metrics["sites"]["BBB_BH_67890_IP"],
+            {"viabilidades": 1, "vistorias": 1},
+        )
+
+    def test_site_activity_metrics_returns_empty_site_map(self):
+        metrics = fh.site_activity_metrics_12_months(
+            pd.DataFrame(),
+            today="2026-08-14",
+        )
+
+        self.assertEqual(metrics["sites"], {})
+
+    def test_site_activity_metrics_from_records_uses_stored_candidates(self):
+        records = [
+            {
+                "ID SGS": "1",
+                "Data Início": "2026-08-01",
+                "Classificação": "Viável condicional",
+                "Condições": ["Vistoria"],
+                "Sites Candidatos": [
+                    {"Site": "AAA_POP_12345_IP"},
+                    {"Site": "AAA_POP_12345_IP"},
+                ],
+            },
+            {
+                "ID SGS": "2",
+                "Data Início": "2025-01-01",
+                "Classificação": "Viável direto",
+                "Condições": [],
+                "Sites Candidatos": [{"Site": "AAA_POP_12345_IP"}],
+            },
+        ]
+
+        metrics = fh.site_activity_metrics_from_records_12_months(
+            records,
+            today="2026-08-14",
+        )
+
+        self.assertEqual(
+            metrics["sites"]["AAA_POP_12345_IP"],
+            {"viabilidades": 1, "vistorias": 1},
+        )
+
     def test_export_hides_proposal_values_without_permission(self):
         frame = pd.DataFrame([{
             "Projeto": "1",
