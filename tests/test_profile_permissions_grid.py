@@ -108,6 +108,14 @@ class ProfilePermissionsGridTest(unittest.TestCase):
             grupos.index("Suporte")
         )
         self.assertLess(
+            grupos.index("Suporte"),
+            grupos.index("Pré-Venda")
+        )
+        self.assertLess(
+            grupos.index("Pré-Venda"),
+            grupos.index("Viabilidade")
+        )
+        self.assertLess(
             grupos.index("Viabilidade"),
             grupos.index("Cancelamento de Sites")
         )

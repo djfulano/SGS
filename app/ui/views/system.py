@@ -475,6 +475,7 @@ ORDEM_GRUPOS_PERMISSAO = {
     "Análises e Conciliação": 60,
     "Equipamentos": 70,
     "Suporte": 80,
+    "Pré-Venda": 82,
     "Viabilidade": 85,
     "Cancelamento de Sites": 87,
     "Financeiro": 89,

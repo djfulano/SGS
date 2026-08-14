@@ -1,5 +1,12 @@
 # Histórico de versões
 
+## 1.4.8
+
+- Criado o módulo Pré-Venda com busca padronizada por site e resumo comercial, técnico e financeiro.
+- O resumo apresenta clientes, receitas, custos e bandas do site e de todos os descendentes, respeitando as permissões de valores.
+- Rádios de infraestrutura passam a ser contabilizados pelo catálogo de equipamentos, com identificação do rádio principal pelo enlace com o site pai.
+- Sites existentes somente no cadastro também ficam disponíveis para consulta, mesmo sem estrutura correspondente no SNMPc.
+
 ## 1.4.7
 
 - Financeiro > Prioridades passa a detalhar totais, quantidades e médias das mensalidades e parcelas de acordos em atraso.

@@ -1,3 +1,10 @@
+import re
+
+import pandas as pd
+
+from app.services.product_catalog import infer_product_fields
+
+
 def receita_site(site):
 
     return sum(
@@ -125,4 +132,146 @@ def montar_resumo_selecao_sites(selecionados, usados):
         "custo_direto": custo_direto,
         "custo_indireto": custo_total - custo_direto,
         "custo_total": custo_total
+    }
+
+
+def normalizar_velocidade_mbps(valor):
+    if valor is None:
+        return None
+
+    try:
+        if pd.isna(valor):
+            return None
+    except (TypeError, ValueError):
+        pass
+
+    if isinstance(valor, (int, float)):
+        return float(valor) if valor > 0 else None
+
+    texto = str(valor or "").strip()
+
+    if not texto:
+        return None
+
+    match = re.search(
+        r"(\d+(?:[,.]\d+)?)\s*"
+        r"(GBPS|GIGA|GB|G|MBPS|MB|M|KBPS|KB|K)\b",
+        texto,
+        flags=re.IGNORECASE
+    )
+
+    if not match:
+        return None
+
+    numero = float(match.group(1).replace(",", "."))
+    unidade = match.group(2).upper()
+
+    if unidade in {"GBPS", "GIGA", "GB", "G"}:
+        return numero * 1000
+
+    if unidade in {"KBPS", "KB", "K"}:
+        return numero / 1000
+
+    return numero
+
+
+def _linha_catalogo_produto(catalogo, produto):
+    if catalogo is None or catalogo.empty or "Nome" not in catalogo.columns:
+        return {}
+
+    produto_normalizado = str(produto or "").strip().casefold()
+
+    if not produto_normalizado:
+        return {}
+
+    nomes = catalogo["Nome"].astype(str).str.strip().str.casefold()
+    linhas = catalogo.loc[nomes == produto_normalizado]
+
+    if linhas.empty:
+        return {}
+
+    return linhas.iloc[-1].to_dict()
+
+
+def velocidade_telecom_produto_mbps(produto, catalogo=None):
+    produto = str(produto or "").strip()
+
+    if not produto:
+        return None
+
+    linha_catalogo = _linha_catalogo_produto(catalogo, produto)
+    inferido = infer_product_fields(produto)
+    tipo = str(
+        linha_catalogo.get("Tipo") or inferido.get("Tipo") or ""
+    ).strip().casefold()
+
+    if tipo != "telecom":
+        return None
+
+    for valor in [
+        linha_catalogo.get("Velocidade"),
+        inferido.get("Velocidade"),
+        produto
+    ]:
+        velocidade = normalizar_velocidade_mbps(valor)
+
+        if velocidade:
+            return velocidade
+
+    return None
+
+
+def formatar_banda_mbps(valor):
+    if not valor or valor <= 0:
+        return "0 Mbps"
+
+    if valor >= 1000:
+        texto = f"{valor / 1000:g}".replace(".", ",")
+        return f"{texto} Gbps"
+
+    texto = f"{valor:g}".replace(".", ",")
+    return f"{texto} Mbps"
+
+
+def montar_metricas_banda_telecom_site(site, catalogo=None):
+    velocidades = []
+
+    for site_atual in sites_descendentes(site):
+        for cliente in site_atual.clientes:
+            velocidade = velocidade_telecom_produto_mbps(
+                getattr(cliente, "produto", ""),
+                catalogo
+            )
+
+            if velocidade:
+                velocidades.append(velocidade)
+
+    return {
+        "maior_mbps": max(velocidades) if velocidades else None,
+        "soma_mbps": sum(velocidades),
+        "acima_100_mbps": sum(
+            1 for velocidade in velocidades if velocidade >= 100
+        )
+    }
+
+
+def montar_metricas_banda_telecom_sites(sites_usados, catalogo=None):
+    velocidades = []
+
+    for site in sites_usados:
+        for cliente in site.clientes:
+            velocidade = velocidade_telecom_produto_mbps(
+                getattr(cliente, "produto", ""),
+                catalogo
+            )
+
+            if velocidade:
+                velocidades.append(velocidade)
+
+    return {
+        "maior_mbps": max(velocidades) if velocidades else None,
+        "soma_mbps": sum(velocidades),
+        "acima_100_mbps": sum(
+            1 for velocidade in velocidades if velocidade >= 100
+        )
     }

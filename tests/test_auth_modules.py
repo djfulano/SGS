@@ -30,6 +30,7 @@ class AuthModulesTest(unittest.TestCase):
         self.assertIn("sites_deficitarios", chaves)
         self.assertIn("sites_documentos", chaves)
         self.assertIn("viabilidade", chaves)
+        self.assertIn("pre_venda", chaves)
         self.assertIn("viabilidade_consulta", chaves)
         self.assertIn("viabilidade_migracao", chaves)
         self.assertIn("viabilidade_estudos", chaves)

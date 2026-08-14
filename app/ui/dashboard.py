@@ -88,6 +88,8 @@ from app.ui.views.products import configurar_produtos
 from app.ui.views.products import mostrar_produtos_equipamentos
 from app.ui.views.support import configurar_suporte
 from app.ui.views.support import mostrar_suporte
+from app.ui.views.pre_sales import configurar_pre_venda
+from app.ui.views.pre_sales import mostrar_pre_venda
 from app.ui.views.viability import configurar_viabilidade
 from app.ui.views.viability import mostrar_viabilidade
 from app.ui.views.site_cancellation import configurar_cancelamentos
@@ -962,6 +964,10 @@ configurar_suporte(
     usuario_logado,
     mostrar_grid
 )
+configurar_pre_venda(
+    formatar_moeda,
+    usuario_logado,
+)
 configurar_viabilidade(
     usuario_logado,
     mostrar_grid
@@ -1519,6 +1525,11 @@ abas_disponiveis = [
             sites,
             equipamentos
         )
+    ),
+    (
+        "pre_venda",
+        "Pré-Venda",
+        lambda: mostrar_pre_venda(sites)
     ),
     (
         "viabilidade",

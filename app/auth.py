@@ -74,6 +74,7 @@ MODULES = [
     ("suporte_agendamento", "Suporte > Agendamento"),
     ("retirada", "Suporte > Retirada"),
     ("predios", "Suporte > Prédios"),
+    ("pre_venda", "Pré-Venda"),
     ("viabilidade", "Viabilidade"),
     ("viabilidade_consulta", "Viabilidade > Viabilidade"),
     ("viabilidade_migracao", "Viabilidade > Migração"),
