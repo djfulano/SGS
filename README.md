@@ -43,9 +43,11 @@ SNMPC_APP_VERSION=2026.06.03-0933 docker compose up -d
 
 ## Documentacao de uso
 
-O manual de uso e o FAQ para usuários do dashboard estão em:
+Os guias de instalação, operação e uso estão em:
 
 ```text
+docs/INSTALACAO_DEBIAN.md
+docs/SEGURANCA_E_OPERACAO.md
 docs/USO.md
 docs/FAQ.md
 docs/PERFIL_NOC.md
